@@ -8,8 +8,10 @@
 #define cp_feedback_pin 37
 #define cp_measure_pin 4
 #define cp_relay_pin 18
+#define pp_measure_pin 5
 #define cp_gen_freq 1000
 #define cp_gen_duty 50
+
 
 #define cp_control_channel 0
 
@@ -70,7 +72,11 @@ void turn_cp_relay_on(void){
 void turn_cp_relay_off(void){
     digitalWrite(cp_relay_pin, LOW);
 }
-
+float get_pp_status(void){
+    float pp_val=analogRead(pp_measure_pin);
+    pp_val=pp_val*3.3/4095;
+    return pp_val;
+}
 
 void control_pilot_task(void *pvParameter){
     init_control_pilot();
@@ -83,6 +89,8 @@ void control_pilot_task(void *pvParameter){
         ESP_LOGI(CP_TAG, "Control Pilot Task Running");
         measurements=measure_control_pilot();
         ESP_LOGI(CP_TAG, "High Voltage: %f, Low Voltage: %f", measurements.high_voltage, measurements.low_voltage);
+        float pp_val=get_pp_status();
+        ESP_LOGI(CP_TAG, "PP Voltage: %fv", pp_val);
         vTaskDelay(3000/portTICK_PERIOD_MS);
     }
 }

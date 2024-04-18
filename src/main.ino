@@ -8,6 +8,7 @@
 #include "relay_ctrl.hpp"
 #include "ethernet_manager.hpp"
 #include "control_pilot.hpp"
+#include "lock_ctrl.hpp"
 
 const char *MAIN_TAG = "Main: ";
 
@@ -18,8 +19,12 @@ void setup() {
   esp_netif_init();
   esp_event_loop_create_default();
   start_eth();
+  xTaskCreate(lock_monitor_task, "Lock Monitor Task", 2048, NULL, 5, NULL);
   }  
 void loop() {
   ESP_LOGI(MAIN_TAG, "Hello world!  Loop");
+  lock_lock();
+  vTaskDelay(5000 / portTICK_PERIOD_MS);
+  release_lock();
   vTaskDelay(5000 / portTICK_PERIOD_MS);
 }
