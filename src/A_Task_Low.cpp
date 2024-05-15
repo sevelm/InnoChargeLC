@@ -25,14 +25,14 @@ void A_TaskLow(void *pvParameter){
 //////////////////////////////////////////////////// Loop ///////////////////////////////////////////////////
     while(1){
         ESP_LOGI(CP_LOGI, "High Voltage: %f, Low Voltage: %f", measurements.high_voltage, measurements.low_voltage);
-        esp_netif_ip_info_t ip_info;
+        // esp_netif_ip_info_t ip_info;
 
 
-        if (esp_netif_get_ip_info(eth_netif_spi, &ip_info) == ESP_OK) {
-            ESP_LOGI(CP_LOGI, "IP Address: " IPSTR, IP2STR(&ip_info.ip));
-        } else {
-            ESP_LOGI(CP_LOGI, "Failed to get IP address");
-        }
+        // if (esp_netif_get_ip_info(eth_netif_spi, &ip_info) == ESP_OK) {
+        //     ESP_LOGI(CP_LOGI, "IP Address: " IPSTR, IP2STR(&ip_info.ip));
+        // } else {
+        //     ESP_LOGI(CP_LOGI, "Failed to get IP address");
+        // }
 
 
 

@@ -44,9 +44,9 @@ void setup() {
 
 
 //######################### Create Task and Start
-  xTaskCreate(control_pilot_task, "Control Pilot Task", 4096, NULL, 5, NULL);
-  xTaskCreate(lock_monitor_task, "Lock Monitor Task", 2048, NULL, 5, NULL);
-  xTaskCreate(A_TaskLow, "Task_Low_Operation", 4096, NULL, 5, NULL);
+  // xTaskCreate(control_pilot_task, "Control Pilot Task", 4096, NULL, 5, NULL);
+  // xTaskCreate(lock_monitor_task, "Lock Monitor Task", 2048, NULL, 5, NULL);
+  // xTaskCreate(A_TaskLow, "Task_Low_Operation", 4096, NULL, 5, NULL);
 
   // xTaskCreate(relay_ctrl_test_task, "Relay Control Test Task", 2048, NULL, 5, NULL);
 
