@@ -5,7 +5,8 @@
 #include "esp_event.h"
 #include "A_TaskLow.hpp"
 #include "AA_globals.h"
-
+#include "esp_netif.h"
+#include "ethernet_manager.hpp"
 
 const char *CP_LOGI = "Task_Low: ";
 
@@ -16,7 +17,7 @@ const char *CP_LOGI = "Task_Low: ";
 //////////////////////////////////////////////////// Setup ///////////////////////////////////////////////////
 //////////////////////////////////////////////////// Setup ///////////////////////////////////////////////////
 void A_TaskLow(void *pvParameter){
-
+    esp_netif_ip_info_t ip_info;
 
 //////////////////////////////////////////////////// Loop ///////////////////////////////////////////////////
 //////////////////////////////////////////////////// Loop ///////////////////////////////////////////////////
@@ -24,6 +25,17 @@ void A_TaskLow(void *pvParameter){
 //////////////////////////////////////////////////// Loop ///////////////////////////////////////////////////
     while(1){
         ESP_LOGI(CP_LOGI, "High Voltage: %f, Low Voltage: %f", measurements.high_voltage, measurements.low_voltage);
+        esp_netif_ip_info_t ip_info;
+
+
+        if (esp_netif_get_ip_info(eth_netif_spi, &ip_info) == ESP_OK) {
+            ESP_LOGI(CP_LOGI, "IP Address: " IPSTR, IP2STR(&ip_info.ip));
+        } else {
+            ESP_LOGI(CP_LOGI, "Failed to get IP address");
+        }
+
+
+
      //   ESP_LOGI(CP_TAG, "PP Voltage: %fv", pp_val);
 
      /*   ESP_LOGI(CP_LOGI, "###################################"); 
