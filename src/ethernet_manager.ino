@@ -227,6 +227,17 @@ static void got_ip_event_handler(void *arg, esp_event_base_t event_base,
     ESP_LOGI(ETHERNET_TAG, "~~~~~~~~~~~");
 }
 
+void get_eth_ip(char *ip)
+{
+    esp_netif_ip_info_t ip_info;
+    if (esp_netif_get_ip_info(eth_netif_spi, &ip_info) == ESP_OK) {
+        sprintf(ip, IPSTR, IP2STR(&ip_info.ip));
+    } else {
+        ESP_LOGE(ETHERNET_TAG, "Failed to get IP address of SPI Ethernet");
+        strcpy(ip, "0.0.0.0");
+    }
+}
+
 void start_eth(void)
 {
     // Create instance(s) of esp-netif for SPI Ethernet(s)
