@@ -1,0 +1,492 @@
+
+
+#include <NeoPixelBus.h>
+#include <NeoPixelAnimator.h>
+#include "AA_globals.h"
+#include "ledEffect.hpp"
+
+unsigned long prevMillisLED       = 0;    // we use the "millis()" command for time reference and this will output an unsigned long
+
+///////////////// LED Funktionen
+
+int counter1[10];
+int counterTag1[10];
+
+int counter2[10];
+int counterTag2[10];
+
+int initStateB;
+int initStateC;
+
+int ledCase = 0;
+int ledNum = 5;
+
+//################################### ??? -> Connected
+void stateB () {
+
+initStateC = 0;
+
+if (initStateB == 1) {
+  switch (counterTag1[0]) {     // LED1 UP LED2 DOWN
+    case 0: counter1[0]--;
+            counter1[2]++;
+       if (counter1[0] <= 50 and counter1[2] >= 255){
+            counterTag1[0] = 1;
+            counter1[0] = 50;
+            counter1[2] = 255;
+           }
+        break;         
+    case 1: counter1[0]++;
+            counter1[1]--;
+       if (counter1[0] >= 255 and counter1[1] <= 50){
+            counterTag1[0] = 2;
+            counter1[0] = 255;
+            counter1[1] = 50;
+           }
+        break;        
+    case 2: counter1[1]++;
+            counter1[2]--;
+       if (counter1[1] >= 255 and counter1[2] <= 50){
+            counterTag1[0] = 0;
+            counter1[1] = 255;
+            counter1[2] = 50;
+           }  
+        break;           
+    case 3: counter1[2]++;
+       if (counter1[2] >= 255) {
+            counterTag1[0] = 0;
+            counter1[2] = 255;
+           } 
+        break;
+    case 4: counter1[4]++;
+            counter1[5]--;
+       if (counter1[4] >= 255 and counter1[5] <= 0){
+            counterTag1[0] = 5;
+            counter1[4] = 255;
+            counter1[5] = 0;
+           }   
+        break;
+    case 5: counter1[5]++;
+            counter1[0]--;
+       if (counter1[5] >= 255 and counter1[0] <= 0){
+            counterTag1[0] = 0;
+            counter1[5] = 255;
+            counter1[0] = 0;            
+           }  
+        break;                                
+  }
+} else {
+  counter1[0] = 255;
+  counter1[1] = 255;
+  counter1[2] = 255;
+  counter1[3] = 255;
+  counter1[4] = 255;
+  counter1[5] = 255; 
+  initStateB = 1;
+  counterTag1[0];           
+}
+  strip.SetPixelColor(4, RgbColor(counter1[0], counter1[0], 0));
+  strip.SetPixelColor(3, RgbColor(counter1[0], counter1[0], 0));
+  strip.SetPixelColor(5, RgbColor(counter1[1], counter1[1], 0));
+  strip.SetPixelColor(2, RgbColor(counter1[1], counter1[1], 0));
+  strip.SetPixelColor(6, RgbColor(counter1[2], counter1[2], 0));
+  strip.SetPixelColor(1, RgbColor(counter1[2], counter1[2], 0));
+  strip.Show();   // Send the updated pixel colors to the hardware.
+}
+
+
+//################################### Blue LED -> Standby
+void stateA () {
+   initStateB = 0;  
+   initStateC = 0;     
+  strip.SetPixelColor(0, RgbColor(0, 0, 255));
+  strip.SetPixelColor(1, RgbColor(0, 0, 255));
+  strip.SetPixelColor(2, RgbColor(0, 0, 255));
+  strip.SetPixelColor(3, RgbColor(0, 0, 255));
+  strip.SetPixelColor(4, RgbColor(0, 0, 255));
+  strip.SetPixelColor(5, RgbColor(0, 0, 255));
+  strip.SetPixelColor(6, RgbColor(0, 0, 255));
+  strip.SetPixelColor(7, RgbColor(0, 0, 255));
+  strip.Show();   // Send the updated pixel colors to the hardware.
+}
+
+//################################### UpDown
+void stateB_1 () {
+  if (ledNum >= 8) {
+    ledCase = 1;
+  }
+  if (ledNum <= 4) {
+    ledCase = 0;
+  }
+  switch (ledCase) {
+    case 0:
+      for (int y = 0; y <= 255; y += 4) { // For Brightness
+        strip.SetPixelColor(ledNum, RgbColor(0, y, y));
+        strip.SetPixelColor(7 - ledNum, RgbColor(0, y, y));
+        strip.Show();   // Send the updated pixel colors to the hardware.
+      //  DELAY(3); // Pause before next pass through loop
+      }
+      ledNum++;
+      break;
+    case 1:
+      for (int y = 255; y >= 0; y -= 4) { // For Brightness
+        strip.SetPixelColor(ledNum, RgbColor(0, y, y));
+        strip.SetPixelColor(7 - ledNum, RgbColor(0, y, y));
+        strip.Show();   // Send the updated pixel colors to the hardware.
+      //  DELAY(3); // Pause before next pass through loop
+      }
+      ledNum--;
+      break;
+  }
+}
+
+//################################### Wave with Green LED -> Charge Activ
+void stateC () {
+
+if (initStateC == 1) {
+  switch (counterTag1[0]) {
+    case 0: counter1[0]++;
+      if (counter1[0] >= 30) {
+        counterTag1[0] = 1;
+      }
+      break;
+    case 1: counter1[0]++;
+      counter1[1]++;
+      if (counter1[1] >= 30) {
+        counterTag1[0] = 2;
+      }
+      break;
+    case 2: counter1[0]++;
+      counter1[1]++;
+      counter1[2]++;
+      if (counter1[2] >= 30) {
+        counterTag1[0] = 3;
+      }
+      break;
+    case 3: counter1[0]++;
+      counter1[1]++;
+      counter1[2]++;
+      counter1[3]++;      
+      if (counter1[3] >= 255) {
+        counterTag1[0] = 4;
+      }
+      break;
+    case 4: counter1[3]--;
+      if (counter1[3] <= 180) {
+        counterTag1[0] = 5;
+      }
+      break;
+    case 5: counter1[2]--;
+      counter1[3]--;
+      if (counter1[2] <= 180) {
+        counterTag1[0] = 6;
+      }
+      break;
+    case 6: counter1[1]--;
+      counter1[2]--;
+      counter1[3]--;
+      if (counter1[1] <= 180) {
+        counterTag1[0] = 7;
+      }
+      break;
+    case 7: counter1[0]--;
+      counter1[1]--;
+      counter1[2]--;
+      counter1[3]--;      
+      if (counter1[0] <= 0) {
+        counterTag1[0] = 0;
+      }
+      break;     
+  }
+  if (counter1[0] > 255) {
+    counter1[0] = 255;
+  }
+  if (counter1[1] > 255) {
+    counter1[1] = 255;
+  }
+  if (counter1[2] > 255) {
+    counter1[2] = 255;
+  }
+  if (counter1[3] > 255) {
+    counter1[3] = 255;
+  }
+  if (counter1[0] < 0) {
+    counter1[0] = 0;
+  }
+  if (counter1[1] < 0) {
+    counter1[1] = 0;
+  }
+  if (counter1[2] < 0) {
+    counter1[2] = 0;
+  }
+  if (counter1[3] < 0) {
+    counter1[3] = 0;
+  }
+} else {
+  counter1[0] = 255;
+  counter1[1] = 255;
+  counter1[2] = 255;
+  counter1[3] = 255;
+  counter1[4] = 255;
+  counter1[5] = 255; 
+  initStateC = 1;
+  counterTag1[0];           
+}
+  strip.SetPixelColor(4, RgbColor(0, counter1[0], 0));
+  strip.SetPixelColor(3, RgbColor(0, counter1[0], 0));
+  strip.SetPixelColor(5, RgbColor(0, counter1[1], 0));
+  strip.SetPixelColor(2, RgbColor(0, counter1[1], 0));
+  strip.SetPixelColor(6, RgbColor(0, counter1[2], 0));
+  strip.SetPixelColor(1, RgbColor(0, counter1[2], 0));
+  strip.SetPixelColor(7, RgbColor(0, counter1[2], 0));
+  strip.SetPixelColor(0, RgbColor(0, counter1[2], 0));  
+  strip.Show();   // Send the updated pixel colors to the hardware.
+  
+}
+
+
+//################################### ??? -> Error
+void stateE () {
+  initStateB = 0;  
+  initStateC = 0;    
+  strip.SetPixelColor(0, RgbColor(255, 0, 0));
+  strip.SetPixelColor(1, RgbColor(255, 0, 0));
+  strip.SetPixelColor(2, RgbColor(255, 0, 0));
+  strip.SetPixelColor(3, RgbColor(255, 0, 0));
+  strip.SetPixelColor(4, RgbColor(255, 0, 0));
+  strip.SetPixelColor(5, RgbColor(255, 0, 0));
+  strip.SetPixelColor(6, RgbColor(255, 0, 0));
+  strip.SetPixelColor(7, RgbColor(255, 0, 0));    
+  strip.Show();   // Send the updated pixel colors to the hardware.
+}
+
+//################################### ??? -> Error
+void stateF () {
+  initStateB = 0;  
+  initStateC = 0;    
+  strip.SetPixelColor(0, RgbColor(255, 20, 0));
+  strip.SetPixelColor(1, RgbColor(255, 20, 0));
+  strip.SetPixelColor(2, RgbColor(255, 20, 0));
+  strip.SetPixelColor(3, RgbColor(255, 20, 0));
+  strip.SetPixelColor(4, RgbColor(255, 20, 0));
+  strip.SetPixelColor(5, RgbColor(255, 20, 0));
+  strip.SetPixelColor(6, RgbColor(255, 20, 0));
+  strip.SetPixelColor(7, RgbColor(255, 20, 0));    
+  strip.Show();   // Send the updated pixel colors to the hardware.
+}
+
+//################################### Switch is OFF
+void stateSwOff () {
+  initStateB = 0;  
+  initStateC = 0;    
+  strip.SetPixelColor(0, RgbColor(255, 0, 255));
+  strip.SetPixelColor(1, RgbColor(255, 0, 255));
+  strip.SetPixelColor(2, RgbColor(255, 0, 255));
+  strip.SetPixelColor(3, RgbColor(255, 0, 255));
+  strip.SetPixelColor(4, RgbColor(255, 0, 255));
+  strip.SetPixelColor(5, RgbColor(255, 0, 255));
+  strip.SetPixelColor(6, RgbColor(255, 0, 255));
+  strip.SetPixelColor(7, RgbColor(255, 0, 255));    
+  strip.Show();   // Send the updated pixel colors to the hardware.
+}
+
+//################################### PWM is OFF / 100%
+void statePwmOff () {
+  initStateB = 0;  
+  initStateC = 0;    
+  strip.SetPixelColor(0, RgbColor(255, 0, 255));   // Magenta
+  strip.SetPixelColor(1, RgbColor(255, 0, 255));  
+  strip.SetPixelColor(2, RgbColor(255, 0, 255));   
+  strip.SetPixelColor(3, RgbColor(255, 0, 255));   
+  strip.SetPixelColor(4, RgbColor(255, 0, 255));    
+  strip.SetPixelColor(5, RgbColor(255, 0, 255));    
+  strip.SetPixelColor(6, RgbColor(255, 0, 255));     
+  strip.SetPixelColor(7, RgbColor(255, 0, 255));     
+  strip.Show();   // Send the updated pixel colors to the hardware.
+}
+
+
+
+void simpleColorChange() {
+  static uint8_t hue = 0; // Hue-Wert (Farbwert) von 0 bis 255
+  RgbColor color;
+
+  if (counter1[10] >= 5) {
+    counter1[10] = 0;
+    hue = (hue + 1) % 256; // Ändere den Farbwert für den nächsten Zyklus
+  }
+
+  for (int i = 0; i < 8; i++) {
+    color = HslColor(hue / 255.0, 1.0, 0.5); // Sättigung und Helligkeit auf 50%
+  
+  //  strip.SetPixelColor(0, HslColor(hue / 255.0, 1.0, 0.5););
+    
+    strip.SetPixelColor(i, color); 
+  }
+
+  strip.Show();
+
+  counter1[10]++;
+
+}
+
+void knightRiderEffect() {
+  static int8_t direction = 1; // Richtung: 1 für vorwärts, -1 für rückwärts
+  static int8_t currentPixel = 0;
+  static uint8_t counter = 0;
+  const uint8_t cycleDuration = 30; // Dauer eines Zyklus in Anzahl der Schritte
+
+  counter1[10]++;
+  if (counter1[10] >= cycleDuration) {
+    counter1[10] = 0;
+
+    // Alle LEDs ausschalten
+    for (int i = 0; i < 8; i++) {
+      strip.SetPixelColor(i, RgbColor(255, 195, 0));
+    }
+
+    // Aktuelles Pixel einschalten
+    strip.SetPixelColor(currentPixel, RgbColor(255, 255, 255));
+    strip.Show();
+
+    // Nächstes Pixel ermitteln
+    currentPixel += direction;
+
+    // Richtung umkehren, wenn das Ende des Streifens erreicht ist
+    if (currentPixel == 8 || currentPixel == -1) {
+      direction = -direction;
+      currentPixel += 2 * direction; // Nächste Position für den neuen Zyklus vorbereiten
+    }
+  }
+}
+
+void waveEffect() {
+  static int8_t direction = 1; // Richtung: 1 für vorwärts, -1 für rückwärts
+  static int8_t currentWavePos = 0;
+  static uint8_t counter = 0;
+  const uint8_t cycleDuration = 5; // Dauer eines Zyklus in Anzahl der Schritte
+
+  counter++;
+  if (counter >= cycleDuration) {
+    counter = 0;
+
+    // Alle LEDs ausschalten
+    for (int i = 0; i < 8; i++) {
+      strip.SetPixelColor(i, RgbColor(0, 0, 0)); // Ausschalten
+    }
+
+    // LEDs für die Welle einschalten
+    int waveLength = 3; // Anzahl der gleichzeitig leuchtenden LEDs für die Welle
+    int waveStart = currentWavePos;
+    for (int i = 0; i < waveLength; i++) {
+      int pixelIndex = waveStart + i * direction;
+      if (pixelIndex >= 0 && pixelIndex < 8) {
+        int brightness = 255 - abs(i - waveLength / 2) * 50; // Stärke der Welle abhängig von der Position
+        strip.SetPixelColor(pixelIndex, RgbColor(brightness, brightness, brightness));
+      }
+    }
+    strip.Show();
+
+    // Nächste Position für die Welle ermitteln
+    currentWavePos += direction;
+
+    // Richtung umkehren, wenn das Ende des Streifens erreicht ist
+    if (currentWavePos == 8 || currentWavePos == -waveLength) {
+      direction = -direction;
+      currentWavePos += 2 * direction; // Nächste Position für den neuen Zyklus vorbereiten
+    }
+  }
+}
+
+void orangeWaveEffect2() {
+  int init;
+  static int8_t direction = 1; // Richtung: 1 für vorwärts, -1 für rückwärts
+  static int8_t currentWavePos = 0;
+  static uint8_t counter = 0;
+  const uint8_t cycleDuration = 30; // Dauer eines Zyklus in Anzahl der Schritte
+
+  if (init == 0) {
+    for (int i = 0; i < 8; i++) {
+        strip.SetPixelColor(i, RgbColor(255, 195, 0)); // Ausschalten
+      }
+      init = 1;
+    }
+
+
+  
+   counter++; 
+  if (counter >= cycleDuration) {
+    counter = 0;
+
+    // LEDs für die Welle ausschalten
+    int waveLength = 3; // Anzahl der gleichzeitig leuchtenden LEDs für die Welle
+    for (int i = 0; i < waveLength; i++) {
+      int pixelIndex = currentWavePos + i * direction;
+      if (pixelIndex >= 0 && pixelIndex < 8) {
+        strip.SetPixelColor(pixelIndex, RgbColor(255, 195, 0)); // Ausschalten
+      }
+    }
+
+    // Nächste Position für die Welle ermitteln
+    currentWavePos += direction;
+
+    // Richtung umkehren, wenn das Ende des Streifens erreicht ist
+    if (currentWavePos == 8 || currentWavePos == -waveLength) {
+      direction = -direction;
+      currentWavePos += 2 * direction; // Nächste Position für den neuen Zyklus vorbereiten
+    }
+
+    // LEDs für die Welle einschalten
+    for (int i = 0; i < waveLength; i++) {
+      int pixelIndex = currentWavePos + i * direction;
+      if (pixelIndex >= 0 && pixelIndex < 8) {
+        int brightness = 255 - abs(i - waveLength / 2) * 50; // Stärke der Welle abhängig von der Position
+        strip.SetPixelColor(pixelIndex, RgbColor(brightness, brightness, brightness));
+      }
+    }
+
+    strip.Show();
+  }
+}
+
+
+
+// control LED
+void callLedEffect() {
+ if (xTaskGetTickCount() - prevMillisLED >= 5) { // check if "interval" ms has passed since last time the clients were updated
+    prevMillisLED = xTaskGetTickCount();
+        //0=A -> NotConnected; 1=B -> Connected; 2=C -> CharginActive; 3=D -> Ventilation ChargingActive; 4=E Fault, 5=F Fault
+        switch (cpState) {
+            case 0:
+                  stateA (); 
+            break;
+            case 1:
+                 // stateB (); 
+                 // simpleColorChange ();
+                 // knightRiderEffect();
+                //waveEffect();
+                //orangeWaveEffect();
+                orangeWaveEffect2();
+               // orangeWaveEffectRandom();
+            break;
+            case 2 ... 3:
+                  stateC (); 
+            break;
+            case 10:
+                  stateC ();
+            break;
+            case 4:
+                  stateE (); 
+            break;
+            case 5:
+                  stateF (); 
+            break;
+            case 6:
+                  stateSwOff (); 
+            break;
+            case 7 ... 8:
+                  statePwmOff (); 
+            break;
+           }
+  }
+}
