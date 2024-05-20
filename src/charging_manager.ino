@@ -23,6 +23,10 @@ const char *CM_LOGI = "Charging Manager : ";
 float max_charger_current = 32.0;
 float max_cable_current = 0;
 
+TaskHandle_t charging_manager_task_handle;
+TaskHandle_t session_reporting_task_handle;
+TaskHandle_t pp_monitoring_task_handle;
+
 
     proximity_pilot_state_t current_pp_state = PROXIMITY_PILOT_STATE_DISCONNECTED;
     proximity_pilot_state_t last_pp_state = PROXIMITY_PILOT_STATE_DISCONNECTED;
@@ -62,16 +66,25 @@ void handle_pp_state_change(proximity_pilot_state_t last_state, proximity_pilot_
     if(current_state == PROXIMITY_PILOT_STATE_INVALID){
         ESP_LOGE(CM_LOGI, "Invalid Cable Detected, Please Plug in Valid Cable");
         release_lock();
+        pause_charging_manager();
+        turn_off_cp_relay();
+        set_control_pilot_standby();
     }
     else if(current_state == PROXIMITY_PILOT_STATE_DISCONNECTED && last_state == PROXIMITY_PILOT_STATE_CONNECTED){
         ESP_LOGI(CM_LOGI, "Cable Disconnected, Releasing Lock");
         release_lock();
+        pause_charging_manager();
+        turn_off_cp_relay();
+        set_control_pilot_standby();
     }
     else if(current_state == PROXIMITY_PILOT_STATE_CONNECTED && last_state == PROXIMITY_PILOT_STATE_DISCONNECTED){
         ESP_LOGI(CM_LOGI, "Cable Connected, Acquiring Lock");
         // get max cable capacity
         // max_cable_current = get_max_cable_capacity();
         lock_lock();
+        turn_on_cp_relay();
+        last_cp_state = charging_state_a;
+        resume_charging_manager();
     }else{
         ESP_LOGE(CM_LOGI, "Invalid State Transition, Last State: %d, Current State: %d", last_state, current_state);
     }
@@ -138,17 +151,15 @@ void handle_cp_state_change(charging_state_t last_state, charging_state_t curren
 
 void charging_manager_task(void *args){
     ESP_LOGI(CM_LOGI, "Starting Charging Manager Task");
-    // init CP , PP, Relay, Lock
+    // init CP , Relay, Lock
     init_relay_ctrl();
 
     init_control_pilot();
     set_control_pilot_standby();
     turn_on_cp_relay();
-
-    init_proximity_pilot();
     
     init_lock();
-    xTaskCreate(session_reporting_task, "Session Reporting Task", 2048, NULL, 5, NULL);
+    xTaskCreate(session_reporting_task, "Session Reporting Task", 4096, NULL, 5, NULL);
 
     ESP_LOGI("Charging Manager", "Charging Manager Initialized");
     while(1){
@@ -195,4 +206,56 @@ void charging_manager_task(void *args){
 
 charging_state_t get_cp_state(){
     return current_cp_state;
+}
+void start_charging_manager(){
+    xTaskCreate(charging_manager_task, "Charging Manager Task", 4096, NULL, 5, &charging_manager_task_handle);
+}
+void pause_charging_manager(){
+    vTaskSuspend(charging_manager_task_handle);
+}
+void resume_charging_manager(){
+    vTaskResume(charging_manager_task_handle);
+}
+
+void pp_monitoring_task(void *args){
+
+    start_charging_manager();
+    pause_charging_manager();
+    while(1){
+        float voltage = get_proximity_pilot_voltage();
+        ESP_LOGI(CM_LOGI, "Proximity Pilot Voltage: %f V", voltage);
+        float resistance = calc_resistance_from_voltage(voltage);
+        if(resistance < 0){
+            resistance = 2000;
+        }
+        ESP_LOGI(CM_LOGI, "Proximity Pilot Resistance: %f Ohm", resistance);
+        if(resistance >1000){
+            current_pp_state = PROXIMITY_PILOT_STATE_DISCONNECTED;
+            max_cable_current = 0;
+        }
+        else{
+            float capacity = get_cable_capacity_from_resistance(resistance);
+            if(capacity > 0){
+                current_pp_state = PROXIMITY_PILOT_STATE_CONNECTED;
+                max_cable_current = capacity;
+
+            }
+            else{
+                current_pp_state = PROXIMITY_PILOT_STATE_INVALID;
+                max_cable_current = 0;
+            }
+        }
+        if(current_pp_state != last_pp_state){
+            handle_pp_state_change(last_pp_state, current_pp_state);
+            ESP_LOGI(CM_LOGI, "Proximity Pilot State Changed: %s", pp_state_to_name(current_pp_state));
+            ESP_LOGI(CM_LOGI, "Max Cable Capacity: %f A", max_cable_current);
+        }
+        last_pp_state = current_pp_state;
+        vTaskDelay(1000/portTICK_PERIOD_MS);
+    }
+
+}
+
+proximity_pilot_state_t get_pp_state(){
+    return current_pp_state;
 }

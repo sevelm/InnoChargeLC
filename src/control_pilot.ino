@@ -26,6 +26,7 @@
 #define cp_scaling_factor_b -9.3632
 
 bool cp_relay_status = false;
+static portMUX_TYPE cp_adc_spinlock = portMUX_INITIALIZER_UNLOCKED;
 
 const char *CP_LOG = "Control Pilot: ";
 /**
@@ -164,8 +165,10 @@ void sync_cp_edge(bool edge){
 */
 float get_high_voltage(){
     float high_voltage;
+    taskENTER_CRITICAL(&cp_adc_spinlock);
     sync_cp_edge(RISING_EDGE);
     high_voltage= (adc1_get_raw(cp_measure_channel)+adc1_get_raw(cp_measure_channel))/2;
+    taskEXIT_CRITICAL(&cp_adc_spinlock);
     high_voltage= high_voltage*cp_scaling_factor_a+cp_scaling_factor_b;
     return high_voltage;
 }
@@ -179,8 +182,10 @@ float get_high_voltage(){
 */
 float get_low_voltage(){
     float low_voltage;
+    taskENTER_CRITICAL(&cp_adc_spinlock);
     sync_cp_edge(FALLING_EDGE);
     low_voltage= (adc1_get_raw(cp_measure_channel)+adc1_get_raw(cp_measure_channel))/2;
+    taskEXIT_CRITICAL(&cp_adc_spinlock);
     low_voltage= low_voltage*cp_scaling_factor_a+cp_scaling_factor_b;
     return low_voltage;
 }

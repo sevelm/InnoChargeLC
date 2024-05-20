@@ -8,14 +8,13 @@
 #define pp_measure_pin 5
 
 
-TaskHandle_t pp_monitoring_task_handle;
 
 const char *PP_LOG = "PP-Task: ";
 
 proximity_pilot_state_t last_state = PROXIMITY_PILOT_STATE_DISCONNECTED;
 proximity_pilot_state_t current_state = PROXIMITY_PILOT_STATE_DISCONNECTED;
 float max_cable_capacity = 0;
-
+static portMUX_TYPE pp_adc_spinlock = portMUX_INITIALIZER_UNLOCKED;
 /**
     * @brief Convert the proximity pilot state to a human readable string
     * 
@@ -67,15 +66,16 @@ void init_proximity_pilot(void){
 */
 float get_proximity_pilot_voltage(){
     float voltage;
+    portENTER_CRITICAL(&pp_adc_spinlock);
     for (int i = 0; i < 5; i++) {
         voltage += analogReadMilliVolts(pp_measure_pin);
     }
+    portEXIT_CRITICAL(&pp_adc_spinlock);
     voltage = voltage / 5000;
+    return voltage;
 }
 
-proximity_pilot_state_t get_proximity_pilot_state(){
-    return current_state;
-}
+
 
 /*
     * @brief Calculate the Pilot resistance of the cable from ADC Readings
@@ -128,68 +128,4 @@ float get_cable_capacity_from_resistance(float resistance){
     else{
         return 0;
     }
-}
-
-/*
-    * @brief Proximity Pilot Monitoring Task
-    * 
-    * This function is the task that monitors the proximity pilot
-    * @param void *args
-    * @return void
-
-*/
-void pp_monitoring_task(void *args){
-    init_proximity_pilot();
-
-    while(1){
-        float voltage = get_proximity_pilot_voltage();
-        float resistance = calc_resistance_from_voltage(voltage);
-        if(resistance >10000){
-            current_state = PROXIMITY_PILOT_STATE_DISCONNECTED;
-            max_cable_capacity = 0;
-        }
-        else{
-            float capacity = get_cable_capacity_from_resistance(resistance);
-            if(capacity > 0){
-                current_state = PROXIMITY_PILOT_STATE_CONNECTED;
-                max_cable_capacity = capacity;
-
-            }
-            else{
-                current_state = PROXIMITY_PILOT_STATE_INVALID;
-                max_cable_capacity = 0;
-            }
-        }
-        if(current_state != last_state){
-            // Handle state change mechanism here
-            // Might want to add led color change, cable lock or other logic here
-            char current_state_name[20];
-            ESP_LOGI(PP_LOG, "Proximity Pilot State Changed: %s", pp_state_to_name(current_state));
-            ESP_LOGI(PP_LOG, "Max Cable Capacity: %f A", max_cable_capacity);
-        }
-        last_state = current_state;
-        vTaskDelay(1000/portTICK_PERIOD_MS);
-    }
-}
-
-/**
-    * @brief Start the proximity pilot monitoring task
-    * 
-    * This function starts the proximity pilot monitoring task
-    * @param void
-    * @return void
-*/
-void start_proximity_pilot_monitoring(){
-    xTaskCreate(pp_monitoring_task, "PP Monitoring Task", 2048, NULL, 5, &pp_monitoring_task_handle);
-}
-
-/**
-    * @brief Stop the proximity pilot monitoring task
-    * 
-    * This function stops the proximity pilot monitoring task
-    * @param void
-    * @return void
-*/
-void stop_proximity_pilot_monitoring(){
-    vTaskDelete(pp_monitoring_task_handle);
 }

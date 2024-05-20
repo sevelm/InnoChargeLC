@@ -1,4 +1,4 @@
-
+#pragma once
 typedef enum{
     PROXIMITY_PILOT_STATE_DISCONNECTED,
     PROXIMITY_PILOT_STATE_CONNECTED,
