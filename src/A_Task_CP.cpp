@@ -89,9 +89,9 @@ State:   Pilot Voltage:  EV Resistance:  Description:       Analog theoretic: (i
 #define cp_scaling_factor_a 0.005263
 #define cp_scaling_factor_b -9.3632
 
-const char *CP_LOG = "CP-Task: ";
+const char *A_CP_LOG = "A-CP-Task: ";
 
-void init_control_pilot(void){
+void a_init_control_pilot(void){
     pinMode(cp_gen_pin, OUTPUT);
     ledcSetup(cp_control_channel, cp_gen_freq, 12);
     ledcAttachPin(cp_gen_pin, cp_control_channel);
@@ -169,7 +169,7 @@ float get_pp_status(void){
 }
 
 void control_pilot_task(void *pvParameter){
-    init_control_pilot();
+    a_init_control_pilot();
     set_control_pilot(8);
     turn_cp_relay_on();
 

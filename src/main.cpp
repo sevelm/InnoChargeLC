@@ -8,7 +8,7 @@
 
 #include "relay_ctrl.hpp"
 #include "ethernet_manager.hpp"
-#include "control_pilot.hpp"
+#include "charging_manager.hpp"
 #include "lock_ctrl.hpp"
 #include "A_TaskLow.hpp"
 #include "ledEffect.hpp"
@@ -44,9 +44,9 @@ void setup() {
 
 
 //######################### Create Task and Start
-  xTaskCreate(control_pilot_task, "Control Pilot Task", 4096, NULL, 5, NULL);
-  xTaskCreate(lock_monitor_task, "Lock Monitor Task", 2048, NULL, 5, NULL);
-  xTaskCreate(A_TaskLow, "Task_Low_Operation", 4096, NULL, 5, NULL);
+  xTaskCreate(charging_manager_task, "Charging Manager Task", 4096, NULL, 5, NULL);
+  // xTaskCreate(lock_monitor_task, "Lock Monitor Task", 2048, NULL, 5, NULL);
+  // xTaskCreate(A_TaskLow, "Task_Low_Operation", 4096, NULL, 5, NULL);
 
   // xTaskCreate(relay_ctrl_test_task, "Relay Control Test Task", 2048, NULL, 5, NULL);
 

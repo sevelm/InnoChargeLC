@@ -1,0 +1,198 @@
+#include <stdio.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <math.h>
+
+#include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
+
+#include "lock_ctrl.hpp"
+#include "control_pilot.hpp"
+#include "proximity_pilot.hpp"
+#include "relay_ctrl.hpp"
+#include "charging_manager.hpp"
+
+
+#define MIN(a,b) ((a) < (b) ? (a) : (b))
+
+
+const char *CM_LOGI = "Charging Manager : ";
+
+float max_charger_current = 32.0;
+float max_cable_current = 0;
+
+
+    proximity_pilot_state_t current_pp_state = PROXIMITY_PILOT_STATE_DISCONNECTED;
+    proximity_pilot_state_t last_pp_state = PROXIMITY_PILOT_STATE_DISCONNECTED;
+    charging_state_t current_cp_state = charging_state_a;
+    charging_state_t last_cp_state = charging_state_a;
+
+    float high_voltage, low_voltage;
+
+void session_reporting_task(void *pvParameter){
+    while(1){
+        ESP_LOGI(CM_LOGI, "Reporting Session: High Voltage: %f, Low Voltage: %f, CP State: %s, PP State: %s", high_voltage, low_voltage, cp_state_to_name(current_cp_state), pp_state_to_name(current_pp_state));
+        vTaskDelay(5000/portTICK_PERIOD_MS);
+    }
+}
+
+const char *cp_state_to_name(charging_state_t state){
+    switch(state){
+        case charging_state_a:
+            return "Charging State A";
+        case charging_state_b:
+            return "Charging State B";
+        case charging_state_c:
+            return "Charging State C";
+        case charging_state_d:
+            return "Charging State D";
+        case charging_state_e:
+            return "Charging State E";
+        case charging_state_f:
+            return "Charging State F";
+        default:
+            return "Invalid State";
+    }
+}
+
+
+void handle_pp_state_change(proximity_pilot_state_t last_state, proximity_pilot_state_t current_state){
+    if(current_state == PROXIMITY_PILOT_STATE_INVALID){
+        ESP_LOGE(CM_LOGI, "Invalid Cable Detected, Please Plug in Valid Cable");
+        release_lock();
+    }
+    else if(current_state == PROXIMITY_PILOT_STATE_DISCONNECTED && last_state == PROXIMITY_PILOT_STATE_CONNECTED){
+        ESP_LOGI(CM_LOGI, "Cable Disconnected, Releasing Lock");
+        release_lock();
+    }
+    else if(current_state == PROXIMITY_PILOT_STATE_CONNECTED && last_state == PROXIMITY_PILOT_STATE_DISCONNECTED){
+        ESP_LOGI(CM_LOGI, "Cable Connected, Acquiring Lock");
+        // get max cable capacity
+        // max_cable_current = get_max_cable_capacity();
+        lock_lock();
+    }else{
+        ESP_LOGE(CM_LOGI, "Invalid State Transition, Last State: %d, Current State: %d", last_state, current_state);
+    }
+
+}
+
+
+
+void handle_cp_state_change(charging_state_t last_state, charging_state_t current_state){
+    switch(current_state){
+        case charging_state_a:
+            ESP_LOGI(CM_LOGI, "Charging State A transitioned from %s, Vehicle disconnected.", cp_state_to_name(last_state));
+            set_control_pilot_standby();
+            turn_relay_off();
+            break;
+        case charging_state_b:
+            if(last_state == charging_state_a){
+                ESP_LOGI(CM_LOGI, "Vehicle Connected, Broadcasting Charging Current");
+                set_charging_current(MIN(max_charger_current, max_cable_current));
+                turn_relay_off();
+            }
+            else{
+                ESP_LOGI(CM_LOGI, "Vehicle turned off charging from %s, Probably Full", cp_state_to_name(last_state));
+                turn_relay_off();
+            }
+            break;
+        case charging_state_c:
+            if(last_state == charging_state_b){
+                ESP_LOGI(CM_LOGI, "Charging State C transitioned from B, Vehicle Ready to Charge.");
+                // check authorization here
+                turn_relay_on();
+                // Also start metering and Stuffs
+            }
+            else{
+                ESP_LOGE(CM_LOGI, "Invalid State Transition to C from %s", cp_state_to_name(last_state));
+                turn_relay_off();
+            }
+            break;
+        case charging_state_d:
+            if(last_state == charging_state_b){
+                ESP_LOGI(CM_LOGI, "Charging State D transitioned from B, Vehicle Ready to Charge.");
+                // check authorization here
+                turn_relay_on();
+            }
+            else{
+                ESP_LOGE(CM_LOGI, "Invalid State Transition to D from %s", cp_state_to_name(last_state));
+                turn_relay_off();
+            }
+            break;
+        case charging_state_e:
+            ESP_LOGE(CM_LOGI, "Charging State E transitioned from %s, Stopping Charging. Pilot Shorted to GND", cp_state_to_name(last_state));
+            set_control_pilot_standby();
+            turn_relay_off();
+            break;
+        case charging_state_f:
+            ESP_LOGE(CM_LOGI, "Charging State F transitioned from %s, Stopping Charging. Vehicle is Not Valid", cp_state_to_name(last_state));
+            set_control_pilot_standby();
+            turn_relay_off(); 
+            break;
+        default:
+            break;
+    }
+}
+
+void charging_manager_task(void *args){
+    ESP_LOGI(CM_LOGI, "Starting Charging Manager Task");
+    // init CP , PP, Relay, Lock
+    init_relay_ctrl();
+
+    init_control_pilot();
+    set_control_pilot_standby();
+    turn_on_cp_relay();
+
+    init_proximity_pilot();
+    
+    init_lock();
+    xTaskCreate(session_reporting_task, "Session Reporting Task", 2048, NULL, 5, NULL);
+
+    ESP_LOGI("Charging Manager", "Charging Manager Initialized");
+    while(1){
+        high_voltage = get_high_voltage();
+        low_voltage = get_low_voltage();
+        high_voltage = round(high_voltage);
+        low_voltage = round(low_voltage);
+
+        // if low voltage is not 12v or -12V, then it is invalid
+        if(low_voltage != 12 && low_voltage != -12){
+            ESP_LOGE(CM_LOGI, "Invalid Low Voltage Detected: %f", low_voltage);
+            current_cp_state = charging_state_f;
+        }
+        else{
+            // high voltage is 12V, 9V, 6V, 3V, rest are invalid
+            if(high_voltage == 12){
+                current_cp_state = charging_state_a;
+            }
+            else if(high_voltage == 9){
+                current_cp_state = charging_state_b;
+            }
+            else if(high_voltage == 6){
+                current_cp_state = charging_state_c;
+            }
+            else if(high_voltage == 3){
+                current_cp_state = charging_state_d;
+            }
+            else{
+                ESP_LOGE(CM_LOGI, "Invalid High Voltage Detected: %f", high_voltage);
+                current_cp_state = charging_state_e;
+            }
+        }
+        if(current_cp_state != last_cp_state){
+            handle_cp_state_change(last_cp_state, current_cp_state);
+        }
+        last_cp_state = current_cp_state;
+
+        // run every 200ms
+        vTaskDelay(200/portTICK_PERIOD_MS);
+    }
+
+
+}
+
+charging_state_t get_cp_state(){
+    return current_cp_state;
+}

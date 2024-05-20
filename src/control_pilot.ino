@@ -25,7 +25,7 @@
 #define cp_scaling_factor_a 0.005263
 #define cp_scaling_factor_b -9.3632
 
-bool cp_relay_state = false;
+bool cp_relay_status = false;
 
 const char *CP_LOG = "Control Pilot: ";
 /**
@@ -50,7 +50,7 @@ void init_control_pilot(void){
     * @brief Set the control pilot duty cycle
     * 
     * This function sets the duty cycle of the control pilot PWM generator
-    '@param float duty
+    '@param float duty in percentage
     * @return void
 */
 void set_control_pilot_duty(float duty){
@@ -66,7 +66,25 @@ void set_control_pilot_duty(float duty){
     * @return float duty
 */
 float get_duty_from_current(float current){
+    if(current >= 6 && current <= 51){
+        return current/0.6;
+    }else if(current > 51 && current <= 80){
+        return current/2.5+64;
+    }
+    ESP_LOGE(CP_LOG, "Current out of range defaulting to 6A");
+    return 10;
+}
 
+/**
+    * @brief Set the charging current
+    * 
+    * This function sets the charging current by setting the duty cycle of the control pilot PWM generator
+    '@param float current
+    * @return void
+*/
+void set_charging_current(float current){
+    float duty = get_duty_from_current(current);
+    set_control_pilot_duty(duty);
 }
 
 /**
