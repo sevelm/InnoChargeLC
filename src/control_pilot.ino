@@ -9,6 +9,7 @@
 #include "driver/gpio.h"
 #include "driver/adc.h"
 #include "stdbool.h"
+#include "rom/ets_sys.h"
 
 #define cp_gen_pin 8
 #define cp_feedback_pin 37
@@ -22,7 +23,7 @@
 #define RISING_EDGE 1
 #define FALLING_EDGE 0
 
-#define cp_scaling_factor_a 0.005263
+#define cp_scaling_factor_a 0.0053
 #define cp_scaling_factor_b -9.3632
 
 bool cp_relay_status = false;
@@ -164,11 +165,13 @@ void sync_cp_edge(bool edge){
     * @return float high_voltage
 */
 float get_high_voltage(){
-    float high_voltage;
-    taskENTER_CRITICAL(&cp_adc_spinlock);
+    float high_voltage=0;
+    // taskENTER_CRITICAL(&cp_adc_spinlock);
     sync_cp_edge(RISING_EDGE);
+    ets_delay_us(20);
     high_voltage= (adc1_get_raw(cp_measure_channel)+adc1_get_raw(cp_measure_channel))/2;
-    taskEXIT_CRITICAL(&cp_adc_spinlock);
+    // taskEXIT_CRITICAL(&cp_adc_spinlock);
+    // ESP_LOGI(CP_LOG, "RAW ADC Value: %f", high_voltage);
     high_voltage= high_voltage*cp_scaling_factor_a+cp_scaling_factor_b;
     return high_voltage;
 }
@@ -181,11 +184,16 @@ float get_high_voltage(){
     * @return float low_voltage
 */
 float get_low_voltage(){
-    float low_voltage;
-    taskENTER_CRITICAL(&cp_adc_spinlock);
+    float low_voltage=0;
+    // taskENTER_CRITICAL(&cp_adc_spinlock);
     sync_cp_edge(FALLING_EDGE);
-    low_voltage= (adc1_get_raw(cp_measure_channel)+adc1_get_raw(cp_measure_channel))/2;
-    taskEXIT_CRITICAL(&cp_adc_spinlock);
+    ets_delay_us(20);
+    low_voltage= (adc1_get_raw(cp_measure_channel)+adc1_get_raw(cp_measure_channel)+adc1_get_raw(cp_measure_channel))/3;
+    // taskEXIT_CRITICAL(&cp_adc_spinlock);
     low_voltage= low_voltage*cp_scaling_factor_a+cp_scaling_factor_b;
+    // ESP_LOGI(CP_LOG, "Low Voltage: %f", low_voltage);
+    if(low_voltage<0){
+        low_voltage = low_voltage*1.5;
+    }
     return low_voltage;
 }

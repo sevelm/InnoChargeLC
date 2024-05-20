@@ -20,7 +20,7 @@
 
 const char *CM_LOGI = "Charging Manager : ";
 
-float max_charger_current = 32.0;
+float max_charger_current = 6.0;
 float max_cable_current = 0;
 
 TaskHandle_t charging_manager_task_handle;
@@ -64,6 +64,7 @@ const char *cp_state_to_name(charging_state_t state){
 
 void handle_pp_state_change(proximity_pilot_state_t last_state, proximity_pilot_state_t current_state){
     if(current_state == PROXIMITY_PILOT_STATE_INVALID){
+        turn_relay_off();
         ESP_LOGE(CM_LOGI, "Invalid Cable Detected, Please Plug in Valid Cable");
         release_lock();
         pause_charging_manager();
@@ -71,6 +72,7 @@ void handle_pp_state_change(proximity_pilot_state_t last_state, proximity_pilot_
         set_control_pilot_standby();
     }
     else if(current_state == PROXIMITY_PILOT_STATE_DISCONNECTED && last_state == PROXIMITY_PILOT_STATE_CONNECTED){
+        turn_relay_off();
         ESP_LOGI(CM_LOGI, "Cable Disconnected, Releasing Lock");
         release_lock();
         pause_charging_manager();
@@ -138,11 +140,13 @@ void handle_cp_state_change(charging_state_t last_state, charging_state_t curren
             ESP_LOGE(CM_LOGI, "Charging State E transitioned from %s, Stopping Charging. Pilot Shorted to GND", cp_state_to_name(last_state));
             set_control_pilot_standby();
             turn_relay_off();
+            pause_charging_manager();
             break;
         case charging_state_f:
             ESP_LOGE(CM_LOGI, "Charging State F transitioned from %s, Stopping Charging. Vehicle is Not Valid", cp_state_to_name(last_state));
             set_control_pilot_standby();
-            turn_relay_off(); 
+            turn_relay_off();
+            pause_charging_manager();
             break;
         default:
             break;
@@ -167,13 +171,8 @@ void charging_manager_task(void *args){
         low_voltage = get_low_voltage();
         high_voltage = round(high_voltage);
         low_voltage = round(low_voltage);
+        // ESP_LOGI(CM_LOGI, "High Voltage: %f, Low Voltage: %f", high_voltage, low_voltage);
 
-        // if low voltage is not 12v or -12V, then it is invalid
-        if(low_voltage != 12 && low_voltage != -12){
-            ESP_LOGE(CM_LOGI, "Invalid Low Voltage Detected: %f", low_voltage);
-            current_cp_state = charging_state_f;
-        }
-        else{
             // high voltage is 12V, 9V, 6V, 3V, rest are invalid
             if(high_voltage == 12){
                 current_cp_state = charging_state_a;
@@ -191,7 +190,18 @@ void charging_manager_task(void *args){
                 ESP_LOGE(CM_LOGI, "Invalid High Voltage Detected: %f", high_voltage);
                 current_cp_state = charging_state_e;
             }
+            //  if low voltage is not 12v or -12V, then it is invalid
+        if(last_cp_state == charging_state_a){
+           if(low_voltage != 12 && low_voltage != 9){
+               current_cp_state = charging_state_f;
+           }
+        //    handle_cp_state_change(last_cp_state, current_cp_state);
         }
+        else if(low_voltage!=-12){
+            current_cp_state = charging_state_f;
+            // handle_cp_state_change(last_cp_state, current_cp_state);
+        }
+
         if(current_cp_state != last_cp_state){
             handle_cp_state_change(last_cp_state, current_cp_state);
         }
@@ -208,7 +218,7 @@ charging_state_t get_cp_state(){
     return current_cp_state;
 }
 void start_charging_manager(){
-    xTaskCreate(charging_manager_task, "Charging Manager Task", 4096, NULL, 5, &charging_manager_task_handle);
+    xTaskCreate(charging_manager_task, "Charging Manager Task", 4096, NULL, 1, &charging_manager_task_handle);
 }
 void pause_charging_manager(){
     vTaskSuspend(charging_manager_task_handle);
@@ -220,15 +230,16 @@ void resume_charging_manager(){
 void pp_monitoring_task(void *args){
 
     start_charging_manager();
+    vTaskDelay(50/portTICK_PERIOD_MS);
     pause_charging_manager();
     while(1){
         float voltage = get_proximity_pilot_voltage();
-        ESP_LOGI(CM_LOGI, "Proximity Pilot Voltage: %f V", voltage);
+        // ESP_LOGI(CM_LOGI, "Proximity Pilot Voltage: %f V", voltage);
         float resistance = calc_resistance_from_voltage(voltage);
         if(resistance < 0){
             resistance = 2000;
         }
-        ESP_LOGI(CM_LOGI, "Proximity Pilot Resistance: %f Ohm", resistance);
+        // ESP_LOGI(CM_LOGI, "Proximity Pilot Resistance: %f Ohm", resistance);
         if(resistance >1000){
             current_pp_state = PROXIMITY_PILOT_STATE_DISCONNECTED;
             max_cable_current = 0;
@@ -251,7 +262,7 @@ void pp_monitoring_task(void *args){
             ESP_LOGI(CM_LOGI, "Max Cable Capacity: %f A", max_cable_current);
         }
         last_pp_state = current_pp_state;
-        vTaskDelay(1000/portTICK_PERIOD_MS);
+        vTaskDelay(200/portTICK_PERIOD_MS);
     }
 
 }

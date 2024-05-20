@@ -65,7 +65,7 @@ void init_proximity_pilot(void){
     * @return float Voltage in Volts
 */
 float get_proximity_pilot_voltage(){
-    float voltage;
+    float voltage=0;
     portENTER_CRITICAL(&pp_adc_spinlock);
     for (int i = 0; i < 5; i++) {
         voltage += analogReadMilliVolts(pp_measure_pin);
@@ -91,7 +91,7 @@ float calc_resistance_from_voltage(float voltage){
     int R2 = 1000;
     float Vcc=3.3;
     // temp denotes equivalent resistance value of R2||R3
-    float temp = R1* Vcc/(Vcc-voltage);
+    float temp = R1*  voltage/(Vcc-voltage);
     // finally calculate R3 ie Cable resistance
     float R3 = R2*temp/(R2-temp);
     return R3;
@@ -110,22 +110,23 @@ float get_cable_capacity_from_resistance(float resistance){
     // 220 Ohm is 32 Amps
     // 680 Ohm is 20 Amps
     // 1500 Ohm is 10 Amps
-    // Rc tolerence is 3%
+    // Rc tolerence is 3% but is set to 10%
     // Reference IEC61851-1-2010 43
 
-    if(resistance <= 100*1.03 && resistance >= 100*0.97){
+    if(resistance <= 100*1.1 && resistance >= 100*0.9){
         return 63;
     }
-    else if(resistance <= 220*1.03 && resistance >= 220*0.97){
+    else if(resistance <= 220*1.1 && resistance >= 220*0.9){
         return 32;
     }
-    else if(resistance <= 680*1.03 && resistance >= 680*0.97){
+    else if(resistance <= 680*1.1 && resistance >= 680*0.9){
         return 20;
     }
-    else if(resistance <= 1500*1.03 && resistance >= 1500*0.97){
+    else if(resistance <= 1500*1.1 && resistance >= 1500*0.9){
         return 10;
     }
     else{
+        ESP_LOGE(PP_LOG, "Invalid Cable Resistance: %f", resistance);
         return 0;
     }
 }

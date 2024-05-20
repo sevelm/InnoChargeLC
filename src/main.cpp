@@ -44,7 +44,7 @@ void setup() {
 
 
 //######################### Create Task and Start
-  xTaskCreate(pp_monitoring_task, "PP Monitoring Task", 4096, NULL, 5, NULL);
+  xTaskCreate(pp_monitoring_task, "PP Monitoring Task", 4096, NULL, 1, NULL);
   // xTaskCreate(lock_monitor_task, "Lock Monitor Task", 2048, NULL, 5, NULL);
   // xTaskCreate(A_TaskLow, "Task_Low_Operation", 4096, NULL, 5, NULL);
 
