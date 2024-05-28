@@ -1,0 +1,38 @@
+<link rel="stylesheet" href="tailwind.css">
+<link rel="stylesheet" href="style.css" type="text/css">
+<style>
+    body {
+        background: rgb(215, 236, 250);
+        background: linear-gradient(45deg, rgba(215, 236, 250, 1) 0%, rgba(84, 146, 223, 1) 100%);
+    }
+</style>
+<form id="loginForm" name=loginForm>
+    <img id="patternImg" src="innoamp"><br><br>
+    <input name=userid placeholder='User ID'>
+    <input name=pwd placeholder=Password type=Password>
+    <input type=submit id="checkBut" class=btn value=Login>
+    <div id="errorBox"></div>
+</form>
+<script>
+    let errorBox = document.getElementById("errorBox")
+    let form = document.getElementById("loginForm");
+    document.getElementById("checkBut").addEventListener("click", function () {
+        if (form.userid.value == 'admin' && form.pwd.value == 'admin') {
+            sessionStorage.setItem("login", true);
+            window.open('/index');
+            window.close('/');
+        } else {
+            errorBox.innerHTML = "Error Password or Username";
+            event.preventDefault();
+            sessionStorage.clear();
+        }
+    });
+    /*function check(form) {
+        if (form.userid.value == 'admin' && form.pwd.value == 'admin') {
+            window.open('/index')
+            window.close('/')
+        }
+        else { alert('Error Password or Username') }
+        
+    }*/
+</script>

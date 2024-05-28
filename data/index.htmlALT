@@ -1,0 +1,642 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html lang="de" dir="ltr">
+
+<head>
+    <title>InnoCharge</title>
+    <script src="index.js"></script>
+    <meta http-equiv="CONTENT-TYPE" content="TEXT/HTML; CHARSET=ISO-8859-1">
+    <!--<meta http-equiv="refresh" content="10; index.html">-->
+    <meta name="description" content="">
+    <meta name="keywords" content="">
+    <meta name="language" content="de">
+    <meta name="robots" content="index, follow">
+    <link rel="stylesheet" href="grid.css">
+    <link rel="stylesheet" href="style.css" type="text/css">
+
+    <script language="javascript" type="text/javascript">
+        var reloading;
+
+        function checkReloading() {
+            if (window.location.hash == "#autoreload") {
+                reloading = setTimeout("window.location.reload();", 5000);
+                document.getElementById("reloadCB").checked = true;
+            }
+        }
+
+        function toggleAutoRefresh(cb) {
+            if (cb.checked) {
+                window.location.replace("#autoreload");
+                reloading = setTimeout("window.location.reload();", 5000);
+            } else {
+                window.location.replace("#");
+                clearTimeout(reloading);
+            }
+        }
+
+        window.onload = checkReloading;
+    </script>
+    <style>
+        .gridContainer {
+            display: grid;
+            grid-template-columns: 40vw 40vw;
+            grid-template-rows: minmax(5vw auto);
+            grid-template-areas:
+                "eins 0"
+                "zwei drei"
+                "vier drei"
+            ;
+        }
+
+        @media screen and (max-width: 80rem) {
+
+
+            .gridContainer {
+                grid-template-columns: 96vw 96vw;
+                grid-template-areas:
+                    "eins"
+                    "zwei"
+                    "drei"
+                    "vier"
+                ;
+            }
+        }
+    </style>
+</head>
+
+<body class="flex">
+    <style>
+        aside {
+            height: 150vh;
+        }
+    </style>
+    <nav>
+
+        <label for="touch"><img class="menuSVG" src="menu"></label>
+        <input type="checkbox" id="touch">
+
+        <ul class="slide">
+            <li><a href="/index">Dashboard</a></li>
+            <li><a href="/update">Firmware</a></li>
+            <li><a href="/RFIDWhitelist">RFID Whitelist</a></li>
+            <li><a href="/Einstellungen">Einstellungen</a></li>
+        </ul>
+
+    </nav>
+    <aside id="aside">
+        <ul class="navList">
+            <li id="imgLi">
+                <img id="navImg" src="innoamp">
+            </li>
+
+            <a href="/index">
+                <li style="margin-top:2vw">
+                    <img class="svgsMenu" src="dashboard">
+                    <span>Dashboard</span>
+
+                </li>
+
+            </a>
+            <a href="/update">
+                <li>
+                    <img class="svgsMenu" src="computer">
+
+                    <span>Firmware</span>
+                </li>
+
+            </a>
+            <a href="/RFIDWhitelist">
+                <li>
+                    <img class="svgsMenu" src="list">
+
+                    <span>RFID Whitelist</span>
+                </li>
+            </a>
+            <a href="/Einstellungen">
+                <li>
+                    <img class="svgsMenu" src="settings">
+
+                    <span>Einstellungen</span>
+                </li>
+            </a>
+
+
+        </ul>
+    </aside>
+    <div class="flexBox">
+        <div class="content">
+
+            <h1 class="headLine">Dashboard</h1>
+
+
+
+
+
+
+
+
+
+            <div class="gridContainer" style='display: grid;
+        grid-template-columns: 40vw 40vw;
+        grid-template-rows: minmax(5vw auto);
+        grid-template-areas:
+            "eins fuenf"
+            "zwei drei"
+            "vier drei"
+        ;'>
+                <div id="wallboxSelectment" class="item-1">
+                    <p class="textSelect">Wallboxen:</p>
+
+
+                    <form class="wallboxSelectmentBox" action="/showWallbox">
+                        <select onchange="submit();" class="selectWallbox" id="selectWallbox" name="selectWallbox"
+                            required>
+                            <option value="" disabled selected hidden>%WallboxToShow%</option>
+                            <option>Wallbox1</option>
+                            <option>Wallbox2</option>
+                            <option>Wallbox3</option>
+                            <!--<option>Wallbox4</option>
+                            <option>Wallbox5</option>-->
+                        </select>
+                    </form>
+                </div>
+                <div class="item-5 griditem">
+                    <table cellspacing="10" >
+                        <tr>
+                            <td>
+                                <p>Auto Refresh (5 Sek)</p>
+                            </td>
+                            <td>
+                                <input type="checkbox" onclick="toggleAutoRefresh(this);" id="reloadCB">
+                            </td>
+                            <td>
+                                <p>Maximum Grid Current: </p>
+                            </td>
+                            <td>							
+							<form name="Control_Current" action="/MaxGridCurrent">
+                                <td>
+									<input class="maxamp" name="MaxGridCurrent" type="number" value="%MaxGridCurrent%"
+                                        min="0" max="999" />
+                                    <input type="submit" hidden>
+                                </td>
+                            </form>
+							    <td>
+                                <p>A</p>
+								</td>
+                            </td>
+                        </tr>
+                    </table>
+
+                </div>
+
+
+
+                <div class="item-2 griditem">
+                    <h1 class="cardHeadLine">Status Typ2
+                        Ladecontroller</h1>
+
+
+                    <br>
+                    <table align="center">
+                        <tr>					
+								<p>The first random number is: <span id='EnMtr1'>-</span></p>
+								<p>The second random number is: <span id='rand2'>-</span></p>					
+								<p><button type='button' id='BTN_SEND_BACK'>
+								Send info to ESP32
+								</button></p>
+                        </tr>					
+<script>
+  var Socket;
+  document.getElementById('BTN_SEND_BACK').addEventListener('click', button_send_back);
+  function init() {
+    Socket = new WebSocket('ws://' + window.location.hostname + ':81/');
+    Socket.onmessage = function(event) {
+      processCommand(event);
+    };
+  }
+  function button_send_back() {
+    var msg = {
+	brand: 'Gibson',
+	type: 'Les Paul Studio',
+	year:  2010,
+	color: 'white'
+	};
+	Socket.send(JSON.stringify(msg));
+  }
+  function processCommand(event) {
+	var obj = JSON.parse(event.data);
+	document.getElementById('EnMtr1').innerHTML = obj.EnMtr1;
+	document.getElementById('rand2').innerHTML = obj.rand2;
+    console.log(obj);
+	console.log(obj.rand2);
+  }
+  window.onload = function(event) {
+    init();
+  }
+</script>
+
+
+
+
+
+
+
+
+
+					
+                        <tr>
+                            <td class="firstColumn">
+                                <p>EVSE Status:</p>
+                            </td>
+                            <td>
+                                <p class="secondColumn">%ChContr1%</p>
+                            </td>
+                            <td>
+                                <p class="secondColumn">%EVSEStatus%</p>
+                            </td>
+
+                        <tr>
+                            <td class="firstColumn">
+                                <p>ActualModbus ID:</p>
+                            </td>
+                            <td>
+                                <p class="secondColumn">%ChContr2%</p>
+                            </td>
+                            <td>
+                                <p></p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="firstColumn">
+                                <p>Installed Amps:</p>
+                            </td>
+                            <td>
+                                <p class="secondColumn">%ChContr3%</p>
+                            </td>
+                            <td>
+                                <p>A</p>
+                            </td>
+                        </tr>
+                        <form name="setChContr" action="/unlock">
+                            <tr>
+
+                                <td class="firstColumn">
+                                    <p>Force:</p>
+                                </td>
+
+                                <td>
+                                    <p class="secondColumn">%ChContr4%</p>
+                                </td>
+                                <td>
+                                    <div class="toggle">
+                                        <label>
+                                            <input type="checkbox" class="ChCo4_en" name="ChCo4_en" id="ChCo4_en"
+                                                onchange="submit();" /><i class="slider"></i>
+                                        </label>
+                                    </div>
+                                </td>
+
+                            </tr>
+                        </form>
+                        <form name="setChContr" action="/release">
+                            <tr>
+                                <td class="firstColumn">
+                                    <p>Station Release:</p>
+                                </td>
+                                <td>
+                                    <p class="secondColumn">%ChContr5%</p>
+                                </td>
+                                <td>
+                                    <div class="toggle">
+                                        <label>
+                                            <input type="checkbox" class="ChCo5_en" name="ChCo5_en" id="ChCo5_en"
+                                                onchange="submit();" /><i class="slider"></i>
+                                        </label>
+                                    </div>
+                                </td>
+
+                            </tr>
+                        </form>
+                        <script src="https://code.jquery.com/jquery-latest.js"></script>
+                        <script>
+                            if ($('#ChCo4_en').val() == "%ChCo4_en%") {
+                                $('#ChCo4_en').attr("checked", "checked");
+                            } else {
+                                $('#ChCo4_en').removeAttr("checked");
+                            }
+                            if ($('#ChCo5_en').val() == "%ChCo5_en%") {
+                                $('#ChCo5_en').attr("checked", "checked");
+                            } else {
+                                $('#ChCo5_en').removeAttr("checked");
+                            }
+
+                        </script>
+
+                        <form name="setThrottledC" action="/setThCu">
+                            <tr>
+                                <td class="firstColumn">
+                                    <p>ThrottledCurrent:</p>
+                                </td>
+                                <td>
+                                    <p class="secondColumn">%ChContr6%</p>
+                                </td>
+                                <td>
+                                    <p>A</p>
+                                </td>
+                                <td><input class="ampinput" name="ChContr6_val" type="number" value="%ChContr6_val%"
+                                        min="0" max="%ChContr3%" />
+                                    <input type="submit" hidden>
+                                </td>
+                            </tr>
+                        </form>
+
+                    </table>
+                </div>
+
+                <div class="item-3 griditem">
+                    <h1 class="cardHeadLine">Status Energymeter</h1>
+
+
+                    <br>
+                    <table class="tableStyle">
+                        <tr>
+                            <td class="firstColumn">
+                                <p>L1 Voltage:</p>
+                            </td>
+                            <td>
+                                <p class="secondColumn">%EnMtr1%</p>
+                            </td>
+                            <td class="thirdColumn">
+                                <p>V</p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="firstColumn">
+                                <p>L2 Voltage:</p>
+                            </td>
+                            <td>
+                                <p class="secondColumn">%EnMtr2%</p>
+                            </td>
+                            <td class="thirdColumn">
+                                <p>V</p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="firstColumn">
+                                <p>L3 Voltage:</p>
+                            </td>
+                            <td>
+                                <p class="secondColumn">%EnMtr3%</p>
+                            </td>
+                            <td class="thirdColumn">
+                                <p>V</p>
+                            </td>
+                        </tr>
+
+                        <tr>
+                            <td class="firstColumn">
+                                <p>L1 Ampere:</p>
+                            </td>
+                            <td>
+                                <p class="secondColumn">%EnMtr5%</p>
+                            </td>
+                            <td class="thirdColumn">
+                                <p>A</p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="firstColumn">
+                                <p>L2 Ampere:</p>
+                            </td>
+                            <td>
+                                <p class="secondColumn">%EnMtr6%</p>
+                            </td>
+                            <td class="thirdColumn">
+                                <p>A</p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="firstColumn">
+                                <p>L3 Ampere:</p>
+                            </td>
+                            <td>
+                                <p class="secondColumn">%EnMtr7%</p>
+                            </td>
+                            <td class="thirdColumn">
+                                <p>A</p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="firstColumn">
+                                <p>Total Active Power:</p>
+                            </td>
+                            <td>
+                                <p class="secondColumn">%EnMtr8%</p>
+                            </td>
+                            <td class="thirdColumn">
+                                <p>kW</p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="firstColumn">
+                                <p>L1 Active Power:</p>
+                            </td>
+                            <td>
+                                <p class="secondColumn">%EnMtr9%</p>
+                            </td>
+                            <td class="thirdColumn">
+                                <p>kW</p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="firstColumn">
+                                <p>L2 Active Power:</p>
+                            </td>
+                            <td>
+                                <p class="secondColumn">%EnMtr10%</p>
+                            </td>
+                            <td class="thirdColumn">
+                                <p>kW</p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="firstColumn">
+                                <p>L3 Active Power:</p>
+                            </td>
+                            <td>
+                                <p class="secondColumn">%EnMtr11%</p>
+                            </td>
+                            <td class="thirdColumn">
+                                <p>kW</p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="firstColumn">
+                                <p>Total Active Energy:</p>
+                            </td>
+                            <td>
+                                <p class="secondColumn">%EnMtr12%</p>
+                            </td>
+                            <td class="thirdColumn">
+                                <p>kWh</p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="firstColumn">
+                                <p>Forward Active Enery:</p>
+                            </td>
+                            <td>
+                                <p class="secondColumn">%EnMtr13%</p>
+                            </td>
+                            <td class="thirdColumn">
+                                <p>kWh</p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="firstColumn">
+                                <p>Reverse Active Enery:</p>
+                            </td>
+                            <td>
+                                <p class="secondColumn">%EnMtr14%</p>
+                            </td>
+                            <td class="thirdColumn">
+                                <p>kWh</p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <!--    <td><p>Meter ID:</p></td>	
+                <td><p>%EnMtr15%</p></td>
+				<td><p></p></td>
+                </tr>
+				<tr>				
+			    <td><p>Baudrate:</p></td>	
+                <td><p>%EnMtr16%</p></td>
+				<td><p></p></td>
+                </tr>-->
+                            <br>
+
+
+                    </table>
+                    <br>
+                </div>
+
+                <div class="item-4 griditem">
+                    <h1 class="cardHeadLine">Status Rfid</h1>
+
+
+                    <br>
+                    <table align="center">
+                        <tr>
+                            <td>
+                                <p>Card-Serial:</p>
+                            </td>
+                            <td>
+                                <p>%RFID1%:%RFID2%:%RFID3%:%RFID4%</p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <form name="control_led" action="/contrLED">
+                                <td>
+                                    <p>LED</p>
+                                </td>
+                              <!--  <p class="range-field" style=" width:60px">
+                                    <input type="range" id="RangeFilter" name="points" onchange="filterme(this.value);"
+                                        min="1" class="rangeAll" max="3" value="1">
+                                </p>
+                                <script>
+                                    let RangeFilter = document.getElementById("RangeFilter").value;
+                                        console.log(RangeFilter)
+                                    if(RangeFilter == 0){
+                                        RangeFilter = 2;
+                                    }
+                                    if(RangeFilter == 1){
+                                        RangeFilter = 2;
+                                    }
+                                    if(RangeFilter == 2){
+                                        RangeFilter = 3;
+                                    }
+                                    
+                                </script>-->
+                                <td><input class="contrLed" name="contrLed" type="number" value="%contrLed%" min="0"
+                                        max="2" />
+                                    <input type="submit" hidden>
+                                </td>
+                                <td>
+                                    <p>1 = Gr&uuml;ne Led<br>
+                                        2 = Rote Led<br>
+                                        0 = Led Aus</p>
+                                </td>
+                            </form>
+                        </tr>
+
+                        <!--<tr>
+                            
+
+                                <td>
+                                    <p>LED Red</p>
+                                </td>
+                                <td>
+                         
+                                </td>
+								
+							
+                        </tr>-->
+                        <tr>
+                            <form name="control_led" action="/contrBuzzer">
+                                <td>
+                                    <p>Buzzer</p>
+                                </td>
+                                <td>
+                                    <div class="toggle state">
+                                        <label>
+                                            <input type="checkbox" class="buzzer" name="buzzer" id="buzzer"
+                                                onchange="submit();" /><i class="slider"></i>
+                                        </label>
+                                    </div>
+                                </td>
+                            </form>
+                            <script src="https://code.jquery.com/jquery-latest.js"></script>
+                            <script>
+                                /*if ($('#led_green').val() == "%led_green%") {
+                                    $('#led_green').attr("checked", "checked");
+
+                                } else {
+                                    $('#led_green').removeAttr("checked");
+                                }
+                                if ($('#led_red').val() == "%led_red%") {
+                                    $('#led_red').attr("checked", "checked");
+
+                                } else {
+                                    $('#led_red').removeAttr("checked");
+                                }*/
+
+                                if ($('#buzzer').val() == "%buzzer%") {
+                                    $('#buzzer').attr("checked", "checked");
+                                } else {
+                                    $('#buzzer').removeAttr("checked");
+                                }
+
+                            </script>
+
+                        </tr>
+                        <tr>
+                </div>
+                <!--<td><p>Last Card-Serial in:</p></td>
+                    <td><p></p></td>
+                </tr>-->
+
+
+                <br><br><br>
+
+
+
+            </div>
+            </td>
+
+
+            </tr>
+        </div>
+
+    </div>
+</body>
+
+</html>

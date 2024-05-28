@@ -6,16 +6,56 @@
 #include "esp_event.h"
 #include "nvs_flash.h"
 #include "SPIFFS.h"
+#include "ESPAsyncWebServer.h" // needed to create a simple webserver (make sure tools -> board is set to ESP32, otherwise you will get a "WebServer.h: No such file or directory" error)
+#include "AsyncTCP.h"
+#include "WebSocketsServer.h"  // needed for instant communication between client and server through Websockets
+#include "ArduinoJson.h"       // needed for JSON encapsulation (send multiple variables with one string)
 
 #include "ethernet_manager.hpp"
 #include "lock_ctrl.hpp"
-#include "A_TaskLow.hpp"
+#include "A_Task_Low.hpp"
+#include "A_Task_Web.hpp"
 #include "ledEffect.hpp"
 #include "AA_globals.h"
 #include "A_Task_CP.hpp"
 
 
 const char *MAIN_TAG = "Main: ";
+
+
+// Initialization of webserver and websocket
+AsyncWebServer server(80);                            // the server uses port 80 (standard port for websites
+class CaptiveRequestHandler : public AsyncWebHandler {
+public:
+    CaptiveRequestHandler() {}
+    virtual ~CaptiveRequestHandler() {}
+
+    bool canHandle(AsyncWebServerRequest *request) {
+        // This handler will handle all requests
+        return true;
+    }
+
+    void handleRequest(AsyncWebServerRequest *request) {
+        File file = SPIFFS.open("/index.html", "r");
+        if (!file) {
+            // If the file cannot be opened, send a default response
+            AsyncResponseStream *response = request->beginResponseStream("text/html");
+            response->print("<!DOCTYPE html><html><head><title>Captive Portal</title></head><body>");
+            response->print("<p>Failed to open file for reading.</p>");
+            response->printf("<p>You were trying to reach: http://%s%s</p>", request->host().c_str(), request->url().c_str());
+            response->printf("<p>Try opening <a href='http://%s'>this link</a> instead</p>", WiFi.softAPIP().toString().c_str());
+            response->print("</body></html>");
+            request->send(response);
+        } else {
+            // If the file is opened successfully, send its content
+            AsyncWebServerResponse *response = request->beginResponse(SPIFFS, "/index.html", "text/html");
+            request->send(response);
+            file.close();
+        }
+    }
+};
+
+
 
 
 //Globals
@@ -32,42 +72,9 @@ charging_state_t currentCpState = StateA_NotConnected;
 //////////////////////////////////////////////////// Setup ///////////////////////////////////////////////////
 //////////////////////////////////////////////////// Setup ///////////////////////////////////////////////////
 void setup() {
+    ESP_LOGI(MAIN_TAG, "Starting up EVSE Test Programm!");
 
-  ESP_LOGI(MAIN_TAG, "Starting up EVSE Test Programm!");
-
-
-//######################### LED-Pixles 
-  strip.Begin();              // INITIALIZE NeoPixel strip object (REQUIRED)
-  strip.Show();               // Initialize all strip to 'off'
-    for (int i = 0; i < 8; i++){
-       strip.SetPixelColor(i, RgbColor(0, 0, 255)); 
-    }
-  strip.Show();   // Send the updated pixel colors to the hardware.
-
-//######################### Webserver Start
-  // Initialize SPIFFS
-if(!SPIFFS.begin(true)){
-    ESP_LOGI(MAIN_TAG, "An Error has occurred while mounting SPIFFS");
-    return;
-  }
-  
-
-
-
-
-
-//######################### Create Task and Start
-  xTaskCreate(A_Task_CP, "Controlpilot Task", 4096, NULL, 1, NULL);
-  //xTaskCreate(pp_monitoring_task, "PP Monitoring Task", 4096, NULL, 1, NULL);
-  // xTaskCreate(lock_monitor_task, "Lock Monitor Task", 2048, NULL, 5, NULL);
-  xTaskCreate(A_TaskLow, "Task_Low_Operation", 4096, NULL, 5, NULL);
-
-  // xTaskCreate(relay_ctrl_test_task, "Relay Control Test Task", 2048, NULL, 5, NULL);
-
- // esp_netif_init();
-//  esp_event_loop_create_default();
-//  start_eth();
-
+    //######################### Initialize NVS
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
@@ -75,6 +82,7 @@ if(!SPIFFS.begin(true)){
     }
     ESP_ERROR_CHECK(ret);
 
+    //######################### Initialize TCP/IP Stack and Default Event Loop
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
@@ -82,8 +90,46 @@ if(!SPIFFS.begin(true)){
     start_eth(); // Start Ethernet
     ESP_LOGI(MAIN_TAG, "Ethernet started.");
 
+    //######################### LED-Pixles 
+    strip.Begin();              // INITIALIZE NeoPixel strip object (REQUIRED)
+    strip.Show();               // Initialize all strip to 'off'
+    for (int i = 0; i < 8; i++) {
+        strip.SetPixelColor(i, RgbColor(0, 0, 255)); 
+    }
+    strip.Show();   // Send the updated pixel colors to the hardware.
 
-  }
+    //######################### Webserver Start
+    // Initialize SPIFFS
+    if(!SPIFFS.begin(true)){
+        ESP_LOGI(MAIN_TAG, "An Error has occurred while mounting SPIFFS");
+        return;
+    }
+    server.addHandler(new CaptiveRequestHandler());
+
+    //###################### Allgemein-Seite via SPIFFS  
+      // Login Seite Laden
+      server.on("/", HTTP_GET, [](AsyncWebServerRequest * request) {
+        request->send(SPIFFS, "/index.html", "text/html");
+      });
+      // Index Seite Laden
+      server.on("/index", HTTP_GET, [](AsyncWebServerRequest * request) {
+        request->send(SPIFFS, "/index.html", "text/html");
+      });
+
+    server.begin();                     // start server -> best practice is to start the server after the websocket
+    server.serveStatic("/", SPIFFS, "/");
+    //webSocket.begin();                  // start websocket
+    //webSocket.onEvent(webSocketEvent);  // define a callback function -> what does the ESP32 need to do when an event from the websocket is received? -> run function "webSocketEvent()"
+
+    //######################### Create Task and Start
+    xTaskCreatePinnedToCore(A_Task_CP, "Controlpilot Task", 8192, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(A_Task_Web, "Task_Web_Operation", 8192, NULL, 4, NULL, 1);
+    xTaskCreatePinnedToCore(A_Task_Low, "Task_Low_Operation", 8192, NULL, 5, NULL, 1);
+
+    // xTaskCreate(pp_monitoring_task, "PP Monitoring Task", 4096, NULL, 1, NULL);
+    // xTaskCreate(lock_monitor_task, "Lock Monitor Task", 2048, NULL, 5, NULL);
+    // xTaskCreate(relay_ctrl_test_task, "Relay Control Test Task", 2048, NULL, 5, NULL);
+}
 
 
 //////////////////////////////////////////////////// Loop ///////////////////////////////////////////////////
@@ -91,16 +137,11 @@ if(!SPIFFS.begin(true)){
 //////////////////////////////////////////////////// Loop ///////////////////////////////////////////////////
 //////////////////////////////////////////////////// Loop ///////////////////////////////////////////////////
 void loop() {
-// control LED
-callLedEffect();
+    // control LED
+    callLedEffect();
 
-
-//  lock_lock();
-//  vTaskDelay(5000 / portTICK_PERIOD_MS);
-//  release_lock();
-//  vTaskDelay(5000 / portTICK_PERIOD_MS);
-
-
-
-
+    // lock_lock();
+    // vTaskDelay(5000 / portTICK_PERIOD_MS);
+    // release_lock();
+    // vTaskDelay(5000 / portTICK_PERIOD_MS);
 }

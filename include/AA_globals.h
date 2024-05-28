@@ -27,6 +27,12 @@ typedef enum {
 } charging_state_t;
 
 extern charging_state_t currentCpState;
+const char* cpStateToName(charging_state_t state);
+
+extern volatile charging_state_t vCurrentCpState;
+extern volatile uint32_t lastStateChangeTime;
+extern volatile charging_state_t currentCpStateDelay;
+
 // CP-Measurements declaration END
 
 // Deklaration des NeoPixel-Strip-Objekts

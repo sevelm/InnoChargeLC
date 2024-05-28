@@ -9,6 +9,6 @@ void A_Task_CP(void *pvParameter);
 //} proximity_pilot_state_t;
 
 // CP-State Delay
-static uint32_t lastStateChangeTime = 0;
-static charging_state_t currentCpStateDelay;
+
+
 

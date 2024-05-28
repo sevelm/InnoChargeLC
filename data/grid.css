@@ -1,0 +1,37 @@
+.gridContainer {
+    /**display: grid;
+    grid-template-columns:  auto auto ;
+    grid-template-areas:
+        "eins"
+    ;**/
+}
+
+.item-1 {
+    grid-area: eins;
+}
+
+.item-2 {
+    grid-area: zwei;
+}
+
+.item-3 {
+    grid-area: drei;
+}
+
+.item-4 {
+    grid-area: vier;
+}
+
+.item-5{
+    grid-area: fuenf;
+}
+.item-6{
+    grid-area: sechs;
+}
+.griditem {
+    background-color: white;
+    -webkit-box-shadow: 0px 5px 15px -10px rgba(0, 0, 0, 0.61);
+    box-shadow: 0px 5px 15px -10px rgba(0, 0, 0, 0.61);
+    margin: 1vw;
+    padding: 1vw;
+}

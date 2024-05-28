@@ -3,7 +3,8 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "esp_event.h"
-#include "A_TaskLow.hpp"
+#include "A_Task_Low.hpp"
+#include "A_Task_CP.hpp"
 #include "SPIFFS.h"
 
 
@@ -15,30 +16,7 @@
 const char *CP_LOGI = "Task_Low: ";
 
 
-const char *cpStateToName(charging_state_t state){
-    switch(state){
-        case StateA_NotConnected:
-            return "Charging State A";
-        case StateB_Connected:
-            return "Charging State B";
-        case StateC_Charge:
-            return "Charging State C";
-        case StateD_VentCharge:
-            return "Charging State D";
-        case StateE_Error:
-            return "Charging State E";
-        case StateF_Fault:
-            return "Charging State F";
-        case StateCustom_CpRelayOff:
-            return "Charging State CP-Relay OFF";
-        case StateCustom_DutyCycle_100:
-            return "Charging State DutyCycle 100%";
-        case StateCustom_DutyCycle_0:
-            return "Charging State DutyCycle 0%";
-        default:
-            return "Invalid State";
-    }
-}
+
 
 
 
@@ -49,7 +27,7 @@ const char *cpStateToName(charging_state_t state){
 //////////////////////////////////////////////////// Setup ///////////////////////////////////////////////////
 //////////////////////////////////////////////////// Setup ///////////////////////////////////////////////////
 //////////////////////////////////////////////////// Setup ///////////////////////////////////////////////////
-void A_TaskLow(void *pvParameter){
+void A_Task_Low(void *pvParameter){
  char eth_ip[16];
 
 //////////////////////////////////////////////////// Loop ///////////////////////////////////////////////////

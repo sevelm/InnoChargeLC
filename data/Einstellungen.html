@@ -1,0 +1,1019 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html lang="de" dir="ltr">
+
+<head>
+  <title>InnoCharge</title>
+  <meta http-equiv="CONTENT-TYPE" content="TEXT/HTML; CHARSET=ISO-8859-1">
+  <!--<meta http-equiv="refresh" content="10; index.html">-->
+  <meta name="description" content="">
+  <meta name="keywords" content="">
+  <meta name="language" content="de">
+  <meta name="robots" content="index, follow">
+  <link rel="stylesheet" href="grid.css">
+
+  <script src="index.js" defer></script>
+  <link rel="stylesheet" href="tailwind.css" type="text/css">
+
+  <link rel="stylesheet" href="style.css" type="text/css">
+</head>
+<style>
+  aside {
+    height: 220vh;
+  }
+</style>
+
+<body class="flex">
+  <aside>
+    <ul class="navList">
+      <li id="imgLi">
+        <img id="navImg" src="innoamp">
+      </li>
+
+      <a href="/index">
+        <li style="margin-top:2vw">
+          <img class="svgsMenu" src="dashboard">
+          <span>Dashboard</span>
+
+        </li>
+
+      </a>
+      <a href="/manager">
+        <li>
+          <img class="svgsMenu" src="computer">
+
+          <span>Firmware</span>
+        </li>
+
+      </a>
+      <a href="/RFIDWhitelist">
+        <li>
+          <img class="svgsMenu" src="list">
+
+          <span>RFID Whitelist</span>
+        </li>
+      </a>
+      <a href="/Einstellungen">
+        <li class="btns activeNav">
+          <img class="svgsMenu" src="settings">
+
+          <span>Einstellungen</span>
+        </li>
+      </a>
+
+
+    </ul>
+  </aside>
+  <div id="loadingBox">
+    <div class="lds-spinner">
+      <div></div>
+      <div></div>
+      <div></div>
+      <div></div>
+      <div></div>
+      <div></div>
+      <div></div>
+      <div></div>
+      <div></div>
+      <div></div>
+      <div></div>
+      <div></div>
+    </div>
+  </div>
+  <div class="flexBox" id="flexBox">
+    <h1 class="headLine">Einstellungen</h1>
+    <div class="content">
+
+
+      <div class="gridContainer" style='  display: grid;
+    grid-template-columns: 40vw 40vw;
+        grid-template-rows: minmax(5vw auto);
+        grid-template-areas:
+        "zwei drei"
+        "eins drei"
+		    "vier fuenf"
+        "sechs null"
+    ;'>
+
+        <!--<div id="wallboxSelectment" class="item-1">
+          <p class="textSelect">Anzahl Wallboxen:</p>
+
+
+          <form class="wallboxSelectmentBox" id="slaveForm" name="anzSlave" action="/numSlaves">
+            <input style="width: 10vw;" type="number" class="numSlaves" id="selectWallbox" placeholder="1"
+              name="numSlaves" id="numSlaves" min="1" max="3" value="%numSlaves%" /><input type="submit" hidden />
+          </form>
+            
+          
+        			</div>-->
+        <div class="item-1 griditem">
+          <h1 class="cardHeadLine">Zeitzone</h1>
+          <br><br>
+
+
+          <table>
+            <tr>
+              <td>
+                <h3>NTP (Network Time Protocol): &nbsp;&nbsp;&nbsp;&nbsp;</h3>
+              </td>
+              <td>
+                <div class="toggle state">
+                  <label>
+                    <input type="checkbox" class="stateNTP" name="stateNTP" id="stateNTP" /><i class="slider"></i>
+                  </label>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <h3>Server:<h3>
+              </td>
+              <td>
+                <input class="ntpinput" type="text" name="ntpServer" id="ntpServervalue" value="" /></input>
+              </td>
+
+            </tr>
+            <tr>
+              <td>
+                <h3>Aktuelle Ortszeit: </h3>
+              </td>
+              <td>
+                <p class="secondColumn" id="localTime">
+                <p>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <h3>Beispiel NTP Server: &nbsp;&nbsp;&nbsp;&nbsp;</h3>
+              </td>
+              <td>
+                <p>pool.ntp.org</p>
+                <p>time.google.com</p>
+                <p>time.apple.com</p>
+              </td>
+              <td>
+                <p>europe.pool.ntp.org</p>
+                <p>time.windows.com</p>
+                <p>time.cloudflare.com</p>
+              </td>
+            </tr>
+          </table>
+          <br><br>
+          <button class="btnsSettings" onclick="if (confirm('Sind Sie sicher?') == true){
+              ntpInputSendBack()
+            }else{}" href="index.html">Speichern</button>
+          <script>
+
+
+          </script>
+          <script type="text/javascript" src="http://ajax.googleapis.com/ajax/libs/jquery/1.8.3/jquery.min.js"></script>
+          <script type="text/javascript">
+
+            $(".ntpinput").attr("disabled", "disabled");
+            $(function () {
+              $(".stateNTP").click(function () {
+                if ($(this).is(":checked")) {
+                  $(".ntpinput").removeAttr("disabled");
+                  $(".ntpinput").removeAttr("readonly");
+                  //$("").removeAttr("disabled");
+                  //$(".ipinput").focus();
+                } else {
+                  $(".ntpinput").attr("disabled", "disabled");
+                }
+              });
+            });
+          </script>
+          <script src="https://code.jquery.com/jquery-latest.js"></script>
+          <script>
+
+
+            if ($('#stateNTP').val() == "%stateNTP%") {
+              $('#stateNTP').attr("checked", "checked");
+              $(".ntpinput").removeAttr("disabled");
+              $(".ntpinput").removeAttr("readonly");
+
+            } 
+          </script>
+
+        </div>
+
+        <div class="item-4 griditem">
+          <h1 class="cardHeadLine">OCPP Einstellungen</h1>
+          <br><br>
+          <table align="center">
+            <tr>
+              <td>
+                <h3>Aktivieren: &nbsp;&nbsp;&nbsp;&nbsp;</h3>
+              </td>
+              <td>
+                <div class="toggle state">
+                  <label>
+                    <input type="checkbox" class="stateOCPP" name="stateOCPP" id="stateOCPP" /><i class="slider"></i>
+                  </label>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <h3>TLS: &nbsp;&nbsp;&nbsp;&nbsp;</h3>
+              </td>
+              <td>
+                <div class="toggle state">
+                  <label>
+                    <input type="checkbox" class="StateOCPP_TLS" name="StateOCPP_TLS" id="StateOCPP_TLS" /><i
+                      class="slider"></i>
+                  </label>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <h3>Server Host-Adresse: &nbsp;&nbsp;&nbsp;&nbsp;<h3>
+              </td>
+              <td>
+                <input class="ocppinput" type="text" name="ocppHostIp" id="ocppHostIp" placeholder="mein-ocpp.dyns"
+                  required /></input>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <h3>Server Port: &nbsp;&nbsp;&nbsp;&nbsp;<h3>
+              </td>
+              <td>
+                <input class="ocppinput" type="text" name="ocppHostPort" id="ocppHostPort" placeholder="8080"
+                  pattern="^[0-9]{1,5}$" required /></input>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <h3>AuthenticationID: &nbsp;&nbsp;&nbsp;&nbsp;<h3>
+              </td>
+              <td>
+                <input class="ocppinput" type="text" name="ocppHostAuthId" id="ocppHostAuthId"
+                  placeholder="innocharge.test" /></input>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <h3>AuthenticationKey: &nbsp;&nbsp;&nbsp;&nbsp;<h3>
+              </td>
+              <td>
+                <input class="ocppinput" type="text" name="ocppHostAuthKey" id="ocppHostAuthKey"
+                  placeholder="ABCDE1234" /></input>
+              </td>
+            </tr>
+
+          </table>
+          <table align="center">
+            <tr>
+              <td>
+                <h3>Server URL: &nbsp;&nbsp;&nbsp;&nbsp;<h3>
+              </td>
+              <td>
+                <input class="ocppinput" type="text" name="ocppHostUrl" id="ocppHostUrl" size=60
+                  placeholder="ws://mein-ocpp-server.dyns/innocharge" required /></input>
+              </td>
+            </tr>
+          </table>
+          <br><br>
+          <button class="btnsSettings" onclick="if (confirm('Sind Sie sicher?') == true){
+              ocppInputSendBackFunc()
+            }else{}" href="index.html">Speichern</button>
+          <script src="https://code.jquery.com/jquery-latest.js"></script>
+          <script>
+            if ($('#stateOCPP').val() == "%stateOCPP%") {
+              $('#stateOCPP').attr("checked", "checked");
+            } else {
+              $('#stateOCPP').removeAttr("checked");
+            }
+            if ($('#StateOCPP_TLS').val() == "%StateOCPP_TLS%") {
+              $('#StateOCPP_TLS').attr("checked", "checked");
+            } else {
+              $('#StateOCPP_TLS').removeAttr("checked");
+            }
+          </script>
+
+        </div>
+
+        <div class="item-2 griditem">
+          <h1 class="cardHeadLine">Status
+            Allgemein</h1>
+
+          <br>
+          <h3>Netzwerk-Einstellungen</h3>
+
+          <table align="center">
+
+
+
+
+            <div id="IpZuweisung" class="toggle text">
+              <p id="ipHeadLine">IP Zuweisung:</p>
+
+              <label id="ipCheckBox">
+                <input type="checkbox" name="ipassign" id="ipassign" /><i class="slider"></i>
+              </label>
+            </div>
+
+
+            <table align="center">
+
+              <tr>
+                <td>
+                  <p>IP-Adresse:</p>
+                </td>
+                <td> <input class="ipinput" value="" size=22 pattern="^[0-9]{1,3}$" id="IP_WebInf1" required /></td>
+                <td><b>.</b></td>
+                <td> <input class="ipinput" name="IP_WebInf2" type="text" value="" size=22 pattern="^[0-9]{1,3}$"
+                    id="IP_WebInf2" required /></td>
+                <td><b>.</b></td>
+                <td> <input class="ipinput" name="IP_WebInf3" type="text" value="" size=22 pattern="^[0-9]{1,3}$"
+                    id="IP_WebInf3" required /></td>
+                <td><b>.</b></td>
+                <td> <input class="ipinput" id="IP_WebInf4" name="IP_WebInf4" type="text" value="" size=22
+                    pattern="^[0-9]{1,3}$" required />
+                </td>
+              </tr>
+
+              <tr>
+                <td>
+                  <p>Subnetmaske:</p>
+                </td>
+                <td><input class="ipinput" id="SUB_WebInf1" name="SUB_WebInf1" type="text" value='' size=22
+                    pattern="^[0-9]{1,3}$" required /></td>
+                <td><b>.</b></td>
+                <td><input class="ipinput" id="SUB_WebInf2" name="SUB_WebInf2" type="text" value='' size=22
+                    pattern="^[0-9]{1,3}$" required /></td>
+                <td><b>.</b></td>
+                <td><input class="ipinput" id="SUB_WebInf3" name="SUB_WebInf3" type="text" value='' size=22
+                    pattern="^[0-9]{1,3}$" required /></td>
+                <td><b>.</b></td>
+                <td><input class="ipinput" id="SUB_WebInf4" name="SUB_WebInf4" type="text" value='' size=22
+                    pattern="^[0-9]{1,3}$" required /></td>
+              </tr>
+              <tr>
+                <td>
+                  <p>Gateway:</p>
+                </td>
+                <td><input class="ipinput" id="GATE_WebInf1" name="GATE_WebInf1" type="text" value='' size=22
+                    pattern="^[0-9]{1,3}$" required /></td>
+                <td><b>.</b></td>
+                <td><input class="ipinput" id="GATE_WebInf2" name="GATE_WebInf2" type="text" value='' size=22
+                    pattern="^[0-9]{1,3}$" required /></td>
+                <td><b>.</b></td>
+                <td><input class="ipinput" id="GATE_WebInf3" name="GATE_WebInf3" type="text" value='' size=22
+                    pattern="^[0-9]{1,3}$" required /></td>
+                <td><b>.</b></td>
+                <td><input class="ipinput" id="GATE_WebInf4" name="GATE_WebInf4" type="text" value='' size=22
+                    pattern="^[0-9]{1,3}$" required /></td>
+              </tr>
+
+
+              <tr>
+                <td>
+                  <p>DNS:</p>
+                </td>
+                <td> <input class="ipinput" id="DNS_WebInf1" type="text" value="" size=22 pattern="^[0-9]{1,3}$"
+                    required /></td>
+                <td><b>.</b></td>
+                <td> <input class="ipinput" id="DNS_WebInf2" type="text" value="" size=22 pattern="^[0-9]{1,3}$"
+                    required /></td>
+                <td><b>.</b></td>
+                <td> <input class="ipinput" id="DNS_WebInf3" type="text" value="" size=22 pattern="^[0-9]{1,3}$"
+                    required /></td>
+                <td><b>.</b></td>
+                <td> <input class="ipinput" id="DNS_WebInf4" type="text" value="" size=22 pattern="^[0-9]{1,3}$"
+                    required />
+                </td>
+              </tr>
+              <script type="text/javascript"
+                src="http://ajax.googleapis.com/ajax/libs/jquery/1.8.3/jquery.min.js"></script>
+              <script type="text/javascript" defer>
+
+
+              </script>
+
+              <script src="https://code.jquery.com/jquery-latest.js"></script>
+              <script>
+
+                var reloadIntervarl = setInterval(() => {
+                  if (document.getElementById("ipassign").checked) {
+                    $(".ipinput").removeAttr("disabled");
+                    $(".ipinput").removeAttr("readonly");
+
+                  } else {
+                    $(".ipinput").attr("disabled", "disabled");
+                  }
+                }, 100);
+
+              </script>
+            </table>
+            <br><br><br>
+            <button id="ipSettingsSendBack" onclick="if (confirm('Sind Sie sicher?') == true){
+                ipInputSendBackFunc()
+              }else{}" type="button" class="btnsSettings">Speichern</button>
+            
+            </tr>
+            <tr>
+
+        </div>
+
+
+        <div class="item-3 griditem">
+
+          <h1 class="cardHeadLine">Status
+            Wallboxen</h1>
+          <td class="mainbg" valign="top">
+            <div id="maintext" style=" display: flex;
+          justify-content: left;">
+              <h1></h1>
+              <br>
+              <table>
+                <tr>
+                  <td>
+                    <table class="w1" name="w1" id="w1">
+                      <tr>
+                        <td>
+                          <h3>Wallbox1</h3>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p>Chargecontroller:</p>
+                        </td>
+                        <td>
+                          <div class="toggle" style="margin-top: 0.5vh;">
+                            <label>
+                              <input type="checkbox" class="state1" name="state1" id="state1" /><i class="slider"></i>
+                            </label>
+                          </div>
+                        </td>
+                        <td>
+                          <p class="wallboxErrorCheck"></p>
+                        </td>
+                      </tr>
+
+                      <tr>
+                        <td>
+                          <p>Energymeter:</p>
+                        </td>
+                        <td>
+                          <div class="toggle"  style="margin-top: 0.5vh;">
+                            <label>
+                              <input type="checkbox" class="state2" name="state2" id="state2" /><i class="slider"></i>
+                            </label>
+                          </div>
+                        </td>
+                        <td>
+                          <p class="wallboxErrorCheck"> </p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p>RFID:</p>
+                        </td>
+                        <td>
+                          <div class="toggle"  style="margin-top: 0.5vh;">
+                            <label>
+                              <input type="checkbox" class="state3" name="state3" id="state3" /><i class="slider"></i>
+                            </label>
+                          </div>
+                        </td>
+                        <td>
+                          <p class="wallboxErrorCheck"></p>
+                        </td>
+                      </tr>
+                      <script src="https://code.jquery.com/jquery-latest.js"></script>
+                      <script>
+                        if ($('#state1').val() == "%state1%") {
+                          $('#state1').attr("checked", "checked");
+                        } else {
+                          $('#state1').removeAttr("checked");
+                        }
+                        if ($('#state2').val() == "%state2%") {
+                          $('#state2').attr("checked", "checked");
+                        } else {
+                          $('#state2').removeAttr("checked");
+                        }
+
+                        if ($('#state3').val() == "%state3%") {
+                          $('#state3').attr("checked", "checked");
+                        } else {
+                          $('#state3').removeAttr("checked");
+                        }   
+                      </script>
+
+
+                    </table>
+
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <table class="w2" name="w2" id="w2">
+                      <tr>
+                        <td>
+                          <h3>Wallbox2</h3>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p>Chargecontroller:</p>
+                        </td>
+                        <td>
+                          <div class="toggle"  style="margin-top: 0.5vh;">
+                            <label>
+                              <input type="checkbox" class="state11" name="state11" id="state11" /><i
+                                class="slider"></i>
+                            </label>
+                          </div>
+                        </td>
+                        <td>
+                          <p class="wallboxErrorCheck"></p>
+                        </td>
+                      </tr>
+
+                      <tr>
+                        <td>
+                          <p>Energymeter:</p>
+                        </td>
+                        <td>
+                          <div class="toggle"  style="margin-top: 0.5vh;">
+                            <label>
+                              <input type="checkbox" class="state12" name="state12" id="state12" /><i
+                                class="slider"></i>
+                            </label>
+                          </div>
+                        </td>
+                        <td>
+                          <p class="wallboxErrorCheck"></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p>RFID:</p>
+                        </td>
+                        <td>
+                          <div class="toggle"  style="margin-top: 0.5vh;">
+                            <label>
+                              <input type="checkbox" class="state13" name="state13" id="state13" /><i
+                                class="slider"></i>
+                            </label>
+                          </div>
+                        </td>
+                        <td>
+                          <p class="wallboxErrorCheck"></p>
+                        </td>
+                      </tr>
+                      <script src="https://code.jquery.com/jquery-latest.js"></script>
+                      <script>
+                        if ($('#state11').val() == "%state11%") {
+                          $('#state11').attr("checked", "checked");
+                        } else {
+                          $('#state11').removeAttr("checked");
+                        }
+                        if ($('#state12').val() == "%state12%") {
+                          $('#state12').attr("checked", "checked");
+                        } else {
+                          $('#state12').removeAttr("checked");
+                        }
+
+                        if ($('#state13').val() == "%state13%") {
+                          $('#state13').attr("checked", "checked");
+                        } else {
+                          $('#state13').removeAttr("checked");
+                        }   
+                      </script>
+
+
+                    </table>
+
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <table class="w3" name="w3" id="w3">
+                      <tr>
+                        <td>
+                          <h3>Wallbox3</h3>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p>Chargecontroller:</p>
+                        </td>
+                        <td>
+                          <div class="toggle"  style="margin-top: 0.5vh;">
+                            <label>
+                              <input type="checkbox" class="state21" name="state21" id="state21" /><i
+                                class="slider"></i>
+                            </label>
+                          </div>
+                        </td>
+                        <td>
+                          <p class="wallboxErrorCheck"></p>
+                        </td>
+                      </tr>
+
+                      <tr>
+                        <td>
+                          <p>Energymeter:</p>
+                        </td>
+                        <td>
+                          <div class="toggle"  style="margin-top: 0.5vh;">
+                            <label>
+                              <input type="checkbox" class="state22" name="state22" id="state22" /><i
+                                class="slider"></i>
+                            </label>
+                          </div>
+                        </td>
+                        <td>
+                          <p class="wallboxErrorCheck"></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p>RFID:</p>
+                        </td>
+                        <td>
+                          <div class="toggle"  style="margin-top: 0.5vh;">
+                            <label>
+                              <input type="checkbox" class="state23" name="state23" id="state23" /><i
+                                class="slider"></i>
+                            </label>
+                          </div>
+                        </td>
+                        <td>
+                          <p class="wallboxErrorCheck"></p>
+                        </td>
+                      </tr>
+
+                      <script src="https://code.jquery.com/jquery-latest.js"></script>
+                      <script>
+                        if ($('#state21').val() == "%state21%") {
+                          $('#state21').attr("checked", "checked");
+                        } else {
+                          $('#state21').removeAttr("checked");
+                        }
+                        if ($('#state22').val() == "%state22%") {
+                          $('#state22').attr("checked", "checked");
+                        } else {
+                          $('#state22').removeAttr("checked");
+                        }
+
+                        if ($('#state23').val() == "%state23%") {
+                          $('#state23').attr("checked", "checked");
+                        } else {
+                          $('#state23').removeAttr("checked");
+                        }   
+                      </script>
+
+
+                    </table>
+
+                  </td>
+                </tr>
+                <!--<tr>
+                  <td>
+                    <table class="w4" name="w4" id="w4">
+                      <tr>
+                        <td>
+                          <h2>Wallbox4</h2>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p>Chargecontroller:</p>
+                        </td>
+                        <td>
+                          <div class="toggle">
+                            <label>
+                              <input type="checkbox" class="state31" name="state31" id="state31" /><span
+                                class="slider"></span>
+                            </label>
+                          </div>
+                        </td>
+                      </tr>
+
+                      <tr>
+                        <td>
+                          <p>Energymeter:</p>
+                        </td>
+                        <td>
+                          <div class="toggle">
+                            <label>
+                              <input type="checkbox" class="state33" name="state33" id="state33" /><span
+                                class="slider"></span>
+                            </label>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p>RFID:</p>
+                        </td>
+                        <td>
+                          <div class="toggle">
+                            <label>
+                              <input type="checkbox" class="state32" name="state32" id="state32" /><span
+                                class="slider"></span>
+                            </label>
+                          </div>
+                        </td>
+                      </tr>
+                      <script src="https://code.jquery.com/jquery-latest.js"></script>
+                      <script>
+                        if ($('#state31').val() == "%state31%") {
+                          $('#state31').attr("checked", "checked");
+                        } else {
+                          $('#state31').removeAttr("checked");
+                        }
+                        if ($('#state32').val() == "%state32%") {
+                          $('#state32').attr("checked", "checked");
+                        } else {
+                          $('#state32').removeAttr("checked");
+                        }
+
+                        if ($('#state33').val() == "%state33%") {
+                          $('#state33').attr("checked", "checked");
+                        } else {
+                          $('#state33').removeAttr("checked");
+                        }   
+                      </script>
+
+
+                    </table>
+                  </td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <table class="w5" name="w5" id="w5">
+                        <tr>
+                          <td>
+                            <h2>Wallbox5</h2>
+                          </td>
+                        </tr>
+                        <tr>
+                          <td>
+                            <p>Chargecontroller:</p>
+                          </td>
+                          <td>
+                            <div class="toggle">
+                              <label>
+                                <input type="checkbox" class="state41" name="state41" id="state41" /><span
+                                  class="slider"></span>
+                              </label>
+                            </div>
+                          </td>
+                        </tr>
+
+                        <tr>
+                          <td>
+                            <p>Energymeter:</p>
+                          </td>
+                          <td>
+                            <div class="toggle">
+                              <label>
+                                <input type="checkbox" class="state43" name="state43" id="state43" /><span
+                                  class="slider"></span>
+                              </label>
+                            </div>
+                          </td>
+                        </tr>
+                        <tr>
+                          <td>
+                            <p>RFID:</p>
+                          </td>
+                          <td>
+                            <div class="toggle">
+                              <label>
+                                <input type="checkbox" class="state42" name="state42" id="state42" /><span
+                                  class="slider"></span>
+                              </label>
+                            </div>
+                          </td>
+                        </tr>
+                        <script src="https://code.jquery.com/jquery-latest.js"></script>
+                        <script>
+                          if ($('#state41').val() == "%state41%") {
+                            $('#state41').attr("checked", "checked");
+                          } else {
+                            $('#state41').removeAttr("checked");
+                          }
+                          if ($('#state42').val() == "%state42%") {
+                            $('#state42').attr("checked", "checked");
+                          } else {
+                            $('#state42').removeAttr("checked");
+                          }
+
+                          if ($('#state43').val() == "%state43%") {
+                            $('#state43').attr("checked", "checked");
+                          } else {
+                            $('#state43').removeAttr("checked");
+                          }   
+                        </script>
+
+
+                      </table>
+                    </td>
+                  </tr>-->
+              </table>
+
+
+            </div>
+
+            <button id="ipSettingsSendBack" onclick="if (confirm('Sind Sie sicher?') == true){
+              restartSendBack()
+            }else{}" type="button" class="btnsSettings" style="background-color:rgb(36, 45, 82);">Neustart</button>
+
+
+
+          </td>
+          </tr>
+          </table>
+          </table>
+        </div>
+        <div class="item-6 griditem">
+          <h1 class="cardHeadLine">FTP Einstellungen</h1>
+          <br><br>
+          <table align="center">
+            <tr>
+              <td>
+                <h3>Aktivieren: &nbsp;&nbsp;&nbsp;&nbsp;</h3>
+              </td>
+              <td>
+                <div class="toggle state">
+                  <label>
+                    <input type="checkbox" class="stateFTP" name="stateFTP" id="stateFTP" /><i class="slider"></i>
+                  </label>
+                </div>
+              </td>
+            </tr>
+           
+            <tr>
+              <td>
+                <h3>Server IP-Adresse: &nbsp;&nbsp;&nbsp;&nbsp;<h3>
+              </td>
+              <td>
+                <input class="ftpIpAddress" type="text" name="ftpIpAddress" id="ftpIpAddress" placeholder="000.000.000.000"
+                  required /></input>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <h3>Benutzer: &nbsp;&nbsp;&nbsp;&nbsp;<h3>
+              </td>
+              <td>
+                <input class="ftpUser" type="text" name="ftpUser" id="ftpUser" placeholder="Benutzername"
+                  required /></input>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <h3>Passwort: &nbsp;&nbsp;&nbsp;&nbsp;<h3>
+              </td>
+              <td>
+                <input class="ftpPassword" type="text" name="ftpPassword" id="ftpPassword" placeholder="Passwort"
+                   /></input>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <h3>Pfad: &nbsp;&nbsp;&nbsp;&nbsp;<h3>
+              </td>
+              <td>
+                <input class="ftpPath" type="text" name="ftpPath" id="ftpPath"
+                  placeholder="/data/ftp" /></input>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <h3>Letzter Versuch: &nbsp;&nbsp;&nbsp;&nbsp;<h3>
+              </td>
+              <td>
+                <p class="secondColumn" name="ftpLastTry" id="ftpLastTry"
+                  ></p>
+              </td>
+            </tr>
+          </table>
+          
+          <br><br>
+          <button class="btnsSettings" onclick="if (confirm('Sind Sie sicher?') == true){
+              ftpInputSendBackFunc()
+            }else{}" href="index.html">Speichern</button>
+          <script src="https://code.jquery.com/jquery-latest.js"></script>
+          <script>
+            if ($('#stateFTP').val() == "%stateFTP%") {
+              $('#stateFTP').attr("checked", "checked");
+            } else {
+              $('#stateFTP').removeAttr("checked");
+            }
+            
+          </script>
+
+        </div>
+        <div class="item-5 griditem" id="item5LC">
+          <h1 class="cardHeadLine">Ladecontroller</h1>
+          <br>
+          <br>
+          <table align="center">
+            <tr>
+              <td>
+                <h3>CP-Spannung:</h3>
+              </td>
+              <td>
+                <p class="secondColumn" id="cpSannung"></p>
+              </td>
+              <td>
+                <p class="thirdColumn">V</p>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <h3>ADC-Input:</h3>
+              </td>
+              <td>
+                <p class="secondColumn" id="ADCinput"></p>
+              </td>
+              <td>
+                <p class="thirdColumn">V</p>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <h3>Ladeleistung:</h3>
+              </td>
+              <td>
+                <input id="ladeleistungValue">
+              
+              </td>
+              <td>
+                <p class="thirdColumn">W</p>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <h3>Ladestrom:</h3>
+              </td>
+              <td><input id="ladeStromValue"></td>
+              <td>
+                <p class="thirdColumn">A</p>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <h3>Maximaler Ladestrom:</h3>
+              </td>
+              <td><input type="number" id="maxLadeStromValue"></td>
+              <td>
+                <p class="thirdColumn">A</p>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <h3>Minimaler Ladestrom:</h3>
+              </td>
+              <td><input type="number" id="minLadeStromValue"></td>
+              <td>
+                <p class="thirdColumn">A</p>
+              </td>
+            </tr>
+            <tr>
+              <td >
+                <h3>Charge State:</h3>
+              </td>
+              <td>
+                <p type="number" class="secondColumn" id="chargeState"></p>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <h3>Switch 1:</h3>
+              </td>
+              <td>
+
+                <div class="toggle">
+                  <label>
+                    <input type="checkbox" id="LC_Switch1" /><i class="slider"></i>
+                  </label>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <h3>Switch 2:</h3>
+              </td>
+              <td>
+
+                <div class="toggle">
+                  <label>
+                    <input type="checkbox" id="LC_Switch2" /><i class="slider"></i>
+                  </label>
+                </div>
+            </tr>
+            </td>
+          </table>
+
+        </div>
+</body>
+
+</html>

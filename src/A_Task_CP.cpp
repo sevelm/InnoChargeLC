@@ -75,6 +75,10 @@ State:   Pilot Voltage:  EV Resistance:  Description:       Analog theoretic: (i
 #include "ledEffect.hpp"
 #include "A_Task_CP.hpp"
 
+volatile charging_state_t vCurrentCpState;
+volatile uint32_t lastStateChangeTime = 0;
+volatile charging_state_t currentCpStateDelay;
+
 // Function to determine charging state based on voltage, duty cycle and switch
 charging_state_t actualCpState(float highVoltage, float lowVoltage) {
     charging_state_t state;
@@ -101,10 +105,30 @@ charging_state_t actualCpState(float highVoltage, float lowVoltage) {
 }
 
 
-
-
-
-
+const char *cpStateToName(charging_state_t state){
+    switch(state){
+        case StateA_NotConnected:
+            return "Charging State A";
+        case StateB_Connected:
+            return "Charging State B";
+        case StateC_Charge:
+            return "Charging State C";
+        case StateD_VentCharge:
+            return "Charging State D";
+        case StateE_Error:
+            return "Charging State E";
+        case StateF_Fault:
+            return "Charging State F";
+        case StateCustom_CpRelayOff:
+            return "Charging State CP-Relay OFF";
+        case StateCustom_DutyCycle_100:
+            return "Charging State DutyCycle 100%";
+        case StateCustom_DutyCycle_0:
+            return "Charging State DutyCycle 0%";
+        default:
+            return "Invalid State";
+    }
+}
 
 
 void A_Task_CP(void *pvParameter){
@@ -113,8 +137,8 @@ void A_Task_CP(void *pvParameter){
 //////////////////////////////////////////////////// Setup ///////////////////////////////////////////////////
 //////////////////////////////////////////////////// Setup ///////////////////////////////////////////////////
     init_control_pilot();
-
-
+    set_charging_current(16);
+    turn_on_cp_relay();
 
     while (1) {
 //////////////////////////////////////////////////// Loop ///////////////////////////////////////////////////
@@ -122,27 +146,27 @@ void A_Task_CP(void *pvParameter){
 //////////////////////////////////////////////////// Loop ///////////////////////////////////////////////////
 //////////////////////////////////////////////////// Loop ///////////////////////////////////////////////////
 
-        turn_on_cp_relay();
+
         highVoltage = get_high_voltage();
         highVoltage = round(highVoltage);
-        set_charging_current(5);
+
         //set_control_pilot_0();
         currentCpStateDelay = actualCpState(highVoltage,0);
 
         // CP-Delay Timer to debounce the signals
-        if (currentCpState == currentCpStateDelay) {
+        if (vCurrentCpState == currentCpStateDelay) {
         lastStateChangeTime = xTaskGetTickCount();  
-        } else if ((xTaskGetTickCount() - lastStateChangeTime) >= 450) {
-            currentCpState = currentCpStateDelay;
+        } else if ((xTaskGetTickCount() - lastStateChangeTime) >= 500) {
+            vCurrentCpState = currentCpStateDelay;
         }
 
-        if (currentCpState == StateC_Charge || currentCpState == StateD_VentCharge) {
+        if (vCurrentCpState == StateC_Charge || vCurrentCpState == StateD_VentCharge) {
             turn_relay_on();
         } else {
             turn_relay_off();
         }
 
-
-        vTaskDelay(50 / portTICK_PERIOD_MS); // Adjusted delay
+        currentCpState = vCurrentCpState;
+        vTaskDelay(5 / portTICK_PERIOD_MS); // Adjusted delay
     }
 }
