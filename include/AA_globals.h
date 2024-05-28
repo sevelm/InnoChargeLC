@@ -4,15 +4,29 @@
 #include <NeoPixelAnimator.h>
 
 // CP-Measurements declaration START
-struct cp_measurements{
-    float high_voltage;
-    float low_voltage;
-    float highVoltRaw[10];
-    uint16_t highVoltRawCount;
-};
-typedef struct cp_measurements cp_measurements_t;
-extern cp_measurements_t measurements;
+//struct cp_measurements{
+//    float high_voltage;
+//    float low_voltage;
+//    float highVoltRaw[10];
+//    uint16_t highVoltRawCount;
+//};
+//typedef struct cp_measurements cp_measurements_t;
+//extern cp_measurements_t measurements;
 extern int cpState;
+extern float highVoltage;
+typedef enum {
+    StateA_NotConnected,
+    StateB_Connected,
+    StateC_Charge,
+    StateD_VentCharge,
+    StateE_Error,
+    StateF_Fault,
+    StateCustom_CpRelayOff,
+    StateCustom_DutyCycle_100,
+    StateCustom_DutyCycle_0,
+} charging_state_t;
+
+extern charging_state_t currentCpState;
 // CP-Measurements declaration END
 
 // Deklaration des NeoPixel-Strip-Objekts

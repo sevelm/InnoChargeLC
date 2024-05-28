@@ -61,121 +61,88 @@ State:   Pilot Voltage:  EV Resistance:  Description:       Analog theoretic: (i
  //     fixedValues[0] -> Fifth highest values -> State E (Error)
  //     cpState  0=A -> NotConnected; 1=B -> Connected; 2=C -> ChargingActive; 3=D -> Ventilation ChargingActive; 4=E Fault, 5=F Fault, 6=Switch is off, 7=DutyCycle 100%, 8=DutyCycle 0%,
 
-
-
-
-#include "Arduino.h"
+#include <stdio.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <math.h>
+#include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "esp_log.h"
+#include "Arduino.h"
+
 #include "control_pilot.hpp"
 #include "AA_globals.h"
 #include "ledEffect.hpp"
-#include "math.h"
-#include "driver/gpio.h"
-#include "driver/adc.h"
+#include "A_Task_CP.hpp"
 
-#define cp_gen_pin 8
-#define cp_feedback_pin 37
-#define cp_measure_pin 4
-#define cp_relay_pin 18
-#define pp_measure_pin 5
-#define cp_gen_freq 1000
-#define cp_gen_duty 50
-#define cp_measure_channel ADC1_CHANNEL_3
-#define cp_control_channel 0
-
-// Voltage Scaling Part
-#define cp_scaling_factor_a 0.005263
-#define cp_scaling_factor_b -9.3632
-
-const char *A_CP_LOG = "A-CP-Task: ";
-
-void a_init_control_pilot(void){
-    pinMode(cp_gen_pin, OUTPUT);
-    ledcSetup(cp_control_channel, cp_gen_freq, 12);
-    ledcAttachPin(cp_gen_pin, cp_control_channel);
-    pinMode(cp_feedback_pin, INPUT);
-    pinMode(cp_relay_pin, OUTPUT);
-    adc1_config_width(ADC_WIDTH_BIT_12);
-    adc1_config_channel_atten(cp_measure_channel, ADC_ATTEN_DB_11);
+// Function to determine charging state based on voltage, duty cycle and switch
+charging_state_t actualCpState(float highVoltage, float lowVoltage) {
+    charging_state_t state;
+    if (get_cp_relays_status() != 1) {
+        state = StateCustom_CpRelayOff;
+    } else {
+        if (highVoltage == 12 || highVoltage == 11) { 
+            state = StateA_NotConnected;
+        } else if (highVoltage == 9 || highVoltage == 8) { 
+            state = StateB_Connected; 
+        } else if (highVoltage == 6 || highVoltage == 5) { 
+            state = StateC_Charge; 
+        } else if (highVoltage == 3 || highVoltage == 2) { 
+            state = StateD_VentCharge; 
+        } else if (highVoltage > 12 || highVoltage < 2) {
+            state = StateE_Error; 
+        } 
+        if (round(get_control_pilot_duty()) == 100) { 
+            state = StateCustom_DutyCycle_100; }
+        if (round(get_control_pilot_duty()) == 0) { 
+            state = StateCustom_DutyCycle_0; }
+    }    
+    return state;
 }
 
-void set_control_pilot(float duty){
-    int i_duty = 4095 * duty / 100;
-    ledcWrite(cp_control_channel, i_duty);
-}
 
-cp_measurements_t measure_control_pilot(void) {
-    cp_measurements_t measurements;
-    uint64_t start_time = micros();
 
-     // Wait for the switch to HIGH
-    while (digitalRead(cp_feedback_pin) == LOW) {
-        if (micros() - start_time > 2000) {
-            break;
-        }
-    }
 
-    // Short delay for stability
-    delayMicroseconds(50);
 
-    // Multiple measurements and averaging for HIGH voltage
-    float high_voltage_sum = 0;
-    for (int i = 0; i < 5; i++) {
-        high_voltage_sum += adc1_get_raw(cp_measure_channel);
-        delayMicroseconds(10);
-    }
-    measurements.high_voltage = high_voltage_sum / 5.0;
 
-    start_time = micros();
 
-    // Wait for the switch to LOW
-    while (digitalRead(cp_feedback_pin) == HIGH) {
-        if (micros() - start_time > 2000) {
-            break;
-        }
-    }
 
-    // Short delay for stability
-    delayMicroseconds(50);
+void A_Task_CP(void *pvParameter){
+//////////////////////////////////////////////////// Setup ///////////////////////////////////////////////////
+//////////////////////////////////////////////////// Setup ///////////////////////////////////////////////////
+//////////////////////////////////////////////////// Setup ///////////////////////////////////////////////////
+//////////////////////////////////////////////////// Setup ///////////////////////////////////////////////////
+    init_control_pilot();
 
-    // Multiple measurements and averaging for LOW voltage
-    float low_voltage_sum = 0;
-    for (int i = 0; i < 5; i++) {
-        low_voltage_sum += adc1_get_raw(cp_measure_channel);
-        delayMicroseconds(10);
-    }
-    measurements.low_voltage = low_voltage_sum / 5.0;
 
-    measurements.high_voltage = measurements.high_voltage * cp_scaling_factor_a + cp_scaling_factor_b;
-    measurements.low_voltage = measurements.low_voltage * cp_scaling_factor_a + cp_scaling_factor_b;
-
-    return measurements;
-}
-
-void turn_cp_relay_on(void){
-    digitalWrite(cp_relay_pin, HIGH);
-}
-
-void turn_cp_relay_off(void){
-    digitalWrite(cp_relay_pin, LOW);
-}
-
-float get_pp_status(void){
-    float pp_val = analogRead(pp_measure_pin);
-    pp_val = pp_val * 3.3 / 4095;
-    return pp_val;
-}
-
-void control_pilot_task(void *pvParameter){
-    a_init_control_pilot();
-    set_control_pilot(8);
-    turn_cp_relay_on();
 
     while (1) {
-        measurements = measure_control_pilot();
-        float pp_val = get_pp_status();
-        vTaskDelay(1000 / portTICK_PERIOD_MS); // Adjusted delay
+//////////////////////////////////////////////////// Loop ///////////////////////////////////////////////////
+//////////////////////////////////////////////////// Loop ///////////////////////////////////////////////////
+//////////////////////////////////////////////////// Loop ///////////////////////////////////////////////////
+//////////////////////////////////////////////////// Loop ///////////////////////////////////////////////////
+
+        turn_on_cp_relay();
+        highVoltage = get_high_voltage();
+        highVoltage = round(highVoltage);
+        set_charging_current(5);
+        //set_control_pilot_0();
+        currentCpStateDelay = actualCpState(highVoltage,0);
+
+        // CP-Delay Timer to debounce the signals
+        if (currentCpState == currentCpStateDelay) {
+        lastStateChangeTime = xTaskGetTickCount();  
+        } else if ((xTaskGetTickCount() - lastStateChangeTime) >= 450) {
+            currentCpState = currentCpStateDelay;
+        }
+
+        if (currentCpState == StateC_Charge || currentCpState == StateD_VentCharge) {
+            turn_relay_on();
+        } else {
+            turn_relay_off();
+        }
+
+
+        vTaskDelay(50 / portTICK_PERIOD_MS); // Adjusted delay
     }
 }

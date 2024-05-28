@@ -3,6 +3,7 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "driver/adc.h"
+#include "proximity_pilot.hpp"
 
 
 #define pp_measure_pin 5

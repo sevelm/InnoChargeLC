@@ -1,3 +1,4 @@
+/*
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -270,3 +271,5 @@ void pp_monitoring_task(void *args){
 proximity_pilot_state_t get_pp_state(){
     return current_pp_state;
 }
+
+*/

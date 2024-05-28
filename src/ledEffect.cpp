@@ -456,11 +456,11 @@ void callLedEffect() {
  if (xTaskGetTickCount() - prevMillisLED >= 5) { // check if "interval" ms has passed since last time the clients were updated
     prevMillisLED = xTaskGetTickCount();
         //0=A -> NotConnected; 1=B -> Connected; 2=C -> CharginActive; 3=D -> Ventilation ChargingActive; 4=E Fault, 5=F Fault
-        switch (cpState) {
-            case 0:
+        switch (currentCpState) {
+            case StateA_NotConnected:
                   stateA (); 
             break;
-            case 1:
+            case StateB_Connected:
                  // stateB (); 
                  // simpleColorChange ();
                  // knightRiderEffect();
@@ -469,22 +469,25 @@ void callLedEffect() {
                 orangeWaveEffect2();
                // orangeWaveEffectRandom();
             break;
-            case 2 ... 3:
+            case StateC_Charge:
                   stateC (); 
             break;
-            case 10:
-                  stateC ();
+            case StateD_VentCharge:
+                  stateC (); 
             break;
-            case 4:
+            case StateE_Error:
                   stateE (); 
             break;
-            case 5:
+            case StateF_Fault:
                   stateF (); 
             break;
-            case 6:
+            case StateCustom_CpRelayOff:
                   stateSwOff (); 
             break;
-            case 7 ... 8:
+            case StateCustom_DutyCycle_100:
+                  statePwmOff (); 
+            break;
+            case StateCustom_DutyCycle_0:
                   statePwmOff (); 
             break;
            }

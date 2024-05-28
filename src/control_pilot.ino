@@ -10,6 +10,7 @@
 #include "driver/adc.h"
 #include "stdbool.h"
 #include "rom/ets_sys.h"
+#include "proximity_pilot.hpp"
 
 #define cp_gen_pin 8
 #define cp_feedback_pin 37
@@ -19,6 +20,8 @@
 #define cp_gen_duty 50
 #define cp_measure_channel ADC1_CHANNEL_3
 #define cp_control_channel 0
+#define RELAY_PIN 36
+
 
 #define RISING_EDGE 1
 #define FALLING_EDGE 0
@@ -46,6 +49,8 @@ void init_control_pilot(void){
     digitalWrite(cp_relay_pin, LOW);
     adc1_config_width(ADC_WIDTH_BIT_12);
     adc1_config_channel_atten(cp_measure_channel, ADC_ATTEN_DB_11);
+    pinMode(RELAY_PIN, OUTPUT);
+    digitalWrite(RELAY_PIN, LOW);
 }
 
 /**
@@ -60,6 +65,19 @@ void set_control_pilot_duty(float duty){
     ledcWrite(cp_control_channel, i_duty);
 }
 
+/**
+    * @brief Get the control pilot duty cycle
+    * 
+    * This function gets the duty cycle of the control pilot PWM generator
+    '@param float duty in percentage
+    * @return void
+*/
+float get_control_pilot_duty(){
+    int i_duty = ledcRead(cp_control_channel);
+    float duty = (float)i_duty / 4095 * 100;
+    return duty;
+}
+
 /*
     * @brief Get the duty cycle from the current
     * 
@@ -68,12 +86,12 @@ void set_control_pilot_duty(float duty){
     * @return float duty
 */
 float get_duty_from_current(float current){
-    if(current >= 6 && current <= 51){
+    if(current >= 5 && current <= 51){
         return current/0.6;
     }else if(current > 51 && current <= 80){
         return current/2.5+64;
     }
-    ESP_LOGE(CP_LOG, "Current out of range defaulting to 6A");
+    ESP_LOGE(CP_LOG, "Current out of range defaulting to 5A");
     return 10;
 }
 
@@ -112,15 +130,24 @@ void turn_off_cp_relay(){
 }
 
 /**
-    * @brief Set the control pilot to standby
+    * @brief Set the control pilot to standby (100%)
     * @param void
     * @return void
 
 */
-void set_control_pilot_standby(){
+void set_control_pilot_100(){
     set_control_pilot_duty(100);
 }
 
+/**
+    * @brief Set the control pilot off (0%)
+    * @param void
+    * @return void
+
+*/
+void set_control_pilot_0(){
+    set_control_pilot_duty(0);
+}
 
 /**
     * @brief Get the status of the control pilot relay
@@ -129,6 +156,7 @@ void set_control_pilot_standby(){
 
 */
 bool get_cp_relays_status(){
+    bool cp_relay_status = digitalRead(cp_relay_pin);
     return cp_relay_status;
 }
 
@@ -144,13 +172,13 @@ void sync_cp_edge(bool edge){
     uint64_t start_time = micros();
     while(digitalRead(cp_feedback_pin) == edge){
         if( micros() - start_time > 2000){
-            ESP_LOGI(CP_LOG, "CP Pulse Not Detected! Aborting");
+         //   ESP_LOGI(CP_LOG, "CP Pulse Not Detected! Aborting");
             return;
         }
     }
     while(digitalRead(cp_feedback_pin) != edge){
         if( micros() - start_time > 2000){
-            ESP_LOGI(CP_LOG, "CP Pulse Not Detected! Aborting");
+         //   ESP_LOGI(CP_LOG, "CP Pulse Not Detected! Aborting");
             return;
         }
     }
@@ -196,4 +224,14 @@ float get_low_voltage(){
         low_voltage = low_voltage*1.5;
     }
     return low_voltage;
+}
+
+// Control AC-Relay
+
+void turn_relay_on() {
+    digitalWrite(RELAY_PIN, HIGH);
+}
+
+void turn_relay_off() {
+    digitalWrite(RELAY_PIN, LOW);
 }

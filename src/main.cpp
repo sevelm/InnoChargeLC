@@ -5,23 +5,26 @@
 #include "esp_netif.h"
 #include "esp_event.h"
 #include "nvs_flash.h"
+#include "SPIFFS.h"
 
-#include "relay_ctrl.hpp"
 #include "ethernet_manager.hpp"
-#include "charging_manager.hpp"
 #include "lock_ctrl.hpp"
 #include "A_TaskLow.hpp"
 #include "ledEffect.hpp"
 #include "AA_globals.h"
+#include "A_Task_CP.hpp"
+
 
 const char *MAIN_TAG = "Main: ";
 
 
 //Globals
 
-cp_measurements_t measurements = {0.0, 0.0, {0.0}, 0};
+//cp_measurements_t measurements = {0.0, 0.0, {0.0}, 0};
 NeoPixelBus<NeoGrbFeature, Neo800KbpsMethod> strip(8, 10);
 int cpState;
+float highVoltage;
+charging_state_t currentCpState = StateA_NotConnected;
 
 
 //////////////////////////////////////////////////// Setup ///////////////////////////////////////////////////
@@ -41,12 +44,23 @@ void setup() {
     }
   strip.Show();   // Send the updated pixel colors to the hardware.
 
+//######################### Webserver Start
+  // Initialize SPIFFS
+if(!SPIFFS.begin(true)){
+    ESP_LOGI(MAIN_TAG, "An Error has occurred while mounting SPIFFS");
+    return;
+  }
+  
+
+
+
 
 
 //######################### Create Task and Start
-  xTaskCreate(pp_monitoring_task, "PP Monitoring Task", 4096, NULL, 1, NULL);
+  xTaskCreate(A_Task_CP, "Controlpilot Task", 4096, NULL, 1, NULL);
+  //xTaskCreate(pp_monitoring_task, "PP Monitoring Task", 4096, NULL, 1, NULL);
   // xTaskCreate(lock_monitor_task, "Lock Monitor Task", 2048, NULL, 5, NULL);
-  // xTaskCreate(A_TaskLow, "Task_Low_Operation", 4096, NULL, 5, NULL);
+  xTaskCreate(A_TaskLow, "Task_Low_Operation", 4096, NULL, 5, NULL);
 
   // xTaskCreate(relay_ctrl_test_task, "Relay Control Test Task", 2048, NULL, 5, NULL);
 
