@@ -18,6 +18,7 @@
 #include "ledEffect.hpp"
 #include "AA_globals.h"
 #include "A_Task_CP.hpp"
+#include "demo_codes.hpp"
 
 
 const char *MAIN_TAG = "Main: ";
@@ -71,6 +72,10 @@ charging_state_t currentCpState = StateA_NotConnected;
 //////////////////////////////////////////////////// Setup ///////////////////////////////////////////////////
 //////////////////////////////////////////////////// Setup ///////////////////////////////////////////////////
 //////////////////////////////////////////////////// Setup ///////////////////////////////////////////////////
+
+//###################### HTTP Event Handler
+
+
 void setup() {
     ESP_LOGI(MAIN_TAG, "Starting up EVSE Test Programm!");
 
@@ -87,7 +92,20 @@ void setup() {
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
     ESP_LOGI(MAIN_TAG, "Starting Ethernet...");
-    start_eth(); // Start Ethernet
+
+    // Just this is enough to start Ethernet in DHCP mode
+    // start_eth(true, NULL); // Start Ethernet with DHCP Client enabled
+
+    // Start Ethernet in Static Mode
+    ethernet_start_config_t eth_config = {
+        .mac_addr = {0x3C, 0x71, 0xBF, 0x0A, 0x0B, 0x0C},
+        .ip_addr = {192, 168, 1, 156},
+        .netmask = {255, 255, 255, 0},
+        .gw = {192, 168, 1, 254},
+        .dns1 = {8, 8, 8, 8},
+        .dns2 = {8, 8, 4, 4}
+    };
+    start_eth(false, &eth_config); // Start Ethernet with DHCP Client disabled
     ESP_LOGI(MAIN_TAG, "Ethernet started.");
 
     //######################### LED-Pixles 
@@ -122,9 +140,10 @@ void setup() {
     //webSocket.onEvent(webSocketEvent);  // define a callback function -> what does the ESP32 need to do when an event from the websocket is received? -> run function "webSocketEvent()"
 
     //######################### Create Task and Start
-    xTaskCreatePinnedToCore(A_Task_CP, "Controlpilot Task", 8192, NULL, 1, NULL, 1);
-    xTaskCreatePinnedToCore(A_Task_Web, "Task_Web_Operation", 8192, NULL, 4, NULL, 1);
-    xTaskCreatePinnedToCore(A_Task_Low, "Task_Low_Operation", 8192, NULL, 5, NULL, 1);
+    // xTaskCreatePinnedToCore(A_Task_CP, "Controlpilot Task", 8192, NULL, 1, NULL, 1);
+    // xTaskCreatePinnedToCore(A_Task_Web, "Task_Web_Operation", 8192, NULL, 4, NULL, 1);
+    // xTaskCreatePinnedToCore(A_Task_Low, "Task_Low_Operation", 8192, NULL, 5, NULL, 1);
+    xTaskCreate(demo_monitoring_task, "Demo Monitoring Task", 4096, NULL, 1, NULL);
 
     // xTaskCreate(pp_monitoring_task, "PP Monitoring Task", 4096, NULL, 1, NULL);
     // xTaskCreate(lock_monitor_task, "Lock Monitor Task", 2048, NULL, 5, NULL);
@@ -139,9 +158,10 @@ void setup() {
 void loop() {
     // control LED
     callLedEffect();
-
+    
     // lock_lock();
     // vTaskDelay(5000 / portTICK_PERIOD_MS);
     // release_lock();
     // vTaskDelay(5000 / portTICK_PERIOD_MS);
 }
+

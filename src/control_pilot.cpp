@@ -11,6 +11,7 @@
 #include "stdbool.h"
 #include "rom/ets_sys.h"
 #include "proximity_pilot.hpp"
+#include "ethernet_manager.hpp"
 
 #define cp_gen_pin 8
 #define cp_feedback_pin 37
