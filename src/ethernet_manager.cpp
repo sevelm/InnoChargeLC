@@ -68,30 +68,14 @@ static void eth_event_handler(void *arg, esp_event_base_t event_base,
     case ETHERNET_EVENT_DISCONNECTED:
         ESP_LOGI(ETHERNET_TAG, "Ethernet Link Down");
         current_ethernet_status.connection_state = ETHERNET_STATUS_DISCONNECTED;
-        current_ethernet_status.ip_addr[0] = 0;
-        current_ethernet_status.ip_addr[1] = 0;
-        current_ethernet_status.ip_addr[2] = 0;
-        current_ethernet_status.ip_addr[3] = 0;
-
-        current_ethernet_status.netmask[0] = 0;
-        current_ethernet_status.netmask[1] = 0;
-        current_ethernet_status.netmask[2] = 0;
-        current_ethernet_status.netmask[3] = 0;
-
-        current_ethernet_status.gw[0] = 0;
-        current_ethernet_status.gw[1] = 0;
-        current_ethernet_status.gw[2] = 0;
-        current_ethernet_status.gw[3] = 0;
-
-        current_ethernet_status.dns1[0] = 0;
-        current_ethernet_status.dns1[1] = 0;
-        current_ethernet_status.dns1[2] = 0;
-        current_ethernet_status.dns1[3] = 0;
-
-        current_ethernet_status.dns2[0] = 0;
-        current_ethernet_status.dns2[1] = 0;
-        current_ethernet_status.dns2[2] = 0;
-        current_ethernet_status.dns2[3] = 0;
+        {
+            uint8_t empty_ip[4] = {0};
+            memcpy(current_ethernet_status.ip_addr, empty_ip, 4);
+            memcpy(current_ethernet_status.netmask, empty_ip, 4);
+            memcpy(current_ethernet_status.gw, empty_ip, 4);
+            memcpy(current_ethernet_status.dns1, empty_ip, 4);
+            memcpy(current_ethernet_status.dns2, empty_ip, 4);
+        }
         break;
     case ETHERNET_EVENT_START:
         ESP_LOGI(ETHERNET_TAG, "Ethernet Started");
@@ -121,36 +105,18 @@ static void got_ip_event_handler(void *arg, esp_event_base_t event_base,
     ESP_LOGI(ETHERNET_TAG, "ETHGW:" IPSTR, IP2STR(&ip_info->gw));
     ESP_LOGI(ETHERNET_TAG, "~~~~~~~~~~~");
     // set Ip address to current_ethernet_status
-    current_ethernet_status.ip_addr[3] = (ip_info->ip.addr>>24) & 0xFF;
-    current_ethernet_status.ip_addr[2] = (ip_info->ip.addr>>16) & 0xFF;
-    current_ethernet_status.ip_addr[1] = (ip_info->ip.addr>>8) & 0xFF;
-    current_ethernet_status.ip_addr[0] = ip_info->ip.addr & 0xFF;
-
+    memcpy(current_ethernet_status.ip_addr, &ip_info->ip.addr, 4);
     // set netmask to current_ethernet_status
-    current_ethernet_status.netmask[3] = (ip_info->netmask.addr>>24) & 0xFF;
-    current_ethernet_status.netmask[2] = (ip_info->netmask.addr>>16) & 0xFF;
-    current_ethernet_status.netmask[1] = (ip_info->netmask.addr>>8) & 0xFF;
-    current_ethernet_status.netmask[0] = ip_info->netmask.addr & 0xFF;
-
+    memcpy(current_ethernet_status.netmask, &ip_info->netmask.addr, 4);
     // set gateway to current_ethernet_status
-    current_ethernet_status.gw[3] = (ip_info->gw.addr>>24) & 0xFF;
-    current_ethernet_status.gw[2] = (ip_info->gw.addr>>16) & 0xFF;
-    current_ethernet_status.gw[1] = (ip_info->gw.addr>>8) & 0xFF;
-    current_ethernet_status.gw[0] = ip_info->gw.addr & 0xFF;
-
+    memcpy(current_ethernet_status.gw, &ip_info->gw.addr, 4);
     // Also get and set DNS1 and DNS2
     esp_netif_dns_info_t dns_info;
     esp_netif_get_dns_info(eth_netif_spi, ESP_NETIF_DNS_MAIN, &dns_info);
-    current_ethernet_status.dns1[3] = (dns_info.ip.u_addr.ip4.addr>>24) & 0xFF;
-    current_ethernet_status.dns1[2] = (dns_info.ip.u_addr.ip4.addr>>16) & 0xFF;
-    current_ethernet_status.dns1[1] = (dns_info.ip.u_addr.ip4.addr>>8) & 0xFF;
-    current_ethernet_status.dns1[0] = dns_info.ip.u_addr.ip4.addr & 0xFF;
-
+    memcpy(current_ethernet_status.dns1, &dns_info.ip.u_addr.ip4.addr, 4);
     esp_netif_get_dns_info(eth_netif_spi, ESP_NETIF_DNS_BACKUP, &dns_info);
-    current_ethernet_status.dns2[3] = (dns_info.ip.u_addr.ip4.addr>>24) & 0xFF;
-    current_ethernet_status.dns2[2] = (dns_info.ip.u_addr.ip4.addr>>16) & 0xFF;
-    current_ethernet_status.dns2[1] = (dns_info.ip.u_addr.ip4.addr>>8) & 0xFF;
-    current_ethernet_status.dns2[0] = dns_info.ip.u_addr.ip4.addr & 0xFF;
+    memcpy(current_ethernet_status.dns2, &dns_info.ip.u_addr.ip4.addr, 4);
+    
 }
 
 
@@ -160,33 +126,15 @@ void refresh_ethernet_status(){
         esp_netif_ip_info_t ip_info;
         if (esp_netif_get_ip_info(eth_netif_spi, &ip_info) == ESP_OK) {
             current_ethernet_status.connection_state = ETHERNET_STATUS_CONNECTED;
-            current_ethernet_status.ip_addr[3] = (ip_info.ip.addr>>24) & 0xFF;
-            current_ethernet_status.ip_addr[2] = (ip_info.ip.addr>>16) & 0xFF;
-            current_ethernet_status.ip_addr[1] = (ip_info.ip.addr>>8) & 0xFF;
-            current_ethernet_status.ip_addr[0] = ip_info.ip.addr & 0xFF;
-
-            current_ethernet_status.netmask[3] = (ip_info.netmask.addr>>24) & 0xFF;
-            current_ethernet_status.netmask[2] = (ip_info.netmask.addr>>16) & 0xFF;
-            current_ethernet_status.netmask[1] = (ip_info.netmask.addr>>8) & 0xFF;
-            current_ethernet_status.netmask[0] = ip_info.netmask.addr & 0xFF;
-
-            current_ethernet_status.gw[3] = (ip_info.gw.addr>>24) & 0xFF;
-            current_ethernet_status.gw[2] = (ip_info.gw.addr>>16) & 0xFF;
-            current_ethernet_status.gw[1] = (ip_info.gw.addr>>8) & 0xFF;
-            current_ethernet_status.gw[0] = ip_info.gw.addr & 0xFF;
-
+            memcpy(current_ethernet_status.ip_addr, &ip_info.ip.addr, 4);
+            memcpy(current_ethernet_status.netmask, &ip_info.netmask.addr, 4);
+            memcpy(current_ethernet_status.gw, &ip_info.gw.addr, 4);
             esp_netif_dns_info_t dns_info;
             esp_netif_get_dns_info(eth_netif_spi, ESP_NETIF_DNS_MAIN, &dns_info);
-            current_ethernet_status.dns1[3] = (dns_info.ip.u_addr.ip4.addr>>24) & 0xFF;
-            current_ethernet_status.dns1[2] = (dns_info.ip.u_addr.ip4.addr>>16) & 0xFF;
-            current_ethernet_status.dns1[1] = (dns_info.ip.u_addr.ip4.addr>>8) & 0xFF;
-            current_ethernet_status.dns1[0] = dns_info.ip.u_addr.ip4.addr & 0xFF;
+            memcpy(current_ethernet_status.dns1, &dns_info.ip.u_addr.ip4.addr, 4);
 
             esp_netif_get_dns_info(eth_netif_spi, ESP_NETIF_DNS_BACKUP, &dns_info);
-            current_ethernet_status.dns2[3] = (dns_info.ip.u_addr.ip4.addr>>24) & 0xFF;
-            current_ethernet_status.dns2[2] = (dns_info.ip.u_addr.ip4.addr>>16) & 0xFF;
-            current_ethernet_status.dns2[1] = (dns_info.ip.u_addr.ip4.addr>>8) & 0xFF;
-            current_ethernet_status.dns2[0] = dns_info.ip.u_addr.ip4.addr & 0xFF;
+            memcpy(current_ethernet_status.dns2, &dns_info.ip.u_addr.ip4.addr, 4);
         }       
     }
 }
@@ -336,8 +284,7 @@ void start_eth(bool is_dhcp_enabled, ethernet_start_config_t *ethernet_start_con
 
             // Read mac adress burned in EFUSE
     uint8_t mac_address[6];
-    esp_read_mac(mac_address,ESP_MAC_WIFI_STA);
-    mac_address[6]+=3;
+    esp_read_mac(mac_address,ESP_MAC_ETH);
     esp_eth_ioctl(eth_handle_spi, ETH_CMD_S_MAC_ADDR, mac_address);
     memcpy(current_ethernet_status.mac_addr, mac_address, 6);
         // attach Ethernet driver to TCP/IP stack

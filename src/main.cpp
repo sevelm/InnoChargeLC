@@ -19,6 +19,7 @@
 #include "AA_globals.h"
 #include "A_Task_CP.hpp"
 #include "demo_codes.hpp"
+#include "wifi_manager.hpp"
 
 
 const char *MAIN_TAG = "Main: ";
@@ -144,7 +145,19 @@ void setup() {
     // xTaskCreatePinnedToCore(A_Task_Web, "Task_Web_Operation", 8192, NULL, 4, NULL, 1);
     // xTaskCreatePinnedToCore(A_Task_Low, "Task_Low_Operation", 8192, NULL, 5, NULL, 1);
     xTaskCreate(demo_monitoring_task, "Demo Monitoring Task", 4096, NULL, 1, NULL);
+    vTaskDelay(20000 / portTICK_PERIOD_MS);
 
+    // connect to wifi
+    wifi_sta_start_config_t wifi_sta_config = {
+        // .ssid = "J Rakhde Ni Bho Ni_2.4",
+        // .passphrase = "jbhandenibhoni",
+        .retry_interval = 5000,
+        .max_retry = -1
+    };
+    strcpy(wifi_sta_config.ssid, "J Rakhde Ni Bho Ni_2.4");
+    strcpy(wifi_sta_config.passphrase, "jbhandenibhoni");
+    
+    wifi_init_sta(&wifi_sta_config);
     // xTaskCreate(pp_monitoring_task, "PP Monitoring Task", 4096, NULL, 1, NULL);
     // xTaskCreate(lock_monitor_task, "Lock Monitor Task", 2048, NULL, 5, NULL);
     // xTaskCreate(relay_ctrl_test_task, "Relay Control Test Task", 2048, NULL, 5, NULL);
