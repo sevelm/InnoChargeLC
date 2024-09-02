@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>InnoCharge-Network</title>
+  <link rel="stylesheet" type="text/css" href="styles.css">
+  <script src="scripts.js"></script>
+</head>
+<body>
+  <div class="sidebar" id="navbar">
+    <!-- Navigation wird hier geladen -->
+  </div>
+  
+  <div class="main-content">
+    <h1>Ethernet-Verbindung</h1>
+    <div class="container">
+      <table>
+        <tr>
+          <td><label for="eth_dhcp-toggle">IP-Statisch:</label></td>
+          <td>
+            <label class="switch">
+              <input type="checkbox" id="eth_dhcp-toggle">
+              <span class="slider"></span>
+            </label>
+          </td>
+        </tr>
+        <tr>
+          <td><label for="eth_ip-address">IP-Adresse:</label></td>
+          <td><input type="text" id="eth_ip-address" value=""></td>
+        </tr>
+        <tr>
+          <td><label for="eth_subnet-mask">Subnetmaske:</label></td>
+          <td><input type="text" id="eth_subnet-mask" value=""></td>
+        </tr>
+        <tr>
+          <td><label for="eth_gateway">Gateway:</label></td>
+          <td><input type="text" id="eth_gateway" value=""></td>
+        </tr>
+        <tr>
+          <td><label for="eth_dns1">DNS 1:</label></td>
+          <td><input type="text" id="eth_dns1" value=""></td>
+        </tr>
+        <tr>
+          <td><label for="eth_dns2">DNS 2:</label></td>
+          <td><input type="text" id="eth_dns2" value=""></td>
+        </tr>
+        <tr>
+          <td><label for="eth_mac-address">MAC-Adresse:</label></td>
+          <td><input type="text" id="eth_mac-address" readonly></td>
+        </tr>
+        <tr>
+          <td colspan="2"><button id="eth_btn_save">Speichern</button></td>
+        </tr>
+      </table>
+    </div>
+    
+    <h1>WiFi-Verbindung</h1>
+    <div class="container">
+      <table>
+        <tr>
+          <td><label for="wifi_enable">WLAN Aktivieren:</label></td>
+          <td>
+            <label class="switch">
+              <input type="checkbox" id="wifi_enable">
+              <span class="slider"></span>
+            </label>
+          </td>
+        </tr>
+        <tr>
+          <td colspan="2"><button id="wifi_btn_save">Speichern</button></td>
+        </tr>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    document.addEventListener("DOMContentLoaded", function() {
+        fetch("/get_network_info")
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log('Network info received:', data);
+            document.getElementById("eth_mac-address").value = data.eth_mac;
+            document.getElementById("eth_ip-address").value = data.eth_ip;
+            document.getElementById("eth_subnet-mask").value = data.eth_netmask;
+            document.getElementById("eth_gateway").value = data.eth_gateway;
+            document.getElementById("eth_dns1").value = data.eth_dns1;
+            document.getElementById("eth_dns2").value = data.eth_dns2;
+
+            // Set Ethernet DHCP toggle based on the received data
+            const dhcpEnabled = data.eth_static;
+            document.getElementById('eth_dhcp-toggle').checked = dhcpEnabled;
+            toggleETHInputFields(!dhcpEnabled);
+
+            // Set Wifi Enable based on the received data
+            const wifiEnabled = data.wifi_enable;
+            document.getElementById('wifi_enable').checked = wifiEnabled;
+        })
+        .catch(error => console.error('Error fetching network info:', error));
+        
+        // Toggle an Save Ethernet settings
+        document.getElementById('eth_btn_save').addEventListener('click', saveETHNetworkSettings);
+        document.getElementById('eth_dhcp-toggle').addEventListener('change', function(event) {
+            toggleETHInputFields(!event.target.checked);
+        });
+
+        // Toggle an Save Wireless settings
+        document.getElementById('wifi_btn_save').addEventListener('click', saveWifiNetworkSettings);
+        document.getElementById('wifi_enable').addEventListener('change', function(event) {
+          //  toggleETHInputFields(!event.target.checked);
+        });
+
+        window.onload = function(event) {
+          loadNavbar();
+          initWebSocket();
+        }
+    });
+
+    function saveETHNetworkSettings() {
+        var msg = {
+            setEthStatic: document.getElementById('eth_dhcp-toggle').checked,
+            setEthIpAdr: document.getElementById('eth_ip-address').value.split('.').map(Number),
+            setEthNetmask: document.getElementById('eth_subnet-mask').value.split('.').map(Number),
+            setEthGw: document.getElementById('eth_gateway').value.split('.').map(Number),
+            setEthDns1: document.getElementById('eth_dns1').value.split('.').map(Number),
+            setEthDns2: document.getElementById('eth_dns2').value.split('.').map(Number)
+        };
+        console.log('Sending Ethernet settings to server:', JSON.stringify(msg));
+        if (Socket.readyState === WebSocket.OPEN) {
+            Socket.send(JSON.stringify(msg));
+        } else {
+            console.error('WebSocket is not open. ReadyState: ' + Socket.readyState);
+        }
+    }
+
+
+    function saveWifiNetworkSettings() {
+        var msg = {
+            setWifiEnable: document.getElementById('wifi_enable').checked,
+        //    setEthIpAdr: document.getElementById('eth_ip-address').value.split('.').map(Number),
+        //    setEthNetmask: document.getElementById('eth_subnet-mask').value.split('.').map(Number),
+        //    setEthGw: document.getElementById('eth_gateway').value.split('.').map(Number),
+        //    setEthDns1: document.getElementById('eth_dns1').value.split('.').map(Number),
+        //    setEthDns2: document.getElementById('eth_dns2').value.split('.').map(Number)
+        };
+        console.log('Sending Wireless settings to server:', JSON.stringify(msg));
+        if (Socket.readyState === WebSocket.OPEN) {
+            Socket.send(JSON.stringify(msg));
+        } else {
+            console.error('WebSocket is not open. ReadyState: ' + Socket.readyState);
+        }
+    }
+
+
+    function toggleETHInputFields(enable) {
+        var ipFields = document.querySelectorAll('#eth_ip-address, #eth_subnet-mask, #eth_gateway, #eth_dns1, #eth_dns2');
+        ipFields.forEach(function(field) {
+            field.disabled = enable;
+        });
+    }
+  </script>
+</body>
+</html>

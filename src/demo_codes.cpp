@@ -46,7 +46,7 @@ void demo_monitoring_task(void *args){
     while(1){
         ethernet_state_t eth_status;
         get_ethernet_state(&eth_status);
-        printf("\n\n\n__________________________________________________________________");
+     /*   printf("\n\n\n__________________________________________________________________");
         ESP_LOGI(DEMO_TAG, "Ethernet Connection Status: %d", eth_status.connection_state);
         ESP_LOGI(DEMO_TAG, "Ethernet MAC Address: %02x:%02x:%02x:%02x:%02x:%02x", eth_status.mac_addr[0], eth_status.mac_addr[1], eth_status.mac_addr[2], eth_status.mac_addr[3], eth_status.mac_addr[4], eth_status.mac_addr[5]);
         ESP_LOGI(DEMO_TAG, "Ethernet IP Address: %d.%d.%d.%d", eth_status.ip_addr[0], eth_status.ip_addr[1], eth_status.ip_addr[2], eth_status.ip_addr[3]);
@@ -69,26 +69,26 @@ void demo_monitoring_task(void *args){
         ESP_LOGI(DEMO_TAG, "Wifi MAC Address: %02x:%02x:%02x:%02x:%02x:%02x", wifi_status.mac[0], wifi_status.mac[1], wifi_status.mac[2], wifi_status.mac[3], wifi_status.mac[4], wifi_status.mac[5]);
         printf("__________________________________________________________________\n\n\n");
         
-        
+       */ 
         
         vTaskDelay(10000 / portTICK_PERIOD_MS);
 
         
         // check if internet is working by pinging google.com
-        esp_http_client_config_t config = {
-            .url = ping_host,
-            .event_handler = _http_event_handler,
-        };
-        esp_http_client_handle_t client = esp_http_client_init(&config);
-        esp_err_t err = esp_http_client_perform(client);
-        if (err == ESP_OK) {
-            ESP_LOGI(DEMO_TAG, "HTTP GET Status = %d, content_length = %d",
-                     esp_http_client_get_status_code(client),
-                     esp_http_client_get_content_length(client));
-        } else {
-            ESP_LOGE(DEMO_TAG, "HTTP GET request failed: %s", esp_err_to_name(err));
-        }
-        esp_http_client_cleanup(client);
+     //   esp_http_client_config_t config = {
+     //       .url = ping_host,
+     //       .event_handler = _http_event_handler,
+     //   };
+     //   esp_http_client_handle_t client = esp_http_client_init(&config);
+     //   esp_err_t err = esp_http_client_perform(client);
+     //   if (err == ESP_OK) {
+     //       ESP_LOGI(DEMO_TAG, "HTTP GET Status = %d, content_length = %d",
+     //                esp_http_client_get_status_code(client),
+     //                esp_http_client_get_content_length(client));
+     //   } else {
+     //       ESP_LOGE(DEMO_TAG, "HTTP GET request failed: %s", esp_err_to_name(err));
+     //   }
+     //   esp_http_client_cleanup(client);
 
         
         vTaskDelay(10000 / portTICK_PERIOD_MS);

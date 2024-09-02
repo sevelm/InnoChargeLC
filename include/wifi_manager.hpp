@@ -19,3 +19,6 @@ typedef struct {
 
 void wifi_init_sta(wifi_sta_start_config_t *config);
 void get_wifi_sta_state(wifi_sta_state_t *state);
+void wifi_scan();
+void wifi_stop_sta();
+

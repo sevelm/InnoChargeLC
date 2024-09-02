@@ -19,6 +19,8 @@
 #include "driver/spi_master.h"
 #include "ethernet_manager.hpp"
 
+#include "AA_globals.h"
+
 static const char *ETHERNET_TAG = "eth_example";
 esp_netif_t *eth_netif_spi = { NULL };
 
@@ -306,3 +308,45 @@ void start_eth(bool is_dhcp_enabled, ethernet_start_config_t *ethernet_start_con
     /* start Ethernet driver state machine */
         ESP_ERROR_CHECK(esp_eth_start(eth_handle_spi));
 }
+
+
+    void stop_eth() {
+        if (eth_netif_spi != NULL) {
+            esp_netif_action_stop(eth_netif_spi, NULL, 0, NULL);
+            esp_netif_destroy(eth_netif_spi);
+            eth_netif_spi = NULL;
+        }
+            // Deinitialize SPI bus
+            ESP_ERROR_CHECK(spi_bus_free(SPI2_HOST));
+
+            // Deinitialize GPIO ISR service
+            gpio_uninstall_isr_service();
+            ESP_LOGI(ETHERNET_TAG, "Ethernet stopped");
+    }
+
+    void restart_new_settings_eth() {
+            ethernet_state_t eth_status;
+            eth_status.is_enabled = true;
+            preferences.getBytes("eth_ip_addr", eth_status.ip_addr, sizeof(eth_status.ip_addr));
+            preferences.getBytes("eth_netmask", eth_status.netmask, sizeof(eth_status.netmask));
+            preferences.getBytes("eth_gw", eth_status.gw, sizeof(eth_status.gw));
+            preferences.getBytes("eth_dns1", eth_status.dns1, sizeof(eth_status.dns1));
+            preferences.getBytes("eth_dns2", eth_status.dns2, sizeof(eth_status.dns2));
+            bool eth_static = preferences.getBool("ethStatic", true);
+
+            if (eth_static) {
+                    // Configure static Ethernet settings
+                    ethernet_start_config_t eth_config = {
+                    // .mac_addr = {eth_status.mac_addr[0], eth_status.mac_addr[1], eth_status.mac_addr[2], eth_status.mac_addr[3], eth_status.mac_addr[4], eth_status.mac_addr[5]},
+                        .ip_addr = {eth_status.ip_addr[0], eth_status.ip_addr[1], eth_status.ip_addr[2], eth_status.ip_addr[3]},
+                        .netmask = {eth_status.netmask[0], eth_status.netmask[1], eth_status.netmask[2], eth_status.netmask[3]},
+                        .gw = {eth_status.gw[0], eth_status.gw[1], eth_status.gw[2], eth_status.gw[3]},
+                        .dns1 = {eth_status.dns1[0], eth_status.dns1[1], eth_status.dns1[2], eth_status.dns1[3]},
+                        .dns2 = {eth_status.dns2[0], eth_status.dns2[1], eth_status.dns2[2], eth_status.dns2[3]}
+                        };
+                        start_eth(false, &eth_config); // Start Ethernet with DHCP Client disabled
+                } else {
+                    start_eth(true, NULL); // Start Ethernet with DHCP Client enabled
+                    };
+        ESP_LOGI(ETHERNET_TAG, "Ethernet Restart with new settings");
+    }

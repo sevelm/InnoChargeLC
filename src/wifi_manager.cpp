@@ -8,7 +8,6 @@
 
 const char *WIFI_TAG = "WIFI MANAGER : ";
 
-
 int retry_interval = 1000;
 int max_retry = 0;
 int retry_count = 0;
@@ -22,6 +21,46 @@ wifi_sta_state_t current_wifi_sta_state = {
     .dns2 = {0},
     .mac = {0}
 };
+
+void wifi_scan() {
+    ESP_LOGI(WIFI_TAG, "Starting WiFi scan...");
+
+    wifi_scan_config_t scan_config = {
+        .ssid = NULL,
+        .bssid = NULL,
+        .channel = 0,
+        .show_hidden = true
+    };
+
+    esp_err_t err = esp_wifi_scan_start(&scan_config, true);
+    if (err != ESP_OK) {
+        ESP_LOGE(WIFI_TAG, "WiFi scan failed at start: %s", esp_err_to_name(err));
+        return;
+    }
+
+    uint16_t ap_num = 0;
+    esp_wifi_scan_get_ap_num(&ap_num);
+
+    ESP_LOGI(WIFI_TAG, "Total APs scanned = %u", ap_num);
+
+    if (ap_num == 0) {
+        ESP_LOGI(WIFI_TAG, "No APs found.");
+        return;
+    }
+
+    wifi_ap_record_t ap_records[ap_num];
+    esp_wifi_scan_get_ap_records(&ap_num, ap_records);
+
+    for (int i = 0; i < ap_num; i++) {
+        ESP_LOGI(WIFI_TAG, "AP %d:", i + 1);
+        ESP_LOGI(WIFI_TAG, "  SSID      : %s", ap_records[i].ssid);
+        ESP_LOGI(WIFI_TAG, "  RSSI      : %d", ap_records[i].rssi);
+        ESP_LOGI(WIFI_TAG, "  Channel   : %d", ap_records[i].primary);
+        ESP_LOGI(WIFI_TAG, "  Auth Mode : %d", ap_records[i].authmode);
+    }
+}
+
+
 
 // Event Handler
 static void wifi_sta_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
@@ -76,10 +115,19 @@ static void wifi_sta_event_handler(void *arg, esp_event_base_t event_base, int32
     }
 }
 
-void wifi_init_sta(wifi_sta_start_config_t *config)
-{
+
+// Start WiFi and create network interface
+void wifi_init_sta(wifi_sta_start_config_t *config) {
     ESP_LOGI(WIFI_TAG, "Initializing wifi station");
-    esp_netif_create_default_wifi_sta();
+
+    // Create the network interface only if it does not already exist
+    esp_netif_t* netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+    if (!netif) {
+        esp_netif_create_default_wifi_sta();
+    } else {
+        ESP_LOGW(WIFI_TAG, "WiFi STA interface already exists");
+    }
+
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
 
@@ -108,6 +156,29 @@ void wifi_init_sta(wifi_sta_start_config_t *config)
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());
 }
+
+
+// Stop WiFi and release network interface
+void wifi_stop_sta() {
+    ESP_LOGI(WIFI_TAG, "Stopping wifi station");
+
+    // Stop WiFi
+    ESP_ERROR_CHECK(esp_wifi_stop());
+
+    // Deinitialize WiFi
+    ESP_ERROR_CHECK(esp_wifi_deinit());
+
+    // Remove the WiFi network interface
+    esp_netif_t* netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+    if (netif) {
+        ESP_LOGI(WIFI_TAG, "Destroying existing WiFi STA interface");
+        esp_netif_destroy(netif);
+    } else {
+        ESP_LOGW(WIFI_TAG, "WiFi STA interface not found during stop");
+    }
+}
+
+
 
 void get_wifi_sta_state(wifi_sta_state_t *state)
 {

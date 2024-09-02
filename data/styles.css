@@ -1,0 +1,186 @@
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    display: flex;
+    height: 100vh;
+    background-color: #f4f4f9;
+}
+  
+.sidebar {
+    width: 220px;
+    background-color: #263238;
+    color: #fff;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+  
+.logo-container {
+    padding: 20px;
+}
+  
+.logo {
+    width: 100%;
+    max-width: 250px; /* Set the max width of the logo */
+}
+  
+nav {
+    width: 100%;
+    padding-top: 20px;
+}
+  
+nav a {
+    display: block;
+    text-decoration: none;
+    color: #b0bec5;
+}
+  
+.nav-item {
+    display: flex;
+    align-items: center;
+    padding: 14px 20px;
+    font-size: 16px;
+    font-weight: bold;
+}
+  
+.nav-item img.nav-icon {
+    margin-right: 10px; /* Space between icon and text */
+    width: 20px; /* Set the width of the icon */
+    height: auto; /* Maintain the aspect ratio of the icon */
+}
+  
+nav a:hover {
+    background-color: #37474f;
+}
+  
+.main-content {
+    flex-grow: 1;
+    padding: 20px;
+}
+  
+.container {
+    background-color: #fff;
+    border: 1px solid #ddd;
+    padding: 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+  
+h1 {
+    color: #7f868a; /* Light gray color for the main headings */
+}
+  
+h2 {
+    color: #7f868a; /* Light gray color for the subheadings */
+}
+  
+.reserve {
+    display: none;
+}
+  
+.form-group {
+    display: flex;
+    align-items: center;
+    margin-bottom: 15px;
+}
+  
+.form-group label {
+    flex: 0 0 200px;
+    margin-right: 10px;
+    font-weight: bold;
+    color: #333;
+}
+  
+.form-group input[type="text"], .form-group input[type="number"] {
+    flex: 1;
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+}
+  
+
+button {
+    padding: 15px 15px;
+    background-color: #263238;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+  
+button:hover {
+    background-color: #37474f;
+}
+  
+.switch {
+    position: relative;
+    display: inline-block;
+    width: 40px; /* Reduced the width of the switch */
+    height: 24px;
+}
+  
+.switch input { display:none }
+  
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #ccc;
+    transition: .4s;
+    border-radius: 48px;
+}
+  
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 16px;
+    width: 16px;
+    border-radius: 50px;
+    left: 4px;
+    bottom: 4px;
+    background-color: white;
+    transition: 0.4s;
+}
+  
+input:checked + .slider {
+    background-color: #578FC7;
+}
+  
+input:checked + .slider:before {
+    transform: translateX(16px); /* Adjusted the translation to match the new width */
+}
+
+/* Table-specific CSS */
+table {
+    width: auto; /* Set the table to auto width */
+    border-collapse: collapse;
+}
+
+table td {
+    padding: 10px;
+    vertical-align: middle;
+}
+
+table input[type="text"], table input[type="number"] {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+}
+
+table .switch {
+    width: 40px;
+    height: 24px;
+}
+
+table .slider {
+    border-radius: 24px;
+}
+
+table .slider:before {
+    height: 16px;
+    width: 16px;
+}

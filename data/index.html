@@ -1,96 +1,59 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Main Page</title>
-  <style>
-    .container {
-      border: 1px solid #003366;
-      padding: 20px;
-      margin: 20px 0;
-    }
-    h2 {
-      color: #003366;
-    }
-  </style>
+  <title>InnoCharge-Home</title>
+  <link rel="stylesheet" type="text/css" href="styles.css">
+  <script src="scripts.js"></script>
 </head>
-<body style='background-color: #EEEEEE;'>
-  <h1 style="color: #003366;">InnoCharge</h1>
+<body>
+  <div class="sidebar" id="navbar">
+    <!-- Navigation wird hier geladen -->
+  </div>
   
-  <div class="container">
-    <h2>Control Pilot Status</h2>
-    <p>Aktueller CP-Status: <span id='cpState'>-</span></p>
-  </div>
+  <div class="main-content">
+    <h1>Home</h1>
+  
+    <div class="container">
+      <h2>Control Pilot Status</h2>
+      <p>Aktueller CP-Status: <span id='cpState'>-</span></p>
+    </div>
 
-  <div class="container">
-    <h2>Soll-Ladestrom</h2>
-    <label for="setChargeCurrent">Soll-Ladestrom (A):</label>
-    <input type="number" id="setChargeCurrent" name="setChargeCurrent">
-    <button id="BTN_SET_CURRENT">Set Charge Current</button>
-  </div>
+    <div class="container">
+      <h2>Soll-Ladestrom</h2>
+      <label for="setChargeCurrent">Soll-Ladestrom (A):</label>
+      <input type="number" id="setChargeCurrent" name="setChargeCurrent">
+      <button id="BTN_SET_CURRENT">Set Charge Current</button>
+    </div>
 
-  <div class="container">
-    <h2>CP-Relay</h2>
-    <label for="setCpRelay">CP-Relay:</label>
-    <button id="BTN_SET_RELAY">AUS</button>
-  </div>
+    <div class="container">
+      <h2>CP-Relay</h2>
+      <label for="setCpRelay">CP-Relay:</label>
+      <button id="BTN_SET_RELAY">AUS</button>
+    </div>
 
-  <button id="BTN_GO_TO_SETTINGS">Go to Settings</button>
+    <button id="BTN_GO_TO_SETTINGS">Go to Settings</button>
+
+    <!-- Neuer Schalter unten auf der Seite -->
+    <div class="container">
+      <label for="new-toggle">Neuer Schalter:</label>
+      <label class="switch">
+        <input type="checkbox" id="new-toggle">
+        <span class="slider"></span>
+      </label>
+    </div>
+  </div>
 
   <script>
-    var Socket;
-    var clientConnected = false;
-
-    function init() {
-      document.getElementById('BTN_SET_CURRENT').addEventListener('click', set_charge_current);
-      document.getElementById('BTN_GO_TO_SETTINGS').addEventListener('click', go_to_settings);
-      document.getElementById('BTN_SET_RELAY').addEventListener('click', toggle_cp_relay);
-
-      Socket = new WebSocket('ws://' + window.location.hostname + ':81/');
-      Socket.onmessage = function(event) {
-        processCommand(event);
-      };
-    }
-
-    function set_charge_current() {
-      var msg = {
-        setChargeCurrent: document.getElementById('setChargeCurrent').value
-      };
-      Socket.send(JSON.stringify(msg));
-    }
-
-    function toggle_cp_relay() {
-      var button = document.getElementById('BTN_SET_RELAY');
-      var newState = (button.textContent === 'AUS') ? 'EIN' : 'AUS';
-      var msg = {
-        setCpRelay: newState === 'EIN' ? true : false
-      };
-      Socket.send(JSON.stringify(msg));
-    }
-
-    function processCommand(event) {
-      var obj = JSON.parse(event.data);
-
-      if (obj.cpState !== undefined) {
-        document.getElementById('cpState').innerHTML = obj.cpState;
-      }
-
-      if (obj.cpRelayState !== undefined) {
-        var relayState = obj.cpRelayState ? 'EIN' : 'AUS';
-        document.getElementById('BTN_SET_RELAY').textContent = relayState;
-      }
-
-      // Ausgabe der empfangenen Rohdaten im Log
-      console.log('Received data:', event.data);
-    }
-
-    function go_to_settings() {
-      window.location.href = 'settings.html';
-    }
+    document.getElementById('BTN_SET_CURRENT')?.addEventListener('click', set_charge_current);
+    document.getElementById('BTN_GO_TO_SETTINGS')?.addEventListener('click', go_to_settings);
+    document.getElementById('BTN_SET_RELAY')?.addEventListener('click', toggle_cp_relay);
 
     window.onload = function(event) {
-      init();
+      loadNavbar();
+      initWebSocket();
     }
   </script>
 </body>
 </html>
+
 

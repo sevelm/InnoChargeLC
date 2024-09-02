@@ -10,7 +10,6 @@ typedef struct{
     uint8_t dns2[4];
 } ethernet_start_config_t;
 
-
 typedef enum {
     ETHERNET_STATUS_DISCONNECTED,
     ETHERNET_STATUS_CONNECTED,
@@ -32,4 +31,7 @@ typedef struct {
 void start_eth(bool is_dhcp_enabled, ethernet_start_config_t * ethernet_start_config);
 void get_eth_ip(char *ip);
 void get_ethernet_state( ethernet_state_t *eth_status);
+void stop_eth();
+void restart_new_settings_eth();
+void wifi_scan();
 #endif // ETHERNET_MANAGER_HPP
