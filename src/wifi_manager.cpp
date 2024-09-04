@@ -24,6 +24,10 @@ wifi_sta_state_t current_wifi_sta_state = {
 
 void wifi_scan() {
     ESP_LOGI(WIFI_TAG, "Starting WiFi scan...");
+    bool was_wifi_init = true;
+    bool was_wifi_started = true;
+
+
 
     wifi_scan_config_t scan_config = {
         .ssid = NULL,
@@ -32,16 +36,62 @@ void wifi_scan() {
         .show_hidden = true
     };
 
-    esp_err_t err = esp_wifi_scan_start(&scan_config, true);
-    if (err != ESP_OK) {
-        ESP_LOGE(WIFI_TAG, "WiFi scan failed at start: %s", esp_err_to_name(err));
-        return;
-    }
+    // esp_err_t err = esp_wifi_scan_start(&scan_config, true);
+    // if (err != ESP_OK) {
+    //     if (err == ESP_ERR_WIFI_NOT_INIT) {
+    //         ESP_LOGE(WIFI_TAG, "WiFi is not initialized. initializing...");
+    //         wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    //         ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+    //     }
+    //     else if (err == ESP_ERR_WIFI_NOT_STARTED) {
+    //         ESP_LOGE(WIFI_TAG, "WiFi is not started. starting...");
+    //         ESP_ERROR_CHECK(esp_wifi_start());
+    //     }
+    //     else{
+    //         ESP_LOGE(WIFI_TAG, "WiFi scan failed at start: %s", esp_err_to_name(err));
+    //         return;
+    //     }
+    // }
+
+    esp_err_t err;
+    do{
+        err = esp_wifi_scan_start(&scan_config, true);
+        if (err != ESP_OK) {
+            if (err == ESP_ERR_WIFI_NOT_INIT) {
+                ESP_LOGE(WIFI_TAG, "WiFi is not initialized. initializing...");
+                wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+                ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+                was_wifi_init = false;
+            }
+            else if (err == ESP_ERR_WIFI_NOT_STARTED) {
+                ESP_LOGE(WIFI_TAG, "WiFi is not started. starting...");
+                ESP_ERROR_CHECK(esp_wifi_start());
+                was_wifi_started = false;
+            }
+            else{
+                ESP_LOGE(WIFI_TAG, "WiFi scan failed at start: %s", esp_err_to_name(err));
+                return;
+            }
+        }
+
+
+    }while (err!=ESP_OK);
+    
 
     uint16_t ap_num = 0;
     esp_wifi_scan_get_ap_num(&ap_num);
 
     ESP_LOGI(WIFI_TAG, "Total APs scanned = %u", ap_num);
+
+    if(!was_wifi_started){
+        ESP_ERROR_CHECK(esp_wifi_disconnect());
+        ESP_LOGI(WIFI_TAG, "Disconnecting and stopping WiFi");
+        ESP_ERROR_CHECK(esp_wifi_stop());
+    }
+    if(!was_wifi_init){
+        ESP_LOGI(WIFI_TAG, "Deinitializing WiFi");
+        ESP_ERROR_CHECK(esp_wifi_deinit());
+    }
 
     if (ap_num == 0) {
         ESP_LOGI(WIFI_TAG, "No APs found.");
