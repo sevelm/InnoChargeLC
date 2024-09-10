@@ -96,11 +96,11 @@ void setup() {
     strcpy(wifi_sta_config.ssid, "J Rakhde Ni Bho Ni_2.4");
     strcpy(wifi_sta_config.passphrase, "jbhandenibhoni");
 
-    // Schalter zum aktivieren und deaktivieren
-    wifiEnabled = preferences.getBool("wifiEnable", false);
-    if (wifiEnabled) {
-        wifi_init_sta(&wifi_sta_config);
-    }
+  // Schalter zum aktivieren und deaktivieren
+  //  wifiEnabled = preferences.getBool("wifiEnable", false);
+  //  if (wifiEnabled) {
+  //      wifi_init_sta(&wifi_sta_config);
+  //  }
 
     // Scan WiFi networks
    // wifi_scan();
@@ -124,7 +124,7 @@ if (newWifiEnabled != wifiEnabled) {
     wifiEnabled = newWifiEnabled;
     if (wifiEnabled) {
         ESP_LOGI(MAIN_TAG, "WiFi is being activated");
-        wifi_init_sta(&wifi_sta_config);
+       // wifi_init_sta(&wifi_sta_config);
     } else {
         ESP_LOGI(MAIN_TAG, "WiFi is being deactivated");
         wifi_stop_sta();

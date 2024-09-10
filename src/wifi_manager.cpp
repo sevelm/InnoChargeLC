@@ -22,93 +22,118 @@ wifi_sta_state_t current_wifi_sta_state = {
     .mac = {0}
 };
 
+wifi_scan_ap_data scanned_aps[MAXIMUM_AP];
+uint16_t scanned_ap_count = 0;
+
+const char* auth_mode_type(wifi_auth_mode_t auth_mode) {
+    switch (auth_mode) {
+        case WIFI_AUTH_OPEN:
+            return "Open";
+        case WIFI_AUTH_WEP:
+            return "WEP";
+        case WIFI_AUTH_WPA_PSK:
+            return "WPA_PSK";
+        case WIFI_AUTH_WPA2_PSK:
+            return "WPA2_PSK";
+        case WIFI_AUTH_WPA_WPA2_PSK:
+            return "WPA_WPA2_PSK";
+        case WIFI_AUTH_WPA3_PSK:
+            return "WPA3_PSK";
+        case WIFI_AUTH_WPA2_WPA3_PSK:
+            return "WPA2_WPA3_PSK";
+        case WIFI_AUTH_WAPI_PSK:
+            return "WAPI_PSK";
+        default:
+            return "Unknown";
+    }
+}
+
+bool ssid_exists(const char* ssid, wifi_ap_record_t wifi_records[], int index) {
+    for (int i = 0; i < index; i++) {
+        if (strcmp((char *)wifi_records[i].ssid, ssid) == 0) {
+            return true;  // SSID already exists
+        }
+    }
+    return false;
+}
+
 void wifi_scan() {
+
     ESP_LOGI(WIFI_TAG, "Starting WiFi scan...");
     bool was_wifi_init = true;
     bool was_wifi_started = true;
-
-
 
     wifi_scan_config_t scan_config = {
         .ssid = NULL,
         .bssid = NULL,
         .channel = 0,
-        .show_hidden = true
+        .show_hidden = false
     };
 
-    // esp_err_t err = esp_wifi_scan_start(&scan_config, true);
-    // if (err != ESP_OK) {
-    //     if (err == ESP_ERR_WIFI_NOT_INIT) {
-    //         ESP_LOGE(WIFI_TAG, "WiFi is not initialized. initializing...");
-    //         wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    //         ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-    //     }
-    //     else if (err == ESP_ERR_WIFI_NOT_STARTED) {
-    //         ESP_LOGE(WIFI_TAG, "WiFi is not started. starting...");
-    //         ESP_ERROR_CHECK(esp_wifi_start());
-    //     }
-    //     else{
-    //         ESP_LOGE(WIFI_TAG, "WiFi scan failed at start: %s", esp_err_to_name(err));
-    //         return;
-    //     }
-    // }
-
+    // Initialize and start WiFi if necessary
     esp_err_t err;
-    do{
+    do {
         err = esp_wifi_scan_start(&scan_config, true);
         if (err != ESP_OK) {
             if (err == ESP_ERR_WIFI_NOT_INIT) {
-                ESP_LOGE(WIFI_TAG, "WiFi is not initialized. initializing...");
+                ESP_LOGE(WIFI_TAG, "WiFi is not initialized. Initializing...");
                 wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
                 ESP_ERROR_CHECK(esp_wifi_init(&cfg));
                 was_wifi_init = false;
             }
             else if (err == ESP_ERR_WIFI_NOT_STARTED) {
-                ESP_LOGE(WIFI_TAG, "WiFi is not started. starting...");
+                ESP_LOGE(WIFI_TAG, "WiFi is not started. Starting...");
                 ESP_ERROR_CHECK(esp_wifi_start());
                 was_wifi_started = false;
             }
-            else{
+            else {
                 ESP_LOGE(WIFI_TAG, "WiFi scan failed at start: %s", esp_err_to_name(err));
                 return;
             }
         }
+    } while (err != ESP_OK);
 
+   wifi_ap_record_t wifi_records[MAXIMUM_AP];
 
-    }while (err!=ESP_OK);
-    
+    uint16_t max_records = MAXIMUM_AP;
+    ESP_ERROR_CHECK(esp_wifi_scan_get_ap_records(&max_records, wifi_records));
 
-    uint16_t ap_num = 0;
-    esp_wifi_scan_get_ap_num(&ap_num);
+    printf("Number of Access Points Found: %d\n", max_records);
+    printf("\n");
+    printf("               SSID              | Channel | RSSI |   Authentication Mode \n");
+    printf("***************************************************************\n");
 
-    ESP_LOGI(WIFI_TAG, "Total APs scanned = %u", ap_num);
+for (int i = 0; i < max_records; i++) {
+    // Check if the SSID is already listed (to avoid duplicates)
+    if (!ssid_exists((char *)wifi_records[i].ssid, wifi_records, i)) {
+        // Store unique SSIDs in the "scanned_aps" variable
+        strncpy(scanned_aps[i].ssid, (char *)wifi_records[i].ssid, 32);
+        scanned_aps[i].ssid[32] = '\0';  // Ensure the SSID is null-terminated
+        scanned_aps[i].rssi = wifi_records[i].rssi;
+        scanned_aps[i].channel = wifi_records[i].primary;
+        scanned_aps[i].authmode = wifi_records[i].authmode;
 
-    if(!was_wifi_started){
-        ESP_ERROR_CHECK(esp_wifi_disconnect());
-        ESP_LOGI(WIFI_TAG, "Disconnecting and stopping WiFi");
-        ESP_ERROR_CHECK(esp_wifi_stop());
-    }
-    if(!was_wifi_init){
-        ESP_LOGI(WIFI_TAG, "Deinitializing WiFi");
-        ESP_ERROR_CHECK(esp_wifi_deinit());
-    }
-
-    if (ap_num == 0) {
-        ESP_LOGI(WIFI_TAG, "No APs found.");
-        return;
-    }
-
-    wifi_ap_record_t ap_records[ap_num];
-    esp_wifi_scan_get_ap_records(&ap_num, ap_records);
-
-    for (int i = 0; i < ap_num; i++) {
-        ESP_LOGI(WIFI_TAG, "AP %d:", i + 1);
-        ESP_LOGI(WIFI_TAG, "  SSID      : %s", ap_records[i].ssid);
-        ESP_LOGI(WIFI_TAG, "  RSSI      : %d", ap_records[i].rssi);
-        ESP_LOGI(WIFI_TAG, "  Channel   : %d", ap_records[i].primary);
-        ESP_LOGI(WIFI_TAG, "  Auth Mode : %d", ap_records[i].authmode);
+        // Print from the "scanned_aps" variable immediately
+        printf("%32s | %7d | %4d | %12s\n", 
+            scanned_aps[i].ssid, 
+            scanned_aps[i].channel, 
+            scanned_aps[i].rssi, 
+            auth_mode_type(scanned_aps[i].authmode));
     }
 }
+
+    printf("***************************************************************\n");
+
+
+
+
+
+}
+
+
+
+
+
 
 
 

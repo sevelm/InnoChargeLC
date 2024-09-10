@@ -120,21 +120,29 @@
     });
 
     function saveETHNetworkSettings() {
-        var msg = {
-            setEthStatic: document.getElementById('eth_dhcp-toggle').checked,
-            setEthIpAdr: document.getElementById('eth_ip-address').value.split('.').map(Number),
-            setEthNetmask: document.getElementById('eth_subnet-mask').value.split('.').map(Number),
-            setEthGw: document.getElementById('eth_gateway').value.split('.').map(Number),
-            setEthDns1: document.getElementById('eth_dns1').value.split('.').map(Number),
-            setEthDns2: document.getElementById('eth_dns2').value.split('.').map(Number)
-        };
-        console.log('Sending Ethernet settings to server:', JSON.stringify(msg));
-        if (Socket.readyState === WebSocket.OPEN) {
-            Socket.send(JSON.stringify(msg));
-        } else {
-            console.error('WebSocket is not open. ReadyState: ' + Socket.readyState);
-        }
+    var msg = {
+        setEthStatic: document.getElementById('eth_dhcp-toggle').checked,
+        setEthIpAdr: document.getElementById('eth_ip-address').value.split('.').map(Number),
+        setEthNetmask: document.getElementById('eth_subnet-mask').value.split('.').map(Number),
+        setEthGw: document.getElementById('eth_gateway').value.split('.').map(Number),
+        setEthDns1: document.getElementById('eth_dns1').value.split('.').map(Number),
+        setEthDns2: document.getElementById('eth_dns2').value.split('.').map(Number)
+    };
+    
+    console.log('Sending Ethernet settings to server:', JSON.stringify(msg));
+    
+    // First, inform the server to reset TCP connections before applying new settings
+    if (Socket.readyState === WebSocket.OPEN) {
+        Socket.send(JSON.stringify({ action: 'resetTCP' }));  // Request server to reset TCP
+        
+        // Add a slight delay to ensure the TCP reset happens before new settings are applied
+        setTimeout(() => {
+            Socket.send(JSON.stringify(msg));  // Send new Ethernet settings after reset
+        }, 1000);  // 1-second delay to ensure reset
+    } else {
+        console.error('WebSocket is not open. ReadyState: ' + Socket.readyState);
     }
+}
 
 
     function saveWifiNetworkSettings() {

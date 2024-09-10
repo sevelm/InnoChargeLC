@@ -16,12 +16,8 @@
 const char *CP_LOGI = "Task_Low: ";
 
 
-unsigned long lastScanTime = 0;
-const unsigned long scanInterval = 20000; // Intervall für den WiFi-Scan (60 Sekunden)
-
-
-
-
+bool enableWifiScan = false;
+bool prevWifiEnable; 
 
 
 //////////////////////////////////////////////////// Setup ///////////////////////////////////////////////////
@@ -39,10 +35,18 @@ void A_Task_Low(void *pvParameter){
         get_eth_ip(eth_ip);
         ESP_LOGI(CP_LOGI, "IP: %s", eth_ip);
  // Zyklischer WiFi-Scan
-    if (preferences.getBool("wifiEnable", false) && millis() - lastScanTime >= scanInterval) {
+ 
+     if (preferences.getBool("wifiEnable", false) && !prevWifiEnable){
+        enableWifiScan = true;
+        prevWifiEnable = true;
+     }
+ 
+ 
+ if (enableWifiScan)
+ {
         ESP_LOGI(CP_LOGI, "Performing WiFi scan");
         wifi_scan();
-        lastScanTime = millis(); // Zeitstempel nach Scan aktualisieren
+        enableWifiScan = false;
     }
     //    ESP_LOGI(CP_LOGI, "highVoltage: %f", highVoltage);
     //    ESP_LOGI(CP_LOGI, "CP: %s", cpStateToName(currentCpState));

@@ -166,6 +166,8 @@ void set_eth_dns(char * dns1, char * dns2){
     esp_netif_set_dns_info(eth_netif_spi, ESP_NETIF_DNS_BACKUP, &dns);
 }
 
+bool is_spi_bus_initialize = false;
+
 void start_eth(bool is_dhcp_enabled, ethernet_start_config_t *ethernet_start_config){
     if(is_dhcp_enabled){
         ESP_LOGI(ETHERNET_TAG, "Starting Ethernet with DHCP enabled");
@@ -233,9 +235,6 @@ void start_eth(bool is_dhcp_enabled, ethernet_start_config_t *ethernet_start_con
     eth_mac_config_t mac_config_spi = ETH_MAC_DEFAULT_CONFIG();
     eth_phy_config_t phy_config_spi = ETH_PHY_DEFAULT_CONFIG();
 
-    // Install GPIO ISR handler to be able to service SPI Eth modlues interrupts
-    gpio_install_isr_service(0);
-
     // Init SPI bus
     spi_device_handle_t spi_handle = { NULL };
     spi_bus_config_t buscfg = {
@@ -245,7 +244,12 @@ void start_eth(bool is_dhcp_enabled, ethernet_start_config_t *ethernet_start_con
         .quadwp_io_num = -1,
         .quadhd_io_num = -1,
     };
-    ESP_ERROR_CHECK(spi_bus_initialize(SPI2_HOST, &buscfg, SPI_DMA_CH_AUTO));
+    if (!is_spi_bus_initialize) {
+        ESP_ERROR_CHECK(spi_bus_initialize(SPI2_HOST, &buscfg, SPI_DMA_CH_AUTO));
+    // Install GPIO ISR handler to be able to service SPI Eth modlues interrupts
+        gpio_install_isr_service(0);
+        is_spi_bus_initialize = true;
+    }
 
     // Init specific SPI Ethernet module configuration from Kconfig (CS GPIO, Interrupt GPIO, etc.)
     spi_eth_module_config_t spi_eth_module_config={
@@ -310,6 +314,7 @@ void start_eth(bool is_dhcp_enabled, ethernet_start_config_t *ethernet_start_con
 }
 
 
+
     void stop_eth() {
         if (eth_netif_spi != NULL) {
             esp_netif_action_stop(eth_netif_spi, NULL, 0, NULL);
@@ -317,10 +322,10 @@ void start_eth(bool is_dhcp_enabled, ethernet_start_config_t *ethernet_start_con
             eth_netif_spi = NULL;
         }
             // Deinitialize SPI bus
-            ESP_ERROR_CHECK(spi_bus_free(SPI2_HOST));
+        //    ESP_ERROR_CHECK(spi_bus_free(SPI2_HOST));
 
             // Deinitialize GPIO ISR service
-            gpio_uninstall_isr_service();
+        //    gpio_uninstall_isr_service();
             ESP_LOGI(ETHERNET_TAG, "Ethernet stopped");
     }
 

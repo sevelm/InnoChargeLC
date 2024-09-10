@@ -75,6 +75,14 @@ void webSocketEvent(byte num, WStype_t type, uint8_t * payload, size_t length) {
                 return;
             } else {
                 JsonVariantConst val;
+
+                // Handle action for resetting TCP before applying new network settings
+                if (doc.containsKey("action") && doc["action"] == "resetTCP") {
+                    ESP_LOGI(WEB_TAG, "Resetting TCP connections before applying new network settings");
+                    stop_eth();  // Stop Ethernet and close TCP connections
+                    break;  // After resetting, wait for new settings to be sent
+                }
+
                 // Safely handle array conversion for each setting
                 if (doc.containsKey("setEthIpAdr") && doc["setEthIpAdr"].is<JsonArray>()) {
                     JsonArray arr = doc["setEthIpAdr"].as<JsonArray>();
@@ -110,23 +118,28 @@ void webSocketEvent(byte num, WStype_t type, uint8_t * payload, size_t length) {
                     for (size_t i = 0; i < 4; i++) dns2[i] = arr[i];
                     preferences.putBytes("eth_dns2", dns2, sizeof(dns2));
                 }
+
+                // Set the new Ethernet mode (static or dynamic) and restart Ethernet
                 val = doc["setEthStatic"];
                 if (val != nullptr) {
                     preferences.putBool("ethStatic", val.as<bool>());
+                    // After preferences are set, restart Ethernet
                     stop_eth();
                     restart_new_settings_eth();
                 }
+
                 val = doc["setWifiEnable"];
                 if (val != nullptr) {
                     preferences.putBool("wifiEnable", val.as<bool>());
-                  // stop_eth();
-                  //  restart_new_settings_eth();
+                    // Add handling if necessary for WiFi here
                 }
-                serializeJsonPretty(doc, Serial);
+
+                serializeJsonPretty(doc, Serial);  // Output the received settings for debugging
             }
             break;
     }
 }
+
 
 void webSocketCreate(void *pvParameter) {
     while(1) {

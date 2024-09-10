@@ -17,6 +17,18 @@ typedef struct {
     uint8_t mac[6];
 } wifi_sta_state_t;
 
+// Wifi Scan
+#define MAXIMUM_AP 20
+struct wifi_scan_ap_data {
+    char ssid[33];
+    int32_t rssi;
+    uint8_t channel;
+    wifi_auth_mode_t authmode;
+};
+extern wifi_scan_ap_data scanned_aps[MAXIMUM_AP];  // Storage for discovered networks
+extern uint16_t scanned_ap_count;  // Number of networks found
+
+
 void wifi_init_sta(wifi_sta_start_config_t *config);
 void get_wifi_sta_state(wifi_sta_state_t *state);
 void wifi_scan();
