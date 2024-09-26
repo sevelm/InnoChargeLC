@@ -12,6 +12,8 @@
 #include "freertos/task.h"
 #include "esp_netif.h"
 #include "esp_eth.h"
+#include "esp_eth_mac.h"
+#include "esp_eth_phy.h"
 #include "esp_event.h"
 #include "esp_log.h"
 #include "driver/gpio.h"
@@ -23,6 +25,11 @@
 
 static const char *ETHERNET_TAG = "eth_example";
 esp_netif_t *eth_netif_spi = { NULL };
+spi_device_handle_t spi_handle = { NULL };
+esp_eth_handle_t eth_handle_spi = { NULL };
+esp_eth_mac_t *mac_spi = { NULL };
+esp_eth_phy_t *phy_spi = { NULL };
+esp_eth_netif_glue_handle_t glue_handle_eth_netif_spi = { NULL };
 
 ethernet_state_t current_ethernet_status = {
     .is_enabled = false,
@@ -166,8 +173,6 @@ void set_eth_dns(char * dns1, char * dns2){
     esp_netif_set_dns_info(eth_netif_spi, ESP_NETIF_DNS_BACKUP, &dns);
 }
 
-bool is_spi_bus_initialize = false;
-
 void start_eth(bool is_dhcp_enabled, ethernet_start_config_t *ethernet_start_config){
     if(is_dhcp_enabled){
         ESP_LOGI(ETHERNET_TAG, "Starting Ethernet with DHCP enabled");
@@ -236,7 +241,6 @@ void start_eth(bool is_dhcp_enabled, ethernet_start_config_t *ethernet_start_con
     eth_phy_config_t phy_config_spi = ETH_PHY_DEFAULT_CONFIG();
 
     // Init SPI bus
-    spi_device_handle_t spi_handle = { NULL };
     spi_bus_config_t buscfg = {
         .mosi_io_num = 21,
         .miso_io_num = 14,
@@ -244,13 +248,10 @@ void start_eth(bool is_dhcp_enabled, ethernet_start_config_t *ethernet_start_con
         .quadwp_io_num = -1,
         .quadhd_io_num = -1,
     };
-    if (!is_spi_bus_initialize) {
         ESP_ERROR_CHECK(spi_bus_initialize(SPI2_HOST, &buscfg, SPI_DMA_CH_AUTO));
     // Install GPIO ISR handler to be able to service SPI Eth modlues interrupts
         gpio_install_isr_service(0);
-        is_spi_bus_initialize = true;
-    }
-
+    
     // Init specific SPI Ethernet module configuration from Kconfig (CS GPIO, Interrupt GPIO, etc.)
     spi_eth_module_config_t spi_eth_module_config={
         .spi_cs_gpio = 12,
@@ -259,9 +260,8 @@ void start_eth(bool is_dhcp_enabled, ethernet_start_config_t *ethernet_start_con
         .phy_addr = 1
     };
     // Configure SPI interface and Ethernet driver for specific SPI module
-    esp_eth_mac_t *mac_spi;
-    esp_eth_phy_t *phy_spi;
-    esp_eth_handle_t eth_handle_spi = { NULL };
+
+    
     spi_device_interface_config_t devcfg = {
         .command_bits = 16, // Actually it's the address phase in W5500 SPI frame
         .address_bits = 8,  // Actually it's the control phase in W5500 SPI frame
@@ -294,7 +294,8 @@ void start_eth(bool is_dhcp_enabled, ethernet_start_config_t *ethernet_start_con
     esp_eth_ioctl(eth_handle_spi, ETH_CMD_S_MAC_ADDR, mac_address);
     memcpy(current_ethernet_status.mac_addr, mac_address, 6);
         // attach Ethernet driver to TCP/IP stack
-        ESP_ERROR_CHECK(esp_netif_attach(eth_netif_spi, esp_eth_new_netif_glue(eth_handle_spi)));
+        glue_handle_eth_netif_spi = esp_eth_new_netif_glue(eth_handle_spi);
+        ESP_ERROR_CHECK(esp_netif_attach(eth_netif_spi, glue_handle_eth_netif_spi));
 
     // Register user defined event handers
     ESP_ERROR_CHECK(esp_event_handler_register(ETH_EVENT, ESP_EVENT_ANY_ID, &eth_event_handler, NULL));
@@ -316,20 +317,112 @@ void start_eth(bool is_dhcp_enabled, ethernet_start_config_t *ethernet_start_con
 
 
     void stop_eth() {
-        if (eth_netif_spi != NULL) {
-            esp_netif_action_stop(eth_netif_spi, NULL, 0, NULL);
-            esp_netif_destroy(eth_netif_spi);
+        // stop Ethernet driver
+       if(eth_handle_spi!=NULL){
+            esp_err_t ret = esp_eth_stop(eth_handle_spi);
+            if(ret != ESP_OK){
+                ESP_LOGI(ETHERNET_TAG, "Failed to stop Ethernet: %s, restarting in 5 seconds", esp_err_to_name(ret));
+                vTaskDelay(5000 / portTICK_PERIOD_MS);
+                esp_restart();
+        }
+            // Unregister Ethernet event handlers    
+        ret = esp_event_handler_unregister(ETH_EVENT, ESP_EVENT_ANY_ID, &eth_event_handler);
+            if(ret != ESP_OK){
+                ESP_LOGE(ETHERNET_TAG, "Failed to unregister Ethernet event handler: %s", esp_err_to_name(ret));
+            }
+            ret = esp_event_handler_unregister(IP_EVENT, IP_EVENT_ETH_GOT_IP, &got_ip_event_handler);
+            if(ret != ESP_OK){
+                ESP_LOGE(ETHERNET_TAG, "Failed to unregister IP event handler: %s", esp_err_to_name(ret));
+            }
+            //  delete glue handle
+            ret = esp_eth_del_netif_glue(glue_handle_eth_netif_spi);
+            if(ret != ESP_OK){
+                ESP_LOGE(ETHERNET_TAG, "Failed to delete glue handle: %s, restarting in 5 seconds", esp_err_to_name(ret));
+                    vTaskDelay(5000 / portTICK_PERIOD_MS);
+                    esp_restart();
+            }
+            // uninstall Ethernet driver
+            ret = esp_eth_driver_uninstall(eth_handle_spi);
+            if(ret != ESP_OK){
+                ESP_LOGE(ETHERNET_TAG, "Failed to uninstall Ethernet driver: %s, restarting in 5 seconds", esp_err_to_name(ret));
+                    vTaskDelay(5000 / portTICK_PERIOD_MS);
+                    esp_restart();
+            } 
+            eth_handle_spi = NULL;
+        }
+        else{
+            ESP_LOGW(ETHERNET_TAG, "Ethernet handle is already NULL, doing nothing");
+        }
+        if(spi_handle!=NULL){
+            // de initialize SPI phy
+            esp_err_t ret = phy_spi->deinit(phy_spi);
+            if(ret != ESP_OK){
+                ESP_LOGE(ETHERNET_TAG, "Failed to deinit PHY: %s, restarting in 5 seconds", esp_err_to_name(ret));
+                    vTaskDelay(5000 / portTICK_PERIOD_MS);
+                    esp_restart();
+            }
+            ret = phy_spi->del(phy_spi);
+            if(ret != ESP_OK){
+                ESP_LOGE(ETHERNET_TAG, "Failed to delete PHY: %s, restarting in 5 seconds", esp_err_to_name(ret));
+                    vTaskDelay(5000 / portTICK_PERIOD_MS);
+                    esp_restart();
+            }
+            phy_spi = NULL;
+            // de initialize SPI MAC
+            ret = mac_spi->stop(mac_spi);
+            if(ret != ESP_OK){
+                ESP_LOGE(ETHERNET_TAG, "Failed to stop MAC: %s, restarting in 5 seconds", esp_err_to_name(ret));
+                    vTaskDelay(5000 / portTICK_PERIOD_MS);
+                    esp_restart();
+            }
+            ret = mac_spi->deinit(mac_spi);
+            if(ret != ESP_OK){
+                ESP_LOGE(ETHERNET_TAG, "Failed to deinit MAC: %s, restarting in 5 seconds", esp_err_to_name(ret));
+                    vTaskDelay(5000 / portTICK_PERIOD_MS);
+                    esp_restart();
+            }
+            ret = mac_spi->del(mac_spi);
+            if(ret != ESP_OK){
+                ESP_LOGE(ETHERNET_TAG, "Failed to delete MAC: %s, restarting in 5 seconds", esp_err_to_name(ret));
+                    vTaskDelay(5000 / portTICK_PERIOD_MS);
+                    esp_restart();
+            }
+            mac_spi = NULL;
+            // remove spi device
+            ret = spi_bus_remove_device(spi_handle); 
+            if(ret != ESP_OK){
+                ESP_LOGE(ETHERNET_TAG, "Failed to remove SPI device: %s, restarting in 5 seconds", esp_err_to_name(ret));
+                    vTaskDelay(5000 / portTICK_PERIOD_MS);
+                    esp_restart();
+            }
+            spi_handle = NULL;
+            // de initialize SPI bus
+            ret = spi_bus_free(SPI2_HOST);
+            if(ret != ESP_OK){
+                ESP_LOGE(ETHERNET_TAG, "Failed to free SPI bus: %s, restarting in 5 seconds", esp_err_to_name(ret));
+                    vTaskDelay(5000 / portTICK_PERIOD_MS);
+                    esp_restart();
+            }
+        }
+        else{
+            ESP_LOGW(ETHERNET_TAG, "SPI handle is already NULL, doing nothing");
+        }
+        if(eth_netif_spi!=NULL){
+            // delete esp-netif instance
+           esp_netif_destroy(eth_netif_spi);
             eth_netif_spi = NULL;
         }
-            // Deinitialize SPI bus
-        //    ESP_ERROR_CHECK(spi_bus_free(SPI2_HOST));
-
-            // Deinitialize GPIO ISR service
-        //    gpio_uninstall_isr_service();
-            ESP_LOGI(ETHERNET_TAG, "Ethernet stopped");
+        else{
+            ESP_LOGW(ETHERNET_TAG, "Ethernet netif is already NULL, doing nothing");
+        }
+        ESP_LOGI(ETHERNET_TAG, "Ethernet Stopped and cleaned up Successfully");
+    
     }
 
     void restart_new_settings_eth() {
+            
+            stop_eth();
+
             ethernet_state_t eth_status;
             eth_status.is_enabled = true;
             preferences.getBytes("eth_ip_addr", eth_status.ip_addr, sizeof(eth_status.ip_addr));
