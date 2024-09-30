@@ -238,10 +238,24 @@ void wifi_stop_sta() {
     ESP_LOGI(WIFI_TAG, "Stopping wifi station");
 
     // Stop WiFi
-    ESP_ERROR_CHECK(esp_wifi_stop());
-
+    esp_err_t err = esp_wifi_stop();
+    if (err != ESP_OK) {
+        ESP_LOGE(WIFI_TAG, "Failed to stop WiFi: %s", esp_err_to_name(err));
+    }
+    // Unregister event handlers
+    err = esp_event_handler_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_sta_event_handler);
+    if (err != ESP_OK) {
+        ESP_LOGE(WIFI_TAG, "Failed to unregister WiFi event handler: %s", esp_err_to_name(err));
+    }
+    err = esp_event_handler_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_sta_event_handler);
+    if (err != ESP_OK) {
+        ESP_LOGE(WIFI_TAG, "Failed to unregister IP event handler: %s", esp_err_to_name(err));
+    }
     // Deinitialize WiFi
-    ESP_ERROR_CHECK(esp_wifi_deinit());
+    err = esp_wifi_deinit();
+    if (err != ESP_OK) {
+        ESP_LOGE(WIFI_TAG, "Failed to deinitialize WiFi: %s", esp_err_to_name(err));
+    }
 
     // Remove the WiFi network interface
     esp_netif_t* netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
@@ -251,6 +265,7 @@ void wifi_stop_sta() {
     } else {
         ESP_LOGW(WIFI_TAG, "WiFi STA interface not found during stop");
     }
+    ESP_LOGI(WIFI_TAG, "WiFi station stopped");
 }
 
 
