@@ -217,6 +217,7 @@
                 "C:/Users/PennerNeu/.platformio/packages/framework-arduinoespressif32/cores/esp32",
                 "C:/Users/PennerNeu/.platformio/packages/framework-arduinoespressif32/variants/esp32s3",
                 "E:/Users/Penner/Documents/Software-SPS/VS-Code/InnoChargeLC/InnoChargeLC/.pio/libdeps/esp32-s3-devkitc-1/Unity/src",
+                "E:/Users/Penner/Documents/Software-SPS/VS-Code/InnoChargeLC/InnoChargeLC/.pio/libdeps/esp32-s3-devkitc-1/Unity@2.5.2/src",
                 "C:/Users/PennerNeu/.platformio/packages/framework-arduinoespressif32/libraries/ArduinoOTA/src",
                 "C:/Users/PennerNeu/.platformio/packages/framework-arduinoespressif32/libraries/AsyncUDP/src",
                 "C:/Users/PennerNeu/.platformio/packages/framework-arduinoespressif32/libraries/BLE/src",
@@ -456,6 +457,7 @@
                     "C:/Users/PennerNeu/.platformio/packages/framework-arduinoespressif32/cores/esp32",
                     "C:/Users/PennerNeu/.platformio/packages/framework-arduinoespressif32/variants/esp32s3",
                     "E:/Users/Penner/Documents/Software-SPS/VS-Code/InnoChargeLC/InnoChargeLC/.pio/libdeps/esp32-s3-devkitc-1/Unity/src",
+                    "E:/Users/Penner/Documents/Software-SPS/VS-Code/InnoChargeLC/InnoChargeLC/.pio/libdeps/esp32-s3-devkitc-1/Unity@2.5.2/src",
                     "C:/Users/PennerNeu/.platformio/packages/framework-arduinoespressif32/libraries/ArduinoOTA/src",
                     "C:/Users/PennerNeu/.platformio/packages/framework-arduinoespressif32/libraries/AsyncUDP/src",
                     "C:/Users/PennerNeu/.platformio/packages/framework-arduinoespressif32/libraries/BLE/src",
@@ -485,7 +487,7 @@
                 ]
             },
             "defines": [
-                "PLATFORMIO=60115",
+                "PLATFORMIO=60116",
                 "ARDUINO_ESP32S3_DEV",
                 "ARDUINO_USB_MODE=1",
                 "ARDUINO_USB_CDC_ON_BOOT=1",

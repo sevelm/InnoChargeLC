@@ -1,21 +1,55 @@
+<!-- START network.html -->
+
 <!DOCTYPE html>
 <html>
 <head>
-  <title>InnoCharge-Network</title>
+  <meta charset="UTF-8">
+  <title>InnoCharge-Netzwerk</title>
   <link rel="stylesheet" type="text/css" href="styles.css">
-  <script src="scripts.js"></script>
+  <style>
+    /* Custom style to align WiFi scan options and results side by side */
+    #wifi-options-results-wrapper {
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+    }
+    #wifi-toggle-container, #wifi-options-results, #wifi-results-overview {
+      flex: 1;
+    }
+  </style>
 </head>
 <body>
   <div class="sidebar" id="navbar">
-    <!-- Navigation wird hier geladen -->
+    <!-- Load the navigation bar dynamically -->
   </div>
   
+<!-- Popup Modal -->
+<div id="confirmation-popup" class="popup-overlay" style="display: none;">
+  <div class="popup-content">
+    <p>Das System wird neu gestartet. Möchten Sie fortfahren?</p>
+    <button id="popup-yes">JA</button>
+    <button id="popup-no">NEIN</button>
+  </div>
+</div>
+
+<!-- waiting display -->
+<div id="loading-indicator" class="loading-overlay" style="display: none;">
+  <div class="loading-content">
+    <p>Sie werden in kürze auf die Startseite weitergeleitet. Bitte warten... </p>
+    <div class="spinner"></div>
+  </div>
+</div>
+
+
+
   <div class="main-content">
     <h1>Ethernet-Verbindung</h1>
     <div class="container">
+      <h2>Einstellungen</h2>
       <table>
+        <!-- Ethernet settings table -->
         <tr>
-          <td><label for="eth_dhcp-toggle">IP-Statisch:</label></td>
+          <td><label for="eth_dhcp-toggle">Statische IP:</label></td>
           <td>
             <label class="switch">
               <input type="checkbox" id="eth_dhcp-toggle">
@@ -28,7 +62,7 @@
           <td><input type="text" id="eth_ip-address" value=""></td>
         </tr>
         <tr>
-          <td><label for="eth_subnet-mask">Subnetmaske:</label></td>
+          <td><label for="eth_subnet-mask">Subnetzmaske:</label></td>
           <td><input type="text" id="eth_subnet-mask" value=""></td>
         </tr>
         <tr>
@@ -54,121 +88,117 @@
     </div>
     
     <h1>WiFi-Verbindung</h1>
-    <div class="container">
-      <table>
-        <tr>
-          <td><label for="wifi_enable">WLAN Aktivieren:</label></td>
-          <td>
-            <label class="switch">
-              <input type="checkbox" id="wifi_enable">
-              <span class="slider"></span>
-            </label>
-          </td>
-        </tr>
-        <tr>
-          <td colspan="2"><button id="wifi_btn_save">Speichern</button></td>
-        </tr>
-      </table>
+    <!-- Wrapper for side-by-side WiFi scan options and results -->
+    <div id="wifi-options-results-wrapper">
+      <!-- Container for WiFi toggle switch -->
+      <div class="container" id="wifi-toggle-container">
+        <h2>Status</h2>
+        <table>
+          <tr>
+            <td><label for="wifi_connected">Verbindung:</label></td>
+            <td>
+              <span id="wifi_connected" style="font-size: 16px; color: #333; font-weight: bold;"></span>
+            </td>
+          </tr>
+          <tr>
+            <td><label for="wifi_ssid_selected">WiFi-Netzwerk:</label></td>
+            <td>
+              <span id="wifi_ssid_selected" style="font-size: 16px; color: #333; font-weight: bold;"></span>
+            </td>   
+          </tr>
+        </table>
+        
+
+        <h2>Einstellungen</h2>
+        <table>
+          <tr>
+            <td><label for="wifi_enable">WiFi aktivieren:</label></td>
+            <td>
+              <label class="switch">
+                <input type="checkbox" id="wifi_enable">
+                <span class="slider"></span>
+              </label>
+            </td>
+          </tr>
+        </table>
+
+        <!-- WiFi input fields -->
+        <table id="wifi_input_fields">
+          <tr>
+            <td><label for="wifi_ssid">WiFi-Netzwerk:</label></td>
+            <td>
+              <select id="wifi_ssid">
+                <!-- Options will be populated dynamically -->
+              </select>
+            </td>
+          </tr>
+          <tr>
+            <td><label for="wifi_password">Passwort:</label></td>
+            <td><input type="password" id="wifi_password" value=""></td>
+          </tr>
+          <tr style="height: 80px;">
+            <td colspan="2"></td>
+          </tr>
+          <tr>
+            <td><label for="wifi_dhcp-toggle">Statische IP:</label></td>
+            <td>
+              <label class="switch">
+                <input type="checkbox" id="wifi_dhcp-toggle">
+                <span class="slider"></span>
+              </label>
+            </td>
+          </tr>
+          <tr>
+            <td><label for="wifi_ip-address">IP-Adresse:</label></td>
+            <td><input type="text" id="wifi_ip-address" value=""></td>
+          </tr>
+          <tr>
+            <td><label for="wifi_subnet-mask">Subnetzmaske:</label></td>
+            <td><input type="text" id="wifi_subnet-mask" value=""></td>
+          </tr>
+          <tr>
+            <td><label for="wifi_gateway">Gateway:</label></td>
+            <td><input type="text" id="wifi_gateway" value=""></td>
+          </tr>
+          <tr>
+            <td><label for="wifi_dns1">DNS 1:</label></td>
+            <td><input type="text" id="wifi_dns1" value=""></td>
+          </tr>
+          <tr>
+            <td><label for="wifi_dns2">DNS 2:</label></td>
+            <td><input type="text" id="wifi_dns2" value=""></td>
+          </tr>
+          <tr>
+            <td><label for="wifi_mac-address">MAC-Adresse:</label></td>
+            <td><input type="text" id="wifi_mac-address" readonly></td>
+          </tr>
+        </table>
+
+        <!-- Move the "Speichern" button outside of the input fields table -->
+        <div style="margin-top: 10px;">
+          <button id="wifi_btn_save">Speichern</button>
+        </div>
+      </div>
+
+      <!-- Container for WiFi scan options and results -->
+      <div class="container" id="wifi-options-results" style="display: none;">
+        <h2>Netzwerke</h2>
+        <div class="wifi-options">
+          <!-- Button to trigger WiFi rescan -->
+          <button id="wifi_rescan_btn" style="display: none;">Erneut scannen</button>
+        </div>
+        <div class="wifi-scan-results" style="font-size: 14px; color: #333;">
+          <!-- Message displayed during WiFi scan -->
+          <div id="wifi_scan_message">Scan wird durchgeführt...</div>
+          <!-- Container to display WiFi scan results -->
+          <div id="wifi_scan_results"></div>           
+        </div>
+      </div>
     </div>
   </div>
 
-  <script>
-    document.addEventListener("DOMContentLoaded", function() {
-        fetch("/get_network_info")
-        .then(response => {
-            if (!response.ok) {
-                throw new Error('Network response was not ok');
-            }
-            return response.json();
-        })
-        .then(data => {
-            console.log('Network info received:', data);
-            document.getElementById("eth_mac-address").value = data.eth_mac;
-            document.getElementById("eth_ip-address").value = data.eth_ip;
-            document.getElementById("eth_subnet-mask").value = data.eth_netmask;
-            document.getElementById("eth_gateway").value = data.eth_gateway;
-            document.getElementById("eth_dns1").value = data.eth_dns1;
-            document.getElementById("eth_dns2").value = data.eth_dns2;
-
-            // Set Ethernet DHCP toggle based on the received data
-            const dhcpEnabled = data.eth_static;
-            document.getElementById('eth_dhcp-toggle').checked = dhcpEnabled;
-            toggleETHInputFields(!dhcpEnabled);
-
-            // Set Wifi Enable based on the received data
-            const wifiEnabled = data.wifi_enable;
-            document.getElementById('wifi_enable').checked = wifiEnabled;
-        })
-        .catch(error => console.error('Error fetching network info:', error));
-        
-        // Toggle an Save Ethernet settings
-        document.getElementById('eth_btn_save').addEventListener('click', saveETHNetworkSettings);
-        document.getElementById('eth_dhcp-toggle').addEventListener('change', function(event) {
-            toggleETHInputFields(!event.target.checked);
-        });
-
-        // Toggle an Save Wireless settings
-        document.getElementById('wifi_btn_save').addEventListener('click', saveWifiNetworkSettings);
-        document.getElementById('wifi_enable').addEventListener('change', function(event) {
-          //  toggleETHInputFields(!event.target.checked);
-        });
-
-        window.onload = function(event) {
-          loadNavbar();
-          initWebSocket();
-        }
-    });
-
-    function saveETHNetworkSettings() {
-    var msg = {
-        setEthStatic: document.getElementById('eth_dhcp-toggle').checked,
-        setEthIpAdr: document.getElementById('eth_ip-address').value.split('.').map(Number),
-        setEthNetmask: document.getElementById('eth_subnet-mask').value.split('.').map(Number),
-        setEthGw: document.getElementById('eth_gateway').value.split('.').map(Number),
-        setEthDns1: document.getElementById('eth_dns1').value.split('.').map(Number),
-        setEthDns2: document.getElementById('eth_dns2').value.split('.').map(Number)
-    };
-    
-    console.log('Sending Ethernet settings to server:', JSON.stringify(msg));
-    
-    // First, inform the server to reset TCP connections before applying new settings
-    if (Socket.readyState === WebSocket.OPEN) {
-        Socket.send(JSON.stringify({ action: 'resetTCP' }));  // Request server to reset TCP
-        
-        // Add a slight delay to ensure the TCP reset happens before new settings are applied
-        setTimeout(() => {
-            Socket.send(JSON.stringify(msg));  // Send new Ethernet settings after reset
-        }, 1000);  // 1-second delay to ensure reset
-    } else {
-        console.error('WebSocket is not open. ReadyState: ' + Socket.readyState);
-    }
-}
-
-
-    function saveWifiNetworkSettings() {
-        var msg = {
-            setWifiEnable: document.getElementById('wifi_enable').checked,
-        //    setEthIpAdr: document.getElementById('eth_ip-address').value.split('.').map(Number),
-        //    setEthNetmask: document.getElementById('eth_subnet-mask').value.split('.').map(Number),
-        //    setEthGw: document.getElementById('eth_gateway').value.split('.').map(Number),
-        //    setEthDns1: document.getElementById('eth_dns1').value.split('.').map(Number),
-        //    setEthDns2: document.getElementById('eth_dns2').value.split('.').map(Number)
-        };
-        console.log('Sending Wireless settings to server:', JSON.stringify(msg));
-        if (Socket.readyState === WebSocket.OPEN) {
-            Socket.send(JSON.stringify(msg));
-        } else {
-            console.error('WebSocket is not open. ReadyState: ' + Socket.readyState);
-        }
-    }
-
-
-    function toggleETHInputFields(enable) {
-        var ipFields = document.querySelectorAll('#eth_ip-address, #eth_subnet-mask, #eth_gateway, #eth_dns1, #eth_dns2');
-        ipFields.forEach(function(field) {
-            field.disabled = enable;
-        });
-    }
-  </script>
+  <!-- Include common.js and network.js at the end of the body -->
+  <script src="common.js"></script>
+  <script src="network.js"></script>
 </body>
 </html>

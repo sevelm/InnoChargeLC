@@ -1,3 +1,5 @@
+#ifndef WIFI_MANAGER_HPP
+#define WIFI_MANAGER_HPP
 typedef struct {
     char ssid[64];
     char passphrase[64];
@@ -27,10 +29,12 @@ struct wifi_scan_ap_data {
 };
 extern wifi_scan_ap_data scanned_aps[MAXIMUM_AP];  // Storage for discovered networks
 extern uint16_t scanned_ap_count;  // Number of networks found
-
+const char* auth_mode_type(wifi_auth_mode_t auth_mode);
 
 void wifi_init_sta(wifi_sta_start_config_t *config);
 void get_wifi_sta_state(wifi_sta_state_t *state);
 void wifi_scan();
 void wifi_stop_sta();
+void get_wifi_ip(char *ip);
+#endif // WIFI_MANAGER_HPP
 

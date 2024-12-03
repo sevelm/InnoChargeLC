@@ -3,7 +3,7 @@
 <head>
   <title>InnoCharge-Home</title>
   <link rel="stylesheet" type="text/css" href="styles.css">
-  <script src="scripts.js"></script>
+  <!-- scripts.js wird am Ende des Body eingebunden -->
 </head>
 <body>
   <div class="sidebar" id="navbar">
@@ -11,29 +11,29 @@
   </div>
   
   <div class="main-content">
-    <h1>Home</h1>
+    <h1>Startseite</h1>
   
     <div class="container">
       <h2>Control Pilot Status</h2>
-      <p>Aktueller CP-Status: <span id='cpState'>-</span></p>
+      <p>Aktueller CP-Zustand: <span id='cpState'>-</span></p>
     </div>
 
     <div class="container">
-      <h2>Soll-Ladestrom</h2>
-      <label for="setChargeCurrent">Soll-Ladestrom (A):</label>
+      <h2>Ladestrom einstellen</h2>
+      <label for="setChargeCurrent">Ladestrom (A):</label>
       <input type="number" id="setChargeCurrent" name="setChargeCurrent">
-      <button id="BTN_SET_CURRENT">Set Charge Current</button>
+      <button id="BTN_SET_CURRENT">Ladestrom setzen</button>
     </div>
 
     <div class="container">
-      <h2>CP-Relay</h2>
-      <label for="setCpRelay">CP-Relay:</label>
+      <h2>CP-Relais</h2>
+      <label for="setCpRelay">CP-Relais:</label>
       <button id="BTN_SET_RELAY">AUS</button>
     </div>
 
-    <button id="BTN_GO_TO_SETTINGS">Go to Settings</button>
+    <button id="BTN_GO_TO_SETTINGS">Zu den Einstellungen</button>
 
-    <!-- Neuer Schalter unten auf der Seite -->
+    <!-- Neuer Schalter am unteren Rand der Seite -->
     <div class="container">
       <label for="new-toggle">Neuer Schalter:</label>
       <label class="switch">
@@ -43,17 +43,8 @@
     </div>
   </div>
 
-  <script>
-    document.getElementById('BTN_SET_CURRENT')?.addEventListener('click', set_charge_current);
-    document.getElementById('BTN_GO_TO_SETTINGS')?.addEventListener('click', go_to_settings);
-    document.getElementById('BTN_SET_RELAY')?.addEventListener('click', toggle_cp_relay);
-
-    window.onload = function(event) {
-      loadNavbar();
-      initWebSocket();
-    }
-  </script>
+  <!-- Einbindung von scripts.js am Ende des Body -->
+  <script src="common.js"></script>
+  <script src="index.js"></script>
 </body>
 </html>
-
-

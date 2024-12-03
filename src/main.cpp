@@ -1,3 +1,5 @@
+//main.cpp
+
 #include "Arduino.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -17,12 +19,15 @@
 #include "A_Task_Low.hpp"
 #include "A_Task_Web.hpp"
 #include "ledEffect.hpp"
-#include "AA_globals.h"
+
 #include "A_Task_CP.hpp"
 //#include "demo_codes.hpp"
 #include "wifi_manager.hpp"
 
 #include "esp_wifi.h" // esp_wifi_stop() deklarieren
+#include "AA_globals.h"
+
+
 
 const char *MAIN_TAG = "Web: ";
 // Globals
@@ -93,14 +98,18 @@ void setup() {
     //xTaskCreate(demo_monitoring_task, "Demo Monitoring Task", 4096, NULL, 1, NULL);
 
     // connect to wifi
-    strcpy(wifi_sta_config.ssid, "J Rakhde Ni Bho Ni_2.4");
-    strcpy(wifi_sta_config.passphrase, "jbhandenibhoni");
+    char ssid[32] = {0}; 
+    char pwd[64] = {0}; 
+    size_t ssid_size = preferences.getBytes("wifi_ssid", ssid, sizeof(ssid));
+    size_t pwd_size = preferences.getBytes("wifi_pwd", pwd, sizeof(pwd));
+    strcpy(wifi_sta_config.ssid, ssid);
+    strcpy(wifi_sta_config.passphrase, pwd);
 
   // Schalter zum aktivieren und deaktivieren
-  //  wifiEnabled = preferences.getBool("wifiEnable", false);
-  //  if (wifiEnabled) {
-  //      wifi_init_sta(&wifi_sta_config);
-  //  }
+    wifiEnabled = preferences.getBool("wifiEnable", false);
+    if (wifiEnabled) {
+        wifi_init_sta(&wifi_sta_config);
+    }
 
     // Scan WiFi networks
    // wifi_scan();
@@ -119,17 +128,17 @@ void loop() {
     callLedEffect();
 
 // WiFi control based on wifiEnabled
-bool newWifiEnabled = preferences.getBool("wifiEnable", false);
-if (newWifiEnabled != wifiEnabled) {
-    wifiEnabled = newWifiEnabled;
-    if (wifiEnabled) {
-        ESP_LOGI(MAIN_TAG, "WiFi is being activated");
-       // wifi_init_sta(&wifi_sta_config);
-    } else {
-        ESP_LOGI(MAIN_TAG, "WiFi is being deactivated");
-        wifi_stop_sta();
-    }
-}
+//bool newWifiEnabled = preferences.getBool("wifiEnable", false);
+//if (newWifiEnabled != wifiEnabled) {
+ //   wifiEnabled = newWifiEnabled;
+ //   if (wifiEnabled) {
+ //       ESP_LOGI(MAIN_TAG, "WiFi is being activated");
+ //       wifi_init_sta(&wifi_sta_config);
+ //   } else {
+ //       ESP_LOGI(MAIN_TAG, "WiFi is being deactivated");
+
+  //  }
+//}
 
 
     // lock_lock();

@@ -1,3 +1,5 @@
+/* styles.css */
+
 body {
     margin: 0;
     font-family: Arial, sans-serif;
@@ -98,7 +100,6 @@ h2 {
     border-radius: 4px;
 }
   
-
 button {
     padding: 15px 15px;
     background-color: #263238;
@@ -169,6 +170,8 @@ table input[type="text"], table input[type="number"] {
     padding: 8px;
     border: 1px solid #ccc;
     border-radius: 4px;
+    font-size: 14px;
+    color: #333;
 }
 
 table .switch {
@@ -183,4 +186,155 @@ table .slider {
 table .slider:before {
     height: 16px;
     width: 16px;
+}
+
+/* New CSS rules for WiFi scan results */
+.wifi-flex-container {
+  display: flex;
+  align-items: flex-start;
+  margin-top: 10px;
+}
+
+.wifi-options {
+  margin-right: 20px;
+}
+
+.wifi-scan-results {
+  flex-grow: 1;
+}
+
+.wifi-scan-results table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+  padding: 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+.wifi-scan-results th, .wifi-scan-results td {
+  border: 1px solid #ddd;
+  padding: 8px;
+  font-size: 14px;
+  color: #333;
+}
+
+.wifi-scan-results th {
+  background-color: #f2f2f2;
+}
+
+/* Style for scan message */
+#wifi_scan_message {
+  font-style: italic;
+  color: #555;
+}
+
+/* Style for rescan button within WiFi options */
+.wifi-options button {
+  padding: 10px 15px;
+  background-color: #263238;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.wifi-options button:hover {
+  background-color: #37474f;
+}
+
+table td label, table td span {
+    font-size: 16px;
+    color: #333;
+}
+
+.popup-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.popup-content {
+    background-color: #fff;
+    padding: 20px;
+    border-radius: 10px;
+    text-align: center;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.popup-content button {
+    margin: 10px;
+    padding: 10px 20px;
+    border: none;
+    background-color: #263238;
+    color: #fff;
+    cursor: pointer;
+    border-radius: 5px;
+}
+
+.popup-content button:hover {
+    background-color: #37474f;
+}
+
+/* Loading Overlay */
+.loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+/* Content Box */
+.loading-content {
+    display: flex;
+    flex-direction: column; /* Stack elements vertically */
+    align-items: center;    /* Center horizontally */
+    justify-content: center; /* Center vertically */
+    background-color: white;
+    padding: 20px;
+    border-radius: 10px;
+    text-align: center;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+/* Spinner */
+.spinner {
+    border: 8px solid #f3f3f3;
+    border-top: 8px solid #3498db;
+    border-radius: 50%;
+    width: 50px; /* Adjusted size for better visibility */
+    height: 50px; /* Adjusted size for better visibility */
+    margin-top: 15px; /* Space between text and spinner */
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+#connection-status {
+    background-color: #ffcccc; /* Heller Rotton für Hintergrund */
+    border: 1px solid red;     /* Roter Rand */
+    font-size: 16px;           /* Lesbare Schriftgröße */
+    text-align: center;
+    padding: 10px;
+    position: fixed;           /* Immer sichtbar oben */
+    top: 0;
+    left: 0;
+    width: 100%;               /* Über die gesamte Breite */
+    z-index: 1000;             /* Über allen Elementen */
 }

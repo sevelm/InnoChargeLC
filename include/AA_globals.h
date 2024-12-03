@@ -2,8 +2,10 @@
 #define GLOBALS_H
 #include <NeoPixelBus.h>
 #include <NeoPixelAnimator.h>
-#include "ethernet_manager.hpp"
+#include <ethernet_manager.hpp>
+#include <wifi_manager.hpp>
 #include <Preferences.h>
+#include "esp_wifi.h" 
 
 extern Preferences preferences;
 
@@ -34,5 +36,6 @@ extern volatile charging_state_t currentCpStateDelay;
 // Deklaration des NeoPixel-Strip-Objekts
 extern NeoPixelBus<NeoGrbFeature, Neo800KbpsMethod> strip;
 
+extern wifi_sta_start_config_t wifi_sta_config;
 
 #endif 
