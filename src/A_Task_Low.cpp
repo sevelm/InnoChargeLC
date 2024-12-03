@@ -16,8 +16,8 @@
 const char *CP_LOGI = "Task_Low: ";
 
 
-bool enableWifiScan = false;
-bool prevWifiEnable; 
+//bool enableWifiScan = false;
+//bool prevWifiEnable; 
 
 
 //////////////////////////////////////////////////// Setup ///////////////////////////////////////////////////
@@ -37,17 +37,16 @@ void A_Task_Low(void *pvParameter){
         get_wifi_ip(eth_ip);
         ESP_LOGI(CP_LOGI, "WIFI IP: %s", eth_ip);
 
-        uint8_t ip[4] = {0}, netmask[4] = {0}, gw[4] = {0}, dns1[4] = {0}, dns2[4] = {0};
-preferences.getBytes("wifi_dns1", dns1, sizeof(dns1));
-
-ESP_LOGI(CP_LOGI, "DNS1: %d.%d.%d.%d", dns1[0], dns1[1], dns1[2], dns1[3]);
-
+        //uint8_t ip[4] = {0}, netmask[4] = {0}, gw[4] = {0}, dns1[4] = {0}, dns2[4] = {0};
+        //preferences.getBytes("wifi_dns1", dns1, sizeof(dns1));
+        //ESP_LOGI(CP_LOGI, "DNS1: %d.%d.%d.%d", dns1[0], dns1[1], dns1[2], dns1[3]);
 
 
-     if (preferences.getBool("wifiEnable", false) && !prevWifiEnable){
-        enableWifiScan = true;
-        prevWifiEnable = true;
-     }
+
+     //if (preferences.getBool("wifiEnable", false) && !prevWifiEnable){
+     //   enableWifiScan = true;
+     //   prevWifiEnable = true;
+     //}
  
       //  wifi_sta_state_t wifi_status;
       //  get_wifi_sta_state(&wifi_status);
@@ -64,16 +63,16 @@ ESP_LOGI(CP_LOGI, "DNS1: %d.%d.%d.%d", dns1[0], dns1[1], dns1[2], dns1[3]);
           
 
 
- if (enableWifiScan)
- {
-        ESP_LOGI(CP_LOGI, "Performing WiFi scan");
+ //if (enableWifiScan)
+ //{
+   //     ESP_LOGI(CP_LOGI, "Performing WiFi scan");
 
-        enableWifiScan = false;
-    }
+     //   enableWifiScan = false;
+   // }
     //    ESP_LOGI(CP_LOGI, "highVoltage: %f", highVoltage);
     //    ESP_LOGI(CP_LOGI, "CP: %s", cpStateToName(currentCpState));
 
-        vTaskDelay(2000/portTICK_PERIOD_MS); // verzögere den Task um sekunden
+        vTaskDelay(3000/portTICK_PERIOD_MS); // verzögere den Task um sekunden
 
     }
 }

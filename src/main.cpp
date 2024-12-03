@@ -109,6 +109,8 @@ void setup() {
     wifiEnabled = preferences.getBool("wifiEnable", false);
     if (wifiEnabled) {
         wifi_init_sta(&wifi_sta_config);
+    } else {
+        preferences.putBool("wifiStatic", false);
     }
 
     // Scan WiFi networks
