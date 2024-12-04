@@ -21,7 +21,7 @@
 #include "ledEffect.hpp"
 
 #include "A_Task_CP.hpp"
-//#include "demo_codes.hpp"
+#include "A_Task_MB.hpp"
 #include "wifi_manager.hpp"
 
 #include "esp_wifi.h" // esp_wifi_stop() deklarieren
@@ -93,6 +93,7 @@ void setup() {
        
     // ######################### Create Task and Start
     xTaskCreatePinnedToCore(A_Task_CP, "Controlpilot Task", 8192, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(A_Task_MB, "Task_Modbus_Operation", 8192, NULL, 2, NULL, 1);   
     xTaskCreatePinnedToCore(A_Task_Web, "Task_Web_Operation", 8192, NULL, 4, NULL, 1);
     xTaskCreatePinnedToCore(A_Task_Low, "Task_Low_Operation", 8192, NULL, 5, NULL, 1);
     //xTaskCreate(demo_monitoring_task, "Demo Monitoring Task", 4096, NULL, 1, NULL);
