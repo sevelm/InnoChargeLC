@@ -428,7 +428,7 @@ void start_eth(bool is_dhcp_enabled, ethernet_start_config_t *ethernet_start_con
             preferences.getBytes("eth_gw", eth_status.gw, sizeof(eth_status.gw));
             preferences.getBytes("eth_dns1", eth_status.dns1, sizeof(eth_status.dns1));
             preferences.getBytes("eth_dns2", eth_status.dns2, sizeof(eth_status.dns2));
-            bool eth_static = preferences.getBool("ethStatic", true);
+            bool eth_static = preferences.getBool("ethStatic", false);
 
             if (eth_static) {
                     // Configure static Ethernet settings

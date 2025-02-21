@@ -32,21 +32,21 @@ State:   Pilot Voltage:  EV Resistance:  Description:       Analog theoretic: (i
 
 ############################  For input in kW from 230VAC  - 400VAC
 
-              Voltage  |  Current  |  Power  |  DutyCycle
+                Voltage  |  Current  |  Power  |  DutyCycle
   -----------------------------------------------------------------  
-    Minimum    at 230V =    4.8A  =   1.1kW =      8% DutyCycle
-    Min 6A     at 230V =    6.0A  =   1.4kW =   10.0% DutyCycle *according to standard minimum       
-    Middle     at 230V =   13.0A  =   3.0kW =   21.8% DutyCycle
-    Max 16A    at 230V =   16.0A  =   3.7kW =   26.7% DutyCycle
-    Max 32A    at 230V =   32.0A  =   7.4kW =   33.3% DutyCycle
+    Minimum     at 230V =    4.8A  =   1.1kW =    7.9% DutyCycle
+    Min 6A      at 230V =    6.0A  =   1.4kW =   10.1% DutyCycle *according to standard minimum       
+    Middle      at 230V =   13.0A  =   3.0kW =   21.7% DutyCycle
+    Max 16A     at 230V =   16.0A  =   3.7kW =   26.8% DutyCycle
+    Max 32A     at 230V =   32.0A  =   7.4kW =   53.6% DutyCycle
 
     -> DutyCycle = (W / 230) / 0.6
     
-    Minimum    at 400V =    4.8A  =   3.3kW =      8% DutyCycle
-    Min 6A     at 400V =    6.0A  =   4.2kW =   10.0% DutyCycle *according to standard minimum     
-    Middle 9kw at 400V =   13.0A  =   9.0kW =   21.8% DutyCycle    
-    Middle 11kw at 400V =   16.0A  =  11.0kW =   26.7% DutyCycle
-    Maximum    at 400V =   32.0A  =  22.0kW =   53.4% DutyCycle    
+    Minimum     at 400V =    4.8A  =   3.3kW =    7.9% DutyCycle
+    Min 6A      at 400V =    6.0A  =   4.2kW =   10.1% DutyCycle *according to standard minimum     
+    Middle 9kw  at 400V =   13.0A  =   9.0kW =   21.6% DutyCycle    
+    Middle 11kw at 400V =   16.0A  =  11.0kW =   26.4% DutyCycle
+    Maximum     at 400V =   32.0A  =  22.0kW =   52.9% DutyCycle    
 
     -> DutyCycle = (W / 692) / 0.6
  */
@@ -79,27 +79,33 @@ volatile charging_state_t vCurrentCpState;
 volatile uint32_t lastStateChangeTime = 0;
 volatile charging_state_t currentCpStateDelay;
 
-// Function to determine charging state based on voltage, duty cycle and switch
+// Function to determine charging state based on voltage, duty cycle, and switch with ±0.5V tolerance
 charging_state_t actualCpState(float highVoltage, float lowVoltage) {
-    charging_state_t state;
+    int highVoltageInt = round(highVoltage * 10);  // Conversion to tenths
+    charging_state_t state; // initialized
+    state = StateCustom_OutOffRange; 
     if (get_cp_relays_status() != 1) {
         state = StateCustom_CpRelayOff;
     } else {
-        if (highVoltage == 12 || highVoltage == 11) { 
+        if (highVoltageInt >= 105 && highVoltageInt <= 125) {   // 12V ± 0.5V
             state = StateA_NotConnected;
-        } else if (highVoltage == 9 || highVoltage == 8) { 
-            state = StateB_Connected; 
-        } else if (highVoltage == 6 || highVoltage == 5) { 
-            state = StateC_Charge; 
-        } else if (highVoltage == 3 || highVoltage == 2) { 
-            state = StateD_VentCharge; 
-        } else if (highVoltage > 12 || highVoltage < 2) {
-            state = StateE_Error; 
-        } 
-        if (round(get_control_pilot_duty()) == 100) { 
-            state = StateCustom_DutyCycle_100; }
-        if (round(get_control_pilot_duty()) == 0) { 
-            state = StateCustom_DutyCycle_0; }
+        } else if (highVoltageInt >= 75 && highVoltageInt <= 95) {  // 9V ± 0.5V and 8V ± 0.5V
+            state = StateB_Connected;
+        } else if (highVoltageInt >= 46 && highVoltageInt <= 72) {  // 7V ± 0.5V and 5V ± 0.5V
+            state = StateC_Charge;
+        } else if (highVoltageInt >= 15 && highVoltageInt <= 35) {  // 3V ± 0.5V and 2V ± 0.5V
+            state = StateD_VentCharge;
+        } else if (highVoltageInt > 125 || highVoltageInt < 15) {  // Outside of valid range
+            state = StateE_Error;
+        }
+
+        // Special handling for duty cycle states
+        if (round(get_control_pilot_duty()) == 100) {
+            state = StateCustom_DutyCycle_100;
+        }
+        if (round(get_control_pilot_duty()) == 0) {
+            state = StateCustom_DutyCycle_0;
+        }
     }    
     return state;
 }
@@ -108,23 +114,23 @@ charging_state_t actualCpState(float highVoltage, float lowVoltage) {
 const char *cpStateToName(charging_state_t state){
     switch(state){
         case StateA_NotConnected:
-            return "Charging State A";
+            return "State A";
         case StateB_Connected:
-            return "Charging State B";
+            return "State B";
         case StateC_Charge:
-            return "Charging State C";
+            return "State C";
         case StateD_VentCharge:
-            return "Charging State D";
+            return "State D";
         case StateE_Error:
-            return "Charging State E";
+            return "State E";
         case StateF_Fault:
-            return "Charging State F";
+            return "State F";
         case StateCustom_CpRelayOff:
-            return "Charging State CP-Relay OFF";
+            return "Control-Pilot OFF";
         case StateCustom_DutyCycle_100:
-            return "Charging State DutyCycle 100%";
+            return "State CP 100%";
         case StateCustom_DutyCycle_0:
-            return "Charging State DutyCycle 0%";
+            return "State CP 0%";
         default:
             return "Invalid State";
     }
@@ -148,7 +154,6 @@ void A_Task_CP(void *pvParameter){
 
 
         highVoltage = get_high_voltage();
-        highVoltage = round(highVoltage);
 
         //set_control_pilot_0();
         currentCpStateDelay = actualCpState(highVoltage,0);

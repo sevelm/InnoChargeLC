@@ -12,6 +12,7 @@
 #include "rom/ets_sys.h"
 #include "proximity_pilot.hpp"
 #include "ethernet_manager.hpp"
+#include "A_Task_MB.hpp"
 
 #define cp_gen_pin 8
 #define cp_feedback_pin 37
@@ -21,7 +22,8 @@
 #define cp_gen_duty 50
 #define cp_measure_channel ADC1_CHANNEL_3
 #define cp_control_channel 0
-#define RELAY_PIN 36
+#define RELAY_PIN_L1_N 36
+#define RELAY_PIN_L2_L3 38
 
 
 #define RISING_EDGE 1
@@ -50,8 +52,11 @@ void init_control_pilot(void){
     digitalWrite(cp_relay_pin, LOW);
     adc1_config_width(ADC_WIDTH_BIT_12);
     adc1_config_channel_atten(cp_measure_channel, ADC_ATTEN_DB_11);
-    pinMode(RELAY_PIN, OUTPUT);
-    digitalWrite(RELAY_PIN, LOW);
+    pinMode(RELAY_PIN_L1_N, OUTPUT);
+    digitalWrite(RELAY_PIN_L1_N, LOW);
+    pinMode(RELAY_PIN_L2_L3, OUTPUT);
+    digitalWrite(RELAY_PIN_L2_L3, LOW);
+
 }
 
 /**
@@ -79,33 +84,101 @@ float get_control_pilot_duty(){
     return duty;
 }
 
-/*
+/** 
     * @brief Get the duty cycle from the current
     * 
     * This function calculates the duty cycle from the current
-    '@param float current
+    * @param float current
     * @return float duty
 */
-float get_duty_from_current(float current){
-    if(current >= 5 && current <= 51){
-        return current/0.6;
-    }else if(current > 51 && current <= 80){
-        return current/2.5+64;
+float get_duty_from_current(float current) {
+    if (current < 0) return 0.0;                    // Negative values -> 0A
+    if (current < 5 && current > 0) current = 5;    // Below 5A -> use 5A
+    if (current > 22) current = 22;                 // Above 22A -> use 22A
+    // Calculate duty cycle based on current
+    return (current <= 51) ? current / 0.6 : current / 2.5 + 64;
+}
+
+/**  ########################################## STATUS vom 230V schütz abfragen!!!!!!!!!!!!!!!!!!!!!!!!
+ * @brief Get the power in 1/10 kW from the duty cycle
+ * 
+ * This function calculates the power (in 1/10 kW) based on the duty cycle.
+ * The formula depends on the duty cycle range.
+ * 
+ * @param float duty_cycle Duty cycle as a percentage
+ * @return float power_in_tenth_kw Power in 1/10 kW (e.g., 42 = 4.2 kW)
+ */
+float get_power_from_duty(float duty_cycle) {
+//ESP_LOGI(CP_LOG, "Duty Cycle: %f", duty_cycle);
+    if (duty_cycle <= 0) return 0.0;                        // Duty cycle <= 0% -> 0 power
+    float power_kw = 0.0;
+    if (duty_cycle < -1) {                                 //########################################## STATUS vom 230V schütz abfragen!!!!!!!!!!!!!!!!!!!!!!!!
+        power_kw = (duty_cycle * 0.6) * 230 / 1000;  
+  //  ESP_LOGI(CP_LOG, "230 ");       // Reverse of (W / 230) / 0.6
+    } else {                                                // For duty cycle > 26.7%
+        power_kw = (duty_cycle * 0.6) * 692 / 1000;         // Reverse of (W / 692) / 0.6
+  //  ESP_LOGI(CP_LOG, "400 ");       // Reverse of (W / 230) / 0.6
     }
-    ESP_LOGE(CP_LOG, "Current out of range defaulting to 5A");
-    return 10;
+  //  ESP_LOGI(CP_LOG, "Aktuel Power %f", power_kw * 10);       // Reverse of (W / 230) / 0.6
+    return power_kw * 10;                                   // Convert kW to 1/10 kW
+
+}
+
+
+/**
+ * @brief Get the duty cycle from the power input
+ * 
+ * This function calculates the duty cycle based on the power input.
+ * The formula depends on the input range.
+ * 
+ * @param float power_in_tenth_kw Input power in 1/10 kW (e.g., 4.2 kW = 42)
+ * @return float duty_cycle Duty cycle as a percentage
+ */
+float get_duty_from_power(float power_in_tenth_kw) {
+    if (power_in_tenth_kw <= 0) return 0.0;             // Negative or zero power -> 0% duty cycle
+    float power_kw = power_in_tenth_kw / 10.0;          // Convert 1/10 kW to kW
+    if (power_kw <= 4.1) {                              // For power <= 4.1 kW   
+        return (power_kw * 1000 / 230) / 0.6;           // Use (W / 230) / 0.6
+    } else {                                            // For power > 4.2 kW
+        return (power_kw * 1000 / 692) / 0.6;           // Use (W / 692) / 0.6
+    }
 }
 
 /**
     * @brief Set the charging current
     * 
     * This function sets the charging current by setting the duty cycle of the control pilot PWM generator
-    '@param float current
+    * @param float current
     * @return void
 */
 void set_charging_current(float current){
     float duty = get_duty_from_current(current);
     set_control_pilot_duty(duty);
+    set_charging_current_mb(current, mbRegChargeCurrent);           // Set Modbus
+}
+
+/**
+    * @brief Set the charging power
+    * 
+    * This function sets the charging power by setting the duty cycle of the control pilot PWM generator
+    * @param float power
+    * @return void
+*/
+void set_charging_power(float power){
+    float duty = get_duty_from_power(power);
+    set_control_pilot_duty(duty);
+    set_charging_power_mb(power, mbRegChargePower);           // Set Modbus
+}
+
+/** 
+    * @brief Calculate current from duty cycle
+    * 
+    * This function converts the duty cycle into the corresponding current.
+    * @param float duty
+    * @return float current
+*/
+float get_current_from_duty(float duty) {
+    return (duty <= 85) ? duty * 0.6 : (duty - 64) * 2.5;
 }
 
 /**
@@ -166,7 +239,7 @@ bool get_cp_relays_status(){
     * @brief Synchronize the control pilot edge
     * 
     * This function synchronizes the control pilot edge
-    '@param bool edge
+    * @param bool edge
     * @return void
 */
 void sync_cp_edge(bool edge){
@@ -190,7 +263,7 @@ void sync_cp_edge(bool edge){
     * @brief Get the high voltage
     * 
     * This function gets the high voltage
-    '@param void
+    * @param void
     * @return float high_voltage
 */
 float get_high_voltage(){
@@ -209,7 +282,7 @@ float get_high_voltage(){
     * @brief Get the low voltage
     * 
     * This function gets the low voltage
-    '@param void
+    * @param void
     * @return float low_voltage
 */
 float get_low_voltage(){
@@ -230,9 +303,11 @@ float get_low_voltage(){
 // Control AC-Relay
 
 void turn_relay_on() {
-    digitalWrite(RELAY_PIN, HIGH);
+    digitalWrite(RELAY_PIN_L1_N, HIGH);
+    digitalWrite(RELAY_PIN_L2_L3, HIGH);
 }
 
 void turn_relay_off() {
-    digitalWrite(RELAY_PIN, LOW);
+    digitalWrite(RELAY_PIN_L1_N, LOW);
+    digitalWrite(RELAY_PIN_L2_L3, LOW);
 }

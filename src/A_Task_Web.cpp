@@ -23,7 +23,6 @@
 
 
 esp_timer_handle_t periodic_timer;      // periotic JSON send
-//std::set<uint8_t> subscribedClients;    // Client number
 std::map<uint8_t, std::string> subscribedClients;    // Client number with page
 
 const char *WEB_TAG = "Task_Web: ";
@@ -66,18 +65,14 @@ public:
 
 WebSocketsServer webSocket = WebSocketsServer(81);
 
-//volatile bool clientConnected = false;
-
 void webSocketEvent(byte num, WStype_t type, uint8_t * payload, size_t length) {
     switch (type) {
         case WStype_DISCONNECTED:
             subscribedClients.erase(num);
             ESP_LOGI(WEB_TAG, "Client %s disconnected", String(num).c_str());
-            // clientConnected = false;
             break;
         case WStype_CONNECTED:
             ESP_LOGI(WEB_TAG, "Client %s connected", String(num).c_str());
-            // clientConnected = true;
             break;
         case WStype_TEXT:
 
@@ -98,17 +93,20 @@ void webSocketEvent(byte num, WStype_t type, uint8_t * payload, size_t length) {
                     if (strcmp(action, "subscribeUpdates") == 0) {
                         const char* page = doc["page"];
                         subscribedClients[num] = std::string(page);
-                        ESP_LOGI(WEB_TAG, "Client %u subscribed to updates", num);
+                  //      ESP_LOGI(WEB_TAG, "Client %u subscribed to updates", num);
                     } else if (strcmp(action, "unsubscribeUpdates") == 0) {
                         subscribedClients.erase(num);
-                        ESP_LOGI(WEB_TAG, "Client %u unsubscribed from updates", num);
+                  //      ESP_LOGI(WEB_TAG, "Client %u unsubscribed from updates", num);
+                    } else if (strcmp(action, "setCpRelayState") == 0 && doc["state"].is<bool>()) {
+                        bool state = doc["state"].as<bool>();
+                        state ? turn_on_cp_relay() : turn_off_cp_relay();
+                    } else if (strcmp(action, "setChargeParameters") == 0 && doc.containsKey("current")) {
+                        int current = doc["current"].as<int>();
+                        set_charging_current(current);
+                    } else if (strcmp(action, "setChargeParameters") == 0 && doc.containsKey("power")) {
+                        float power = doc["power"].as<float>();
+                        set_charging_power(power*10);
                     }
-                    // Handle action for resetting TCP before applying new network settings
-                   // if (strcmp(action, "resetTCP") == 0) {
-                   //     ESP_LOGI(WEB_TAG, "Resetting TCP connections before applying new network settings");
-                   //     stop_eth();  // Stop Ethernet and close TCP connections
-                   //     break;  // After resetting, wait for new settings to be sent
-                   // }
                 }
 
                 // Verarbeitung der anderen JSON-Felder außerhalb des 'if (!val.isNull())'-Blocks
@@ -216,7 +214,7 @@ void webSocketEvent(byte num, WStype_t type, uint8_t * payload, size_t length) {
                     preferences.putBool("wifiStatic", val.as<bool>());
                     esp_restart();
                 }
-
+              
               //   String jsonString;
               //   serializeJsonPretty(doc, jsonString);  // Speichert das JSON im String jsonString
               //   ESP_LOGI(WEB_TAG, "Received JSON data:\n%s", jsonString.c_str());
@@ -234,19 +232,18 @@ void periodic_timer_callback(void* arg) {
             const std::string& page = clientPair.second;
             String jsonString;
             JsonDocument doc;
+            float duty = get_control_pilot_duty();
              if (page == "index") {
                 doc["cpState"] = cpStateToName(currentCpState);
+                doc["cpVoltage"] = round(highVoltage * 100) / 100.0;
+                doc["targetChargeCurrent"] = round(get_current_from_duty(duty));
+                doc["targetChargePower"] = round(get_power_from_duty(duty)/10);                
+              // doc["targetChargePower"] = (int)(get_power_from_duty(duty) / 10 * 10 + 0.5) / 10.0;
                 doc["cpRelayState"] = get_cp_relays_status();
              }
         serializeJson(doc, jsonString);
         webSocket.sendTXT(clientNum, jsonString);
         //ESP_LOGI(WEB_TAG, "Sending JSON: %s", jsonString.c_str());
-        
-        
-        
-     //   for (auto clientNum : subscribedClients) {
-     //       webSocket.sendTXT(clientNum, jsonString);
-      //  }
         }
     }
 }
@@ -260,23 +257,6 @@ void start_periodic_timer() {
     ESP_ERROR_CHECK(esp_timer_start_periodic(periodic_timer, 800000)); // 800000 µs = 800 ms
 }
 
-
-
-/*void webSocketCreate(void *pvParameter) {
-    while(1) {
-        if (clientConnected) {
-            String jsonString = "";
-            JsonDocument doc;
-            JsonObject object = doc.to<JsonObject>();
-           // object["ethStaticState"]  = preferences.getBool("ethStatic", false);
-            object["cpState"]       = cpStateToName(currentCpState);
-            object["cpRelayState"]  = get_cp_relays_status();
-            serializeJson(doc, jsonString);
-            webSocket.broadcastTXT(jsonString);
-        }
-        vTaskDelay(800 / portTICK_PERIOD_MS);
-    }
-}*/
 
 void handleEthNetworkRequest(AsyncWebServerRequest *request) {
     ethernet_state_t eth_status;
@@ -327,21 +307,15 @@ void handleWifiNetworkRequest(AsyncWebServerRequest *request) {
 
 
 void handleWifiScanRequest(AsyncWebServerRequest *request) {
-    // Führe den WiFi-Scan immer durch, um aktuelle Ergebnisse zu erhalten
-   
     wifi_scan();
-
-    // Passe die Größe des JSON-Dokuments an
-    DynamicJsonDocument doc(4096);
-    JsonArray networks = doc.createNestedArray("networks");
-
+    JsonDocument doc;
+    JsonArray networks = doc["networks"].to<JsonArray>();
     for (uint16_t i = 0; i < scanned_ap_count; ++i) {
-        JsonObject network = networks.createNestedObject();
+        JsonObject network = networks.add<JsonObject>();
         network["name"] = scanned_aps[i].ssid;
         network["signal"] = scanned_aps[i].rssi;
         network["encryption"] = auth_mode_type(scanned_aps[i].authmode);
     }
-
     String response;
     serializeJson(doc, response);
     request->send(200, "application/json", response);
@@ -370,7 +344,6 @@ void A_Task_Web(void *pvParameter) {
     webSocket.begin();
     webSocket.onEvent(webSocketEvent);
     start_periodic_timer();
-   // xTaskCreate(webSocketCreate, "WebSocketCreateTask", 2048, NULL, 1, NULL);
 
     while(1) {
         webSocket.loop();

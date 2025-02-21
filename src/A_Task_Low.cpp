@@ -69,8 +69,10 @@ void A_Task_Low(void *pvParameter){
 
      //   enableWifiScan = false;
    // }
-    //    ESP_LOGI(CP_LOGI, "highVoltage: %f", highVoltage);
-    //    ESP_LOGI(CP_LOGI, "CP: %s", cpStateToName(currentCpState));
+     //   ESP_LOGI(CP_LOGI, "highVoltage: %f", highVoltage);
+
+       // ESP_LOGI(CP_LOGI, "CP: %s", cpStateToName(currentCpState));
+
 
         vTaskDelay(3000/portTICK_PERIOD_MS); // verzögere den Task um sekunden
 

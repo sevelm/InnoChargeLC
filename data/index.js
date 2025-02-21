@@ -2,6 +2,9 @@
 
 // Initialize WebSocket variable
 var Socket;
+// Flag to check if input fields have been initialized
+var inputsInitialized = false;
+
 
 // Function to initialize the WebSocket connection
 function initWebSocket() {
@@ -42,10 +45,36 @@ function processCommand(event) {
   console.log('Received data:', event.data); // Display received data
   var obj = JSON.parse(event.data);
 
-  // Update cpState if the element exists on the page
+  // Initialize only once
+  if (!inputsInitialized) {
+    if (obj.targetChargeCurrent !== undefined && document.getElementById('setChargeCurrent') !== null) {
+      document.getElementById('setChargeCurrent').value = obj.targetChargeCurrent;
+      inputsInitialized = true; // Set the flag to true after initializing
+    }
+    if (obj.targetChargePower !== undefined && document.getElementById('setChargePower') !== null) {
+      document.getElementById('setChargePower').value = obj.targetChargePower;
+      inputsInitialized = true; // Set the flag to true after initializing
+    }
+    if (obj.cpRelayState !== undefined && document.getElementById('toggleCpRelay') !== null) {
+      document.getElementById('toggleCpRelay').checked = obj.cpRelayState;
+      inputsInitialized = true; // Set the flag to true after initializing
+    }
+  }
+
+  // Update if the element exists on the page
   if (obj.cpState !== undefined && document.getElementById('cpState') !== null) {
     document.getElementById('cpState').innerHTML = obj.cpState;
   }
+  if (obj.cpVoltage !== undefined && document.getElementById('cpVoltage') !== null) {
+    document.getElementById('cpVoltage').innerHTML = obj.cpVoltage;
+  }
+  if (obj.targetChargeCurrent !== undefined && document.getElementById('targetChargeCurrent') !== null) {
+    document.getElementById('targetChargeCurrent').innerHTML = obj.targetChargeCurrent;
+  }
+  if (obj.targetChargePower !== undefined && document.getElementById('targetChargePower') !== null) {
+    document.getElementById('targetChargePower').innerHTML = obj.targetChargePower;
+  }
+
 
   // Update cpRelayState if the element exists on the page
   if (obj.cpRelayState !== undefined && document.getElementById('BTN_SET_RELAY') !== null) {
@@ -54,21 +83,81 @@ function processCommand(event) {
   }
 }
 
+//--------------------------------DOMContentLoaded-----------------------------------//
+//--------------------------------DOMContentLoaded-----------------------------------//
+//--------------------------------DOMContentLoaded-----------------------------------//
 // Event listener for buttons and page load
 document.addEventListener('DOMContentLoaded', function() {
   // Initialize the WebSocket connection
   initWebSocket();
 
+  // Set up event listeners for inputs
+  document.getElementById('setChargeCurrent')?.addEventListener('keydown', function(event) {
+    if (event.key === 'Enter') {
+      set_charge_current();
+    }
+  });
+  document.getElementById('setChargePower')?.addEventListener('keydown', function(event) {
+    if (event.key === 'Enter') {
+      set_charge_power();
+    }
+  });
+
   // Set up event listeners for buttons
-  document.getElementById('BTN_SET_CURRENT')?.addEventListener('click', set_charge_current);
+  document.getElementById('toggleCpRelay')?.addEventListener('change', function(event) {
+    toggle_cp_relay();
+  });
+
+
+
+
   document.getElementById('BTN_GO_TO_SETTINGS')?.addEventListener('click', go_to_settings);
   document.getElementById('BTN_SET_RELAY')?.addEventListener('click', toggle_cp_relay);
 });
 
+// Function to handle toggling of CP OFF and ON
+function toggle_cp_relay() {
+  const isChecked = document.getElementById('toggleCpRelay').checked;
+  const data = {
+    action: 'setCpRelayState',
+    state: isChecked 
+  };
+  Socket.send(JSON.stringify(data));
+  console.log('Sending CP-Relay values to server:', data);
+}
+
 // Function to set the charging current
 function set_charge_current() {
-  // Implement the logic to set the charging current
+  var currentValue = parseFloat(document.getElementById('setChargeCurrent').value);
+  // Check if currentValue is between 0 and 32
+  if (currentValue < 0 || currentValue > 32) {
+    alert('Der Ladestrom muss zwischen 0 und 32 Ampere liegen.');
+    return;
+  }
+  var data = {
+    action: 'setChargeParameters',
+    current: currentValue,
+  };
+  Socket.send(JSON.stringify(data));
+  console.log('Sending Charge values to server:', data);
 }
+
+// Function to set the charging current
+function set_charge_power() {
+  var powerValue = parseFloat(document.getElementById('setChargePower').value);  
+  // Check if powerValue is between 0 und 22
+  if (powerValue < 0 || powerValue > 22) {
+    alert('Die Ladeleistung muss zwischen 0 und 22 kW liegen.');
+    return;
+  }
+  var data = {
+    action: 'setChargeParameters',
+    power: powerValue,
+  };
+  Socket.send(JSON.stringify(data));
+  console.log('Sending Charge values to server:', data);
+}
+
 
 // Function to navigate to the settings page
 function go_to_settings() {
@@ -76,12 +165,6 @@ function go_to_settings() {
   window.location.href = 'settings.html';
 }
 
-// Function to toggle the CP relay state
-function toggle_cp_relay() {
-  // Implement the logic to toggle the CP relay
-  // For example, send a WebSocket message to the server
-  Socket.send(JSON.stringify({ action: 'toggleCpRelay' }));
-}
 
 
   

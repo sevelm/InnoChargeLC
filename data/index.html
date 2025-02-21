@@ -1,3 +1,5 @@
+<!-- START index.html-->
+
 <!DOCTYPE html>
 <html>
 <head>
@@ -14,16 +16,60 @@
     <h1>Startseite</h1>
   
     <div class="container">
-      <h2>Control Pilot Status</h2>
-      <p>Aktueller CP-Zustand: <span id='cpState'>-</span></p>
+      <h2>Aktueller Status</h2>
+      <table>
+        <tr>
+          <td><label for="state">CP-Status:</label></td>
+          <td>
+            <span id="cpState" style="font-size: 16px; color: #333; font-weight: bold;"></span>
+          </td>
+        </tr>
+        <tr>
+          <td><label for="state">CP-Spannung (V):</label></td>
+          <td>
+            <span id="cpVoltage" style="font-size: 16px; color: #333; font-weight: bold;"></span>
+          </td>
+        </tr>
+        <tr>
+          <td><label for="state">Vorgabe Ladestrom (A):</label></td>
+          <td>
+            <span id="targetChargeCurrent" style="font-size: 16px; color: #333; font-weight: bold;"></span>
+          </td>
+        </tr>
+        <tr>
+          <td><label for="state">Vorgabe Ladeleistung (kW):</label></td>
+          <td>
+            <span id="targetChargePower" style="font-size: 16px; color: #333; font-weight: bold;"></span>
+          </td>
+        </tr>
+      </table>
     </div>
-
     <div class="container">
-      <h2>Ladestrom einstellen</h2>
-      <label for="setChargeCurrent">Ladestrom (A):</label>
-      <input type="number" id="setChargeCurrent" name="setChargeCurrent">
-      <button id="BTN_SET_CURRENT">Ladestrom setzen</button>
-    </div>
+        <h2>Steuern</h2>
+        <table>
+          <tr>
+            <td><label for="state">CP-Freigeben:</label></td>
+            <td>
+              <label class="switch">
+                <input type="checkbox" id="toggleCpRelay">
+                <span class="slider"></span>
+              </label>
+            </td>
+          <tr>
+            <td><label for="state">Ladestrom (A):</label></td>
+            <td>
+              <input type="number" id="setChargeCurrent" name="setChargeCurrent">
+            </td>
+          </tr>
+          <tr>
+            <td><label for="state">Ladeleistung (kW):</label></td>
+            <td>
+              <input type="number" id="setChargePower" name="setChargePower">
+            </td>
+          </tr>
+          </tr>
+        </table>
+      </div>
 
     <div class="container">
       <h2>CP-Relais</h2>

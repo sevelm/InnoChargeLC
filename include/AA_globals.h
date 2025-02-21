@@ -5,7 +5,8 @@
 #include <ethernet_manager.hpp>
 #include <wifi_manager.hpp>
 #include <Preferences.h>
-#include "esp_wifi.h" 
+#include <esp_wifi.h> 
+
 
 extern Preferences preferences;
 
@@ -19,6 +20,7 @@ typedef enum {
     StateD_VentCharge,
     StateE_Error,
     StateF_Fault,
+    StateCustom_OutOffRange,
     StateCustom_CpRelayOff,
     StateCustom_DutyCycle_100,
     StateCustom_DutyCycle_0,
@@ -35,7 +37,5 @@ extern volatile charging_state_t currentCpStateDelay;
 
 // Deklaration des NeoPixel-Strip-Objekts
 extern NeoPixelBus<NeoGrbFeature, Neo800KbpsMethod> strip;
-
 extern wifi_sta_start_config_t wifi_sta_config;
-
 #endif 

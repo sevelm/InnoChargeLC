@@ -1,5 +1,8 @@
 #ifndef WIFI_MANAGER_HPP
 #define WIFI_MANAGER_HPP
+
+#include <esp_wifi.h>
+
 typedef struct {
     char ssid[64];
     char passphrase[64];

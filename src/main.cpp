@@ -24,10 +24,9 @@
 #include "A_Task_MB.hpp"
 #include "wifi_manager.hpp"
 
-#include "esp_wifi.h" // esp_wifi_stop() deklarieren
+#include "esp_wifi.h" 
 #include "AA_globals.h"
-
-
+#include <mDNS.h>
 
 const char *MAIN_TAG = "Web: ";
 // Globals
@@ -46,6 +45,25 @@ wifi_sta_start_config_t wifi_sta_config = {
     .max_retry = -1
 };
 
+
+void start_mdns_service()
+{
+    //initialize mDNS service
+    esp_err_t err = mdns_init();
+    if (err) {
+        ESP_LOGI(MAIN_TAG, "MDNS Init failed: %d\n", err);
+        return;
+    }
+
+    //set hostname
+    mdns_hostname_set("my-esp32");
+    //set default instance
+    mdns_instance_name_set("Jhon's ESP32 Thing");
+    ESP_LOGI(MAIN_TAG, "MDNS create");
+}
+
+
+
 //////////////////////////////////////////////////// Setup ///////////////////////////////////////////////////
 //////////////////////////////////////////////////// Setup ///////////////////////////////////////////////////
 //////////////////////////////////////////////////// Setup ///////////////////////////////////////////////////
@@ -54,6 +72,7 @@ wifi_sta_start_config_t wifi_sta_config = {
 // ###################### HTTP Event Handler
 
 void setup() {
+    delay(5000); // 1 Sekunde warten
     ESP_LOGI(MAIN_TAG, "Starting up EVSE Test Programm!");
 
     //######################### Preferences
@@ -91,11 +110,7 @@ void setup() {
     }
     ESP_LOGI(MAIN_TAG, "SPIFFS mounted successfully");
        
-    // ######################### Create Task and Start
-    xTaskCreatePinnedToCore(A_Task_CP, "Controlpilot Task", 8192, NULL, 1, NULL, 1);
-    xTaskCreatePinnedToCore(A_Task_MB, "Task_Modbus_Operation", 8192, NULL, 2, NULL, 1);   
-    xTaskCreatePinnedToCore(A_Task_Web, "Task_Web_Operation", 8192, NULL, 4, NULL, 1);
-    xTaskCreatePinnedToCore(A_Task_Low, "Task_Low_Operation", 8192, NULL, 5, NULL, 1);
+    
     //xTaskCreate(demo_monitoring_task, "Demo Monitoring Task", 4096, NULL, 1, NULL);
 
     // connect to wifi
@@ -106,13 +121,35 @@ void setup() {
     strcpy(wifi_sta_config.ssid, ssid);
     strcpy(wifi_sta_config.passphrase, pwd);
 
-  // Schalter zum aktivieren und deaktivieren
+    // Schalter zum aktivieren und deaktivieren
     wifiEnabled = preferences.getBool("wifiEnable", false);
     if (wifiEnabled) {
         wifi_init_sta(&wifi_sta_config);
     } else {
         preferences.putBool("wifiStatic", false);
     }
+
+    // generate hostname
+   // if (!MDNS.begin("esp32")) {  // "esp32" wird der Hostname
+  //      ESP_LOGI(MAIN_TAG, "ERROR mDNS");
+  //      return;
+  //  }
+  //  ESP_LOGI(MAIN_TAG, "mDNS started. Access at http://esp32.local");
+    // HTTP-Dienst hinzufügen
+//    MDNS.addService("http", "tcp", 80);
+
+
+start_mdns_service();
+
+
+
+
+// ######################### Create Task and Start
+    xTaskCreatePinnedToCore(A_Task_CP, "Controlpilot Task", 8192, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(A_Task_MB, "Task_Modbus_Operation", 8192, NULL, 2, NULL, 1);   
+    xTaskCreatePinnedToCore(A_Task_Web, "Task_Web_Operation", 8192, NULL, 4, NULL, 1);
+    xTaskCreatePinnedToCore(A_Task_Low, "Task_Low_Operation", 8192, NULL, 5, NULL, 1);
+
 
     // Scan WiFi networks
    // wifi_scan();
