@@ -15,6 +15,9 @@
 
 const char *CP_LOGI = "Task_Low: ";
 
+#define INPUT_PIN 9  // IO9 als digitaler Eingang
+
+
 
 //bool enableWifiScan = false;
 //bool prevWifiEnable; 
@@ -27,6 +30,11 @@ const char *CP_LOGI = "Task_Low: ";
 void A_Task_Low(void *pvParameter){
  char eth_ip[16];
 
+
+    pinMode(INPUT_PIN, INPUT_PULLUP);
+
+
+
 //////////////////////////////////////////////////// Loop ///////////////////////////////////////////////////
 //////////////////////////////////////////////////// Loop ///////////////////////////////////////////////////
 //////////////////////////////////////////////////// Loop ///////////////////////////////////////////////////
@@ -36,6 +44,17 @@ void A_Task_Low(void *pvParameter){
         ESP_LOGI(CP_LOGI, "ETH IP : %s", eth_ip);
         get_wifi_ip(eth_ip);
         ESP_LOGI(CP_LOGI, "WIFI IP: %s", eth_ip);
+
+
+        bool inputState = digitalRead(INPUT_PIN);  
+
+        // Status ausgeben
+      
+        ESP_LOGI(CP_LOGI, "IO9 Status: %s", inputState ? "HIGH" : "LOW");
+
+
+
+
 
         //uint8_t ip[4] = {0}, netmask[4] = {0}, gw[4] = {0}, dns1[4] = {0}, dns2[4] = {0};
         //preferences.getBytes("wifi_dns1", dns1, sizeof(dns1));
@@ -69,10 +88,11 @@ void A_Task_Low(void *pvParameter){
 
      //   enableWifiScan = false;
    // }
-     //   ESP_LOGI(CP_LOGI, "highVoltage: %f", highVoltage);
-
-       // ESP_LOGI(CP_LOGI, "CP: %s", cpStateToName(currentCpState));
-
+   // int highVoltageInt = round(highVoltage * 10);
+   //     ESP_LOGI(CP_LOGI, "highVoltage: %d", highVoltageInt);
+   //     ESP_LOGI(CP_LOGI, "highVoltage + 5: %d", highVoltageInt + 5);
+     //   ESP_LOGI(CP_LOGI, "RFID Error: %d", rfid.error);
+     //   ESP_LOGI(CP_LOGI, "SDM Error: %d", sdm.error);
 
         vTaskDelay(3000/portTICK_PERIOD_MS); // verzögere den Task um sekunden
 

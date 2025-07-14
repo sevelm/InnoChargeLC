@@ -26,14 +26,21 @@
 
 #include "esp_wifi.h" 
 #include "AA_globals.h"
-#include <mDNS.h>
+
+#include "esp_ota_ops.h"
+#include "esp_partition.h"
+
+
+#define FW_VER  APP_VERSION
+#define FW_NAME APP_NAME
+
 
 const char *MAIN_TAG = "Web: ";
 // Globals
 Preferences preferences;
 
 // cp_measurements_t measurements = {0.0, 0.0, {0.0}, 0};
-NeoPixelBus<NeoGrbFeature, Neo800KbpsMethod> strip(8, 10);
+NeoPixelBus<NeoGrbFeature, Neo800KbpsMethod> strip(8, 10); // Set to Pin 10
 int cpState;
 float highVoltage;
 charging_state_t currentCpState = StateA_NotConnected;
@@ -46,30 +53,13 @@ wifi_sta_start_config_t wifi_sta_config = {
 };
 
 
-void start_mdns_service()
-{
-    //initialize mDNS service
-    esp_err_t err = mdns_init();
-    if (err) {
-        ESP_LOGI(MAIN_TAG, "MDNS Init failed: %d\n", err);
-        return;
-    }
-
-    //set hostname
-    mdns_hostname_set("my-esp32");
-    //set default instance
-    mdns_instance_name_set("Jhon's ESP32 Thing");
-    ESP_LOGI(MAIN_TAG, "MDNS create");
-}
-
-
-
 //////////////////////////////////////////////////// Setup ///////////////////////////////////////////////////
 //////////////////////////////////////////////////// Setup ///////////////////////////////////////////////////
 //////////////////////////////////////////////////// Setup ///////////////////////////////////////////////////
 //////////////////////////////////////////////////// Setup ///////////////////////////////////////////////////
 
 // ###################### HTTP Event Handler
+
 
 void setup() {
     delay(5000); // 1 Sekunde warten
@@ -110,9 +100,6 @@ void setup() {
     }
     ESP_LOGI(MAIN_TAG, "SPIFFS mounted successfully");
        
-    
-    //xTaskCreate(demo_monitoring_task, "Demo Monitoring Task", 4096, NULL, 1, NULL);
-
     // connect to wifi
     char ssid[32] = {0}; 
     char pwd[64] = {0}; 
@@ -128,28 +115,16 @@ void setup() {
     } else {
         preferences.putBool("wifiStatic", false);
     }
-
-    // generate hostname
-   // if (!MDNS.begin("esp32")) {  // "esp32" wird der Hostname
-  //      ESP_LOGI(MAIN_TAG, "ERROR mDNS");
-  //      return;
-  //  }
-  //  ESP_LOGI(MAIN_TAG, "mDNS started. Access at http://esp32.local");
-    // HTTP-Dienst hinzufügen
-//    MDNS.addService("http", "tcp", 80);
-
-
-start_mdns_service();
-
-
-
+    // RFID or Energymeter Enable
+    sdm.enable  = preferences.getBool("emEnable",  false);
+    rfid.enable = preferences.getBool("rfidEnable", false);
 
 // ######################### Create Task and Start
+
     xTaskCreatePinnedToCore(A_Task_CP, "Controlpilot Task", 8192, NULL, 1, NULL, 1);
     xTaskCreatePinnedToCore(A_Task_MB, "Task_Modbus_Operation", 8192, NULL, 2, NULL, 1);   
-    xTaskCreatePinnedToCore(A_Task_Web, "Task_Web_Operation", 8192, NULL, 4, NULL, 1);
+    xTaskCreatePinnedToCore(A_Task_Web, "Task_Web_Operation", 8192, NULL, 4, NULL, 0);
     xTaskCreatePinnedToCore(A_Task_Low, "Task_Low_Operation", 8192, NULL, 5, NULL, 1);
-
 
     // Scan WiFi networks
    // wifi_scan();
@@ -157,6 +132,7 @@ start_mdns_service();
     // xTaskCreate(pp_monitoring_task, "PP Monitoring Task", 4096, NULL, 1, NULL);
     // xTaskCreate(lock_monitor_task, "Lock Monitor Task", 2048, NULL, 5, NULL);
     // xTaskCreate(relay_ctrl_test_task, "Relay Control Test Task", 2048, NULL, 5, NULL);
+
 }
 
 //////////////////////////////////////////////////// Loop ///////////////////////////////////////////////////

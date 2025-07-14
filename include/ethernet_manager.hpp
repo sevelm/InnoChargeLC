@@ -1,6 +1,6 @@
 #ifndef ETHERNET_MANAGER_HPP
 #define ETHERNET_MANAGER_HPP
-// #include "esp_netif.h"
+#include "esp_netif.h"
 typedef struct{
     uint8_t mac_addr[6];
     uint8_t ip_addr[4];
@@ -27,7 +27,7 @@ typedef struct {
     ethernet_connection_state_t connection_state;
 } ethernet_state_t;
 
-// extern esp_netif_t *eth_netif_spi;
+/* ---------- API ------------------------------------------------- */
 void start_eth(bool is_dhcp_enabled, ethernet_start_config_t * ethernet_start_config);
 void get_eth_ip(char *ip);
 void get_ethernet_state( ethernet_state_t *eth_status);

@@ -11,7 +11,8 @@
 #include "AsyncTCP.h"
 #include "WebSocketsServer.h"
 #include "ArduinoJson.h"
-
+#include <Update.h>
+#include "esp_ota_ops.h"
 #include "AA_globals.h"
 #include "A_Task_CP.hpp"
 #include "control_pilot.hpp"
@@ -20,6 +21,18 @@
 
 #include "esp_timer.h"
 #include <map>
+
+
+#include <esp_ota_ops.h>        // ↯ einmal ganz oben in A_Task_Web.cpp
+
+/* ---------- OTA-MAIN-Status (global) ---------- */
+struct {
+    volatile uint8_t progress = 0;   // 0-100
+    volatile int8_t  code     =  0;  // 0=idle, 1=ok, <0 = Fehler
+    String  message;                 // Mensch-lesbarer Text
+} otaMain;
+
+
 
 
 esp_timer_handle_t periodic_timer;      // periotic JSON send
@@ -106,6 +119,18 @@ void webSocketEvent(byte num, WStype_t type, uint8_t * payload, size_t length) {
                     } else if (strcmp(action, "setChargeParameters") == 0 && doc.containsKey("power")) {
                         float power = doc["power"].as<float>();
                         set_charging_power(power*10);
+                        // Page-Interfaces
+                    } else if (strcmp(action, "setEnergyMeter") == 0 && doc["state"].is<bool>()) {
+                        bool state = doc["state"].as<bool>();
+                        preferences.putBool("emEnable", state);  
+                        sdm.enable = state;
+                      //  sdm.error = state;  
+                    } else if (strcmp(action, "setRfid") == 0 && doc["state"].is<bool>()) {
+                        bool state = doc["state"].as<bool>();
+                        preferences.putBool("rfidEnable", state); 
+                        rfid.enable = state;
+                       // rfid.error = state;
+                       // ESP_LOGI(WEB_TAG, "energyMeterEnable = %d", preferences.getBool("rfidEnable", false));
                     }
                 }
 
@@ -215,9 +240,9 @@ void webSocketEvent(byte num, WStype_t type, uint8_t * payload, size_t length) {
                     esp_restart();
                 }
               
-              //   String jsonString;
-              //   serializeJsonPretty(doc, jsonString);  // Speichert das JSON im String jsonString
-              //   ESP_LOGI(WEB_TAG, "Received JSON data:\n%s", jsonString.c_str());
+                 String jsonString;
+                 serializeJsonPretty(doc, jsonString);  // Speichert das JSON im String jsonString
+                 ESP_LOGI(WEB_TAG, "Received JSON data:\n%s", jsonString.c_str());
             }
             break;
     }
@@ -232,15 +257,45 @@ void periodic_timer_callback(void* arg) {
             const std::string& page = clientPair.second;
             String jsonString;
             JsonDocument doc;
-            float duty = get_control_pilot_duty();
              if (page == "index") {
+                float duty = get_control_pilot_duty();
                 doc["cpState"] = cpStateToName(currentCpState);
-                doc["cpVoltage"] = round(highVoltage * 100) / 100.0;
+                doc["cpVoltage"] = round(highVoltage * 10) / 10.0;
                 doc["targetChargeCurrent"] = round(get_current_from_duty(duty));
-                doc["targetChargePower"] = round(get_power_from_duty(duty)/10);                
+                doc["targetChargePower"] = round(get_power_from_duty(duty)) / 10.0;                
               // doc["targetChargePower"] = (int)(get_power_from_duty(duty) / 10 * 10 + 0.5) / 10.0;
                 doc["cpRelayState"] = get_cp_relays_status();
              }
+             if (page == "interfaces") {
+                // Energymeter
+                doc["energyMeterState"] = preferences.getBool("emEnable", false);
+                doc["l1Voltage"] =  (int16_t)roundf(sdm.voltL1 * 10);
+                doc["l2Voltage"] =  (int16_t)roundf(sdm.voltL2 * 10);
+                doc["l3Voltage"] =  (int16_t)roundf(sdm.voltL3 * 10);
+                doc["l1Current"] =  (int16_t)roundf(sdm.currL1 * 10);
+                doc["l2Current"] =  (int16_t)roundf(sdm.currL2 * 10);
+                doc["l3Current"] =  (int16_t)roundf(sdm.currL3 * 10);
+                doc["l1Power"] =  (int16_t)roundf(sdm.pwrL1 * 10);
+                doc["l2Power"] =  (int16_t)roundf(sdm.pwrL2 * 10);
+                doc["l3Power"] =  (int16_t)roundf(sdm.pwrL3 * 10);
+                doc["totPower"] =  (int16_t)roundf(sdm.pwrTot * 10);
+                doc["impPower"] =  (int16_t)roundf(sdm.enrImp * 100);
+                doc["expPower"] =  (int16_t)roundf(sdm.enrExp * 100);
+                doc["energyMeterError"] =  sdm.error;
+                // RFID
+                doc["rfidState"]        = preferences.getBool("rfidEnable", false);
+                doc["rfidTag"] =  rfid.uidStr;
+                doc["lastRfidTag"] =  rfid.lastUidStr;
+                doc["rfidError"] =  rfid.error;
+             }
+             if (page == "system") {
+                // System
+                doc["otaMainProgress"] = otaMain.progress;  // 0-100%
+                doc["otaMainCode"]     = otaMain.code;      // 1=ok,0=busy,<0 err
+                doc["otaMainMessage"]  = otaMain.message;   // Messages
+                doc["otaMainVersion"]  = "V.2025.07.09-002";   // Version
+             }
+
         serializeJson(doc, jsonString);
         webSocket.sendTXT(clientNum, jsonString);
         //ESP_LOGI(WEB_TAG, "Sending JSON: %s", jsonString.c_str());
@@ -321,6 +376,114 @@ void handleWifiScanRequest(AsyncWebServerRequest *request) {
     request->send(200, "application/json", response);
 }
 
+// * =====================================================
+// * OTA-UPLOAD-HANDLER  (neu)
+// * -----------------------------------------------------
+
+
+/* ---------- Upload-Handler ---------- */
+static void setupUpload()
+{
+    /* Fortschritt ------------------------------------------------ */
+    Update.onProgress([](size_t done, size_t total)
+    {
+        otaMain.progress = total ? (done * 100 / total) : 0;
+
+        /* Code NICHT überschreiben, sonst ginge -2/-3/-4 oder 1 verloren */
+        otaMain.message  = "progress";
+
+        ESP_LOGI("OTA","progress %u %%", otaMain.progress);
+    });
+
+    server.on("/uploadfw", HTTP_POST,
+
+    /* ---------- (1) Antwort nach Abschluss ---------- */
+    [](AsyncWebServerRequest *req)
+    {
+        const bool err = Update.hasError();
+        req->send(err ? 500 : 200,
+                  "text/plain",
+                  err ? "flash error" : "flash ok");
+
+        if (!err) { otaMain.code = 1;  otaMain.message = "flash ok";  }
+        else      { otaMain.code = -1; otaMain.message = "flash error"; }
+
+        String json;
+        JsonDocument doc;
+        doc["otaMainProgress"] = otaMain.progress;
+        doc["otaMainCode"]     = otaMain.code;
+        doc["otaMainMessage"]  = otaMain.message;
+        serializeJson(doc, json);
+
+        for (auto &c : subscribedClients)
+            if (c.second == "system")
+                webSocket.sendTXT(c.first, json);
+      
+        /* Reboot nur bei Erfolg */
+        if (!err) {
+            xTaskCreatePinnedToCore([](void*)
+            {
+                auto run  = esp_ota_get_running_partition();
+                auto boot = esp_ota_get_boot_partition();
+                ESP_LOGI("OTA","running=%s | willBoot=%s",
+                         run->label, boot->label);
+                vTaskDelay(pdMS_TO_TICKS(500));
+                esp_restart();
+            }, "reboot", 2048, nullptr, 5, nullptr, APP_CPU_NUM);
+        }
+    },
+
+    /* ---------- (2) Upload-Stream ------------------- */
+    [](AsyncWebServerRequest *req, String /*fn*/, size_t idx,
+       uint8_t *data, size_t len, bool final)
+    {
+        static size_t totalLen = 0;
+
+        /* -- erster Block --------------------------------------- */
+        if (idx == 0) {
+            totalLen = req->contentLength();
+            uint32_t max = totalLen ? totalLen : UPDATE_SIZE_UNKNOWN;
+
+            if (!Update.begin(max, U_FLASH)) {
+                otaMain.code    = -2;
+                otaMain.message = String("begin() ") + Update.errorString();
+                ESP_LOGE("OTA","%s", otaMain.message.c_str());
+                return;
+            }
+        }
+
+        /* -- schreiben ----------------------------------------- */
+        if (Update.write(data, len) != len) {
+            otaMain.code    = -3;
+            otaMain.message = String("write() ") + Update.errorString();
+            ESP_LOGE("OTA","%s", otaMain.message.c_str());
+        }
+
+        /* -- letzter Block ------------------------------------- */
+        if (final) {
+            if (!Update.end(true)) {
+                otaMain.code    = -4;
+                otaMain.message = String("end() ") + Update.errorString();
+                ESP_LOGE("OTA","%s", otaMain.message.c_str());
+            } else {
+                otaMain.code    = 1;
+                otaMain.message = "Upload finished OK";
+                ESP_LOGI("OTA","%s", otaMain.message.c_str());
+            }
+        }
+    });
+}
+
+
+
+
+
+
+/* ===================================================== */
+
+
+
+
 void A_Task_Web(void *pvParameter) {
     // Setup code
     server.addHandler(new CaptiveRequestHandler()).setFilter(ON_STA_FILTER); // Only handle requests from STA
@@ -332,6 +495,11 @@ void A_Task_Web(void *pvParameter) {
     server.onRequestBody([](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
         ESP_LOGI(WEB_TAG, "Body: %s", (char *)data);
     });
+
+
+    setupUpload();
+
+
 
     // Register routes
     registerWebRoutes(server);

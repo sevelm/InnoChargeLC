@@ -24,5 +24,6 @@ void knightRiderEffect();
 void waveEffect();
 void orangeWaveEffect2();
 void callLedEffect();
+void mbColor();
 
 #endif // LEDEFFECT_HPP

@@ -24,6 +24,7 @@
 #define cp_control_channel 0
 #define RELAY_PIN_L1_N 36
 #define RELAY_PIN_L2_L3 38
+#define rcm_fault 9
 
 
 #define RISING_EDGE 1
@@ -56,8 +57,38 @@ void init_control_pilot(void){
     digitalWrite(RELAY_PIN_L1_N, LOW);
     pinMode(RELAY_PIN_L2_L3, OUTPUT);
     digitalWrite(RELAY_PIN_L2_L3, LOW);
-
+    pinMode(rcm_fault, INPUT_PULLUP);
 }
+
+
+
+/**
+ * @brief Return the current Control-Pilot state as a 16-bit integer.
+ *
+ * The value corresponds to the numeric representation of the
+ * `charging_state_t` enumeration.  The current mapping is
+ *
+ *   Value | Enum constant                | IEC 61851-1 meaning
+ *   ------|------------------------------|-----------------------------
+ *     0   | StateA_NotConnected          | EV not connected
+ *     1   | StateB_Connected             | Connected, no charging
+ *     2   | StateC_Charge                | Charging active
+ *     3   | StateD_VentCharge            | Charging, ventilation required
+ *     4   | StateE_Error                 | Error / voltage window lost
+ *     5   | StateF_Fault                 | Fault (short-circuit etc.)
+ *     6   | StateCustom_CpRelayOff       | CP relay off
+ *     7   | StateCustom_DutyCycle_100    | PWM = 100 %
+ *     8   | StateCustom_DutyCycle_0      | PWM = 0 %
+ *     9   | StateCustom_OutOffRange      | CP signal out of range
+ *
+ * @note  Extend this table if you add new enum values.
+ *
+ * @return int16_t  Current CP state (see table above).
+ */
+int16_t get_cp_state_int(void){
+return static_cast<int16_t>(vCurrentCpState);
+}
+
 
 /**
     * @brief Set the control pilot duty cycle
@@ -152,9 +183,12 @@ float get_duty_from_power(float power_in_tenth_kw) {
     * @return void
 */
 void set_charging_current(float current){
-    float duty = get_duty_from_current(current);
-    set_control_pilot_duty(duty);
-    set_charging_current_mb(current, mbRegChargeCurrent);           // Set Modbus
+    if (current == 0) {
+        set_control_pilot_100();  // 12V DC ohne PWM → Status B (WAIT)
+    } else {
+        float duty = get_duty_from_current(current);
+        set_control_pilot_duty(duty);
+    }
 }
 
 /**
@@ -165,9 +199,12 @@ void set_charging_current(float current){
     * @return void
 */
 void set_charging_power(float power){
-    float duty = get_duty_from_power(power);
-    set_control_pilot_duty(duty);
-    set_charging_power_mb(power, mbRegChargePower);           // Set Modbus
+    if (power == 0) {
+        set_control_pilot_100();  // 12V DC ohne PWM → Status B (WAIT)
+    } else {
+        float duty = get_duty_from_power(power);
+        set_control_pilot_duty(duty);
+    }
 }
 
 /** 
@@ -234,6 +271,16 @@ bool get_cp_relays_status(){
     return cp_relay_status;
 }
 
+/**
+    * @brief Get the status of the RCM
+    * @param void
+    * @return bool rcm_status if TRUE then FAULT
+
+*/
+bool get_rcm_status(){
+    bool rcmFault = digitalRead(rcm_fault);
+    return rcmFault;
+}
 
 /**
     * @brief Synchronize the control pilot edge

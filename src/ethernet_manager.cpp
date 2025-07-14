@@ -20,7 +20,7 @@
 #include "sdkconfig.h"
 #include "driver/spi_master.h"
 #include "ethernet_manager.hpp"
-
+#include "lwip/apps/netbiosns.h"
 #include "AA_globals.h"
 
 static const char *ETHERNET_TAG = "eth_example";
@@ -232,6 +232,12 @@ void start_eth(bool is_dhcp_enabled, ethernet_start_config_t *ethernet_start_con
         memcpy(current_ethernet_status.dns1, ethernet_start_config->dns1, 4);
         memcpy(current_ethernet_status.dns2, ethernet_start_config->dns2, 4);
         
+    }
+
+    if (eth_netif_spi) { //mDNS
+        esp_netif_set_hostname(eth_netif_spi, "innocharge");
+        netbiosns_init();                
+        netbiosns_set_name("innocharge"); 
     }
 
     // Init MAC and PHY configs to default

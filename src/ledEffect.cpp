@@ -110,6 +110,57 @@ void stateA () {
   strip.Show();   // Send the updated pixel colors to the hardware.
 }
 
+//################################### /* ---------- 0-255 → RGB (HSV-Hue) ---------- */
+/* ---------- Modbus-Farbwert 1 … 255 → RGB (Hue-Kreis) ---------- *
+ *    1   = Rot         (Start des Farbrads)                       *
+ *   43  ≈ Gelb        (Rot → Grün Übergang)                       *
+ *   86   = Grün        (120 ° Hue)                                *
+ *  128  ≈ Cyan        (Grün → Blau Mitte)                         *
+ *  171   = Blau        (240 ° Hue)                                *
+ *  213  ≈ Magenta     (Blau → Rot Übergang)                       *
+ *  254  ≈ Rot         (Ende des Farbrads)                         *
+ *  255   = Weiß        (Sonderfall, reine Vollfarbe)              */
+void mbColor(uint8_t val)          // 1-255 aus Modbus
+{
+    initStateB = 0;
+    initStateC = 0;
+    /* ---------- Sonderfall 255 → Weiß ------------------- */
+    if (val == 255) {
+        RgbColor white(255, 255, 255);
+        for (uint8_t i = 0; i < 8; ++i)
+            strip.SetPixelColor(i, white);
+        strip.Show();
+        return;                         // fertig
+    }
+    /* ---------- 1-254 → Hue-Farbrad ---------------------- */
+    uint8_t pos = (val - 1) % 254;      // 0-253
+    uint8_t r, g, b;
+
+    if (pos < 85) {                     // Rot → Grün
+        r = 255 - pos * 3;
+        g = pos * 3;
+        b = 0;
+    }
+    else if (pos < 170) {               // Grün → Blau
+        pos -= 85;
+        r = 0;
+        g = 255 - pos * 3;
+        b = pos * 3;
+    }
+    else {                              // Blau → Rot
+        pos -= 170;
+        r = pos * 3;
+        g = 0;
+        b = 255 - pos * 3;
+    }
+
+    RgbColor c(r, g, b);
+    for (uint8_t i = 0; i < 8; ++i)
+        strip.SetPixelColor(i, c);
+    strip.Show();
+}
+
+
 //################################### UpDown
 void stateB_1 () {
   if (ledNum >= 8) {
@@ -452,44 +503,31 @@ void orangeWaveEffect2() {
 
 
 // control LED
-void callLedEffect() {
- if (xTaskGetTickCount() - prevMillisLED >= 5) { // check if "interval" ms has passed since last time the clients were updated
+void callLedEffect()
+{
+    /* 5-ms-Takt ------------------------------------------------------ */
+    if (xTaskGetTickCount() - prevMillisLED < pdMS_TO_TICKS(5))
+        return;
     prevMillisLED = xTaskGetTickCount();
-        //0=A -> NotConnected; 1=B -> Connected; 2=C -> CharginActive; 3=D -> Ventilation ChargingActive; 4=E Fault, 5=F Fault
-        switch (currentCpState) {
-            case StateA_NotConnected:
-                  stateA (); 
-            break;
-            case StateB_Connected:
-                 // stateB (); 
-                 // simpleColorChange ();
-                 // knightRiderEffect();
-                //waveEffect();
-                //orangeWaveEffect();
-                orangeWaveEffect2();
-               // orangeWaveEffectRandom();
-            break;
-            case StateC_Charge:
-                  stateC (); 
-            break;
-            case StateD_VentCharge:
-                  stateC (); 
-            break;
-            case StateE_Error:
-                  stateE (); 
-            break;
-            case StateF_Fault:
-                  stateF (); 
-            break;
-            case StateCustom_CpRelayOff:
-                  stateSwOff (); 
-            break;
-            case StateCustom_DutyCycle_100:
-                  statePwmOff (); 
-            break;
-            case StateCustom_DutyCycle_0:
-                  statePwmOff (); 
-            break;
-           }
-  }
+
+    /* ---------- Modbus-Override (1-255 = Farbwert) ----------------- */
+    if (mbTcpRegRead09 > 0) {                 // 0  ⇒ kein Override
+        mbColor(static_cast<uint8_t>(mbTcpRegRead09));
+        return;                               // alles Weitere überspringen
+    }
+
+    /* ---------- Normaler CP-Status-Animator ------------------------ */
+    switch (currentCpState) {
+        case StateA_NotConnected:       stateA();            break;
+        case StateB_Connected:          orangeWaveEffect2(); break;
+        case StateC_Charge:             stateC();            break;
+        case StateD_VentCharge:         stateC();            break;
+        case StateE_Error:              stateE();            break;
+        case StateF_Fault:              stateF();            break;
+        case StateCustom_CpRelayOff:    stateSwOff();        break;
+        case StateCustom_InvalidValue:  mbColor(9);         break;
+        case StateCustom_DutyCycle_100: 
+        case StateCustom_DutyCycle_0:   statePwmOff();       break;
+        /* kein default – alle States abgedeckt */
+    }
 }

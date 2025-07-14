@@ -83,19 +83,30 @@ volatile charging_state_t currentCpStateDelay;
 charging_state_t actualCpState(float highVoltage, float lowVoltage) {
     int highVoltageInt = round(highVoltage * 10);  // Conversion to tenths
     charging_state_t state; // initialized
-    state = StateCustom_OutOffRange; 
-    if (get_cp_relays_status() != 1) {
-        state = StateCustom_CpRelayOff;
-    } else {
-        if (highVoltageInt >= 105 && highVoltageInt <= 125) {   // 12V ± 0.5V
+    state = StateCustom_OutOffRange;
+    int offset = 15;
+    int maxV = 130;
+    int minV = 19;
+
+    const int vA = 123;        // 12,3 V
+    const int vB = 93;         // 9,3 V
+    const int vC = 63;         // 6,3 V
+    const int vD = 36;         // 3,6 V
+
+        state = StateCustom_InvalidValue;
+        if (abs(highVoltageInt - vA) <= offset) {
             state = StateA_NotConnected;
-        } else if (highVoltageInt >= 75 && highVoltageInt <= 95) {  // 9V ± 0.5V and 8V ± 0.5V
+        }
+        else if (abs(highVoltageInt - vB) <= offset) {
             state = StateB_Connected;
-        } else if (highVoltageInt >= 46 && highVoltageInt <= 72) {  // 7V ± 0.5V and 5V ± 0.5V
+        }
+        else if (abs(highVoltageInt - vC) <= offset) {
             state = StateC_Charge;
-        } else if (highVoltageInt >= 15 && highVoltageInt <= 35) {  // 3V ± 0.5V and 2V ± 0.5V
+        }
+        else if (abs(highVoltageInt - vD) <= offset) {
             state = StateD_VentCharge;
-        } else if (highVoltageInt > 125 || highVoltageInt < 15) {  // Outside of valid range
+        }
+        else if (highVoltageInt > maxV || highVoltageInt < minV) {
             state = StateE_Error;
         }
 
@@ -106,9 +117,23 @@ charging_state_t actualCpState(float highVoltage, float lowVoltage) {
         if (round(get_control_pilot_duty()) == 0) {
             state = StateCustom_DutyCycle_0;
         }
-    }    
+        // CP-Relay OFF
+        if (get_cp_relays_status() != 1) {
+        state = StateCustom_CpRelayOff;
+        }
+        if (highVoltageInt > maxV || highVoltageInt < minV) {
+            state = StateE_Error;
+        }
+        // RCM Error
+      //  if (get_rcm_status() != 0) {
+      //      state = StateE_Error;
+      //  }
+
     return state;
 }
+
+
+
 
 
 const char *cpStateToName(charging_state_t state){
@@ -146,6 +171,10 @@ void A_Task_CP(void *pvParameter){
     set_charging_current(16);
     turn_on_cp_relay();
 
+
+    vTaskDelay(pdMS_TO_TICKS(5000));
+
+
     while (1) {
 //////////////////////////////////////////////////// Loop ///////////////////////////////////////////////////
 //////////////////////////////////////////////////// Loop ///////////////////////////////////////////////////
@@ -155,7 +184,6 @@ void A_Task_CP(void *pvParameter){
 
         highVoltage = get_high_voltage();
 
-        //set_control_pilot_0();
         currentCpStateDelay = actualCpState(highVoltage,0);
 
         // CP-Delay Timer to debounce the signals
@@ -163,6 +191,12 @@ void A_Task_CP(void *pvParameter){
         lastStateChangeTime = xTaskGetTickCount();  
         } else if ((xTaskGetTickCount() - lastStateChangeTime) >= 500) {
             vCurrentCpState = currentCpStateDelay;
+        }
+
+        if (vCurrentCpState == StateE_Error ) {
+            turn_off_cp_relay();
+        } else {
+            turn_on_cp_relay();
         }
 
         if (vCurrentCpState == StateC_Charge || vCurrentCpState == StateD_VentCharge) {

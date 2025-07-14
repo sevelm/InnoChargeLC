@@ -1,0 +1,162 @@
+<!-- START index.html-->
+
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>InnoCharge-Interfaces</title>
+  <link rel="stylesheet" type="text/css" href="styles.css">
+  <!-- scripts.js wird am Ende des Body eingebunden -->
+</head>
+<body>
+  <div class="sidebar" id="navbar">
+    <!-- Navigation wird hier geladen -->
+  </div>
+  
+  <div class="main-content">
+    <h1>Schnittstellen</h1>
+  
+    <div class="container">
+      <h2>Energy-Meter</h2>
+      <table>
+        <tr>
+        <td><label for="state">Enable:</label></td>
+        <td>
+          <label class="switch">
+            <input type="checkbox" id="toggleEnergyMeter">
+            <span class="slider"></span>
+          </label></td>
+        </tr>
+        <tr>
+          <td>State:</td>
+          <td><span id="energyMeterStatus" class="status">–</span></td>
+        </tr>
+        <tr>
+          <td><label for="state">L1 Voltage (V):</label></td>
+          <td>
+            <span id="l1Voltage" style="font-size: 16px; color: #333; font-weight: bold;"></span>
+          </td>
+        </tr>
+        <tr>
+          <td><label for="state">L2 Voltage (V):</label></td>
+          <td>
+            <span id="l2Voltage" style="font-size: 16px; color: #333; font-weight: bold;"></span>
+          </td>
+        </tr>
+        <tr>
+          <td><label for="state">L3 Voltage (V):</label></td>
+          <td>
+            <span id="l3Voltage" style="font-size: 16px; color: #333; font-weight: bold;"></span>
+          </td>
+        </tr>
+        <tr>
+          <td><label for="state">L1 Current (A):</label></td>
+          <td>
+            <span id="l1Current" style="font-size: 16px; color: #333; font-weight: bold;"></span>
+          </td>
+        </tr>
+        <tr>
+          <td><label for="state">L2 Current (A):</label></td>
+          <td>
+            <span id="l2Current" style="font-size: 16px; color: #333; font-weight: bold;"></span>
+          </td>
+        </tr>
+        <tr>
+          <td><label for="state">L3 Current (A):</label></td>
+          <td>
+            <span id="l3Current" style="font-size: 16px; color: #333; font-weight: bold;"></span>
+          </td>
+        </tr>
+        <tr>
+          <td><label for="state">L1 Power (W):</label></td>
+          <td>
+            <span id="l1Power" style="font-size: 16px; color: #333; font-weight: bold;"></span>
+          </td>
+        </tr>
+        <tr>
+          <td><label for="state">L2 Power (W):</label></td>
+          <td>
+            <span id="l2Power" style="font-size: 16px; color: #333; font-weight: bold;"></span>
+          </td>
+        </tr>
+        <tr>
+          <td><label for="state">L3 Power (W):</label></td>
+          <td>
+            <span id="l3Power" style="font-size: 16px; color: #333; font-weight: bold;"></span>
+          </td>
+        </tr>
+        <tr>
+          <td><label for="state">Total Power (W):</label></td>
+          <td>
+            <span id="totPower" style="font-size: 16px; color: #333; font-weight: bold;"></span>
+          </td>
+        </tr>
+        <tr>
+          <td><label for="state">Import Power (kWh):</label></td>
+          <td>
+            <span id="impPower" style="font-size: 16px; color: #333; font-weight: bold;"></span>
+          </td>
+        </tr>        
+        <tr>
+          <td><label for="state">Export Power (kWh):</label></td>
+          <td>
+            <span id="expPower" style="font-size: 16px; color: #333; font-weight: bold;"></span>
+          </td>
+        </tr>  
+      </table>
+    </div>
+    <div class="container">
+        <h2>RFID-Reader</h2>
+        <table>
+          <tr>
+            <td><label for="state">Enable:</label></td>
+            <td>
+              <label class="switch">
+                <input type="checkbox" id="toggleRfid">
+                <span class="slider"></span>
+              </label>
+            </td>
+          </tr>
+          <tr>
+            <td>State:</td>
+            <td><span id="rfidStatus" class="status">–</span></td>
+          </tr>
+          <tr>
+            <td><label for="state">RFID-Tag:</label></td>
+            <td>
+               <span id="rfidTag" style="font-size: 16px; color: #333; font-weight: bold;"></span>
+            </td>
+          </tr>  
+          <tr>
+            <td><label for="state">Last RFID-Tag:</label></td>
+            <td>
+               <span id="lastRfidTag" style="font-size: 16px; color: #333; font-weight: bold;"></span>
+            </td>
+          </tr>  
+          </tr>
+        </table>
+      </div>
+
+   <!-- <div class="container">
+      <h2>CP-Relais</h2>
+      <label for="setCpRelay">CP-Relais:</label>
+      <button id="BTN_SET_RELAY">AUS</button>
+    </div>
+
+    <button id="BTN_GO_TO_SETTINGS">Zu den Einstellungen</button>
+
+    
+    <div class="container">
+      <label for="new-toggle">Neuer Schalter:</label>
+      <label class="switch">
+        <input type="checkbox" id="new-toggle">
+        <span class="slider"></span>
+      </label>
+    </div>
+  </div> -->
+
+  <!-- Einbindung von scripts.js am Ende des Body -->
+  <script src="common.js"></script>
+  <script src="interfaces.js"></script>
+</body>
+</html>
