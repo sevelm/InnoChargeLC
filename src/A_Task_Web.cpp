@@ -290,12 +290,18 @@ void periodic_timer_callback(void* arg) {
              }
              if (page == "system") {
                 // System
-                doc["otaMainProgress"] = otaMain.progress;  // 0-100%
-                doc["otaMainCode"]     = otaMain.code;      // 1=ok,0=busy,<0 err
-                doc["otaMainMessage"]  = otaMain.message;   // Messages
-                doc["otaMainVersion"]  = "V.2025.07.09-002";   // Version
-             }
+                doc["otaMainProgress"] = otaMain.progress;      // 0-100%
+                doc["otaMainCode"]     = otaMain.code;          // 1=ok,0=busy,<0 err
+                doc["otaMainMessage"]  = otaMain.message;       // Messages
 
+/*  ######################### MAIN Verion Write Here #########################
+    ######################### MAIN Verion Write Here #########################
+    ######################### MAIN Verion Write Here #########################
+    ######################### MAIN Verion Write Here #########################
+    ######################### MAIN Verion Write Here #########################
+*/
+                doc["otaMainVersion"]  = "V.2025.07.14-001";    // Version
+             }
         serializeJson(doc, jsonString);
         webSocket.sendTXT(clientNum, jsonString);
         //ESP_LOGI(WEB_TAG, "Sending JSON: %s", jsonString.c_str());
