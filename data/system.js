@@ -1,5 +1,6 @@
-// system.js
+// system.js  – Download-Link bleibt auf GitHub =================================
 
+// ---------------------------------------------------------------------
 // globale WS-Variable
 let socket = null;
 
@@ -16,7 +17,6 @@ function initWebSocket() {
   socket.onclose   = ev => console.log('WS close', ev);
   socket.onerror   = err => console.error('WS error', err);
 
-  // Beim Verlassen der Seite wieder abmelden
   window.addEventListener('beforeunload', () => {
     if (socket?.readyState === 1) {
       socket.send(JSON.stringify({ action:'unsubscribeUpdates', page:'system' }));
@@ -29,18 +29,15 @@ function initWebSocket() {
 // Latest‑Version von GitHub holen
 const GITHUB_RAW = 'https://raw.githubusercontent.com/sevelm/InnoChargeLC/main';
 
-async function loadLatest({ txt, spanId, linkId, prefix }) {
+async function loadLatest({ txt, spanId }) {
   try {
     const res = await fetch(`${GITHUB_RAW}/${txt}`);
-    const ver = (await res.text()).split('\n')[0].trim();   // 1. Zeile
+    const ver = (await res.text()).split('\n')[0].trim();   // 1. Zeile
     document.getElementById(spanId).textContent = ver;
-
-    /* Download‑Link zum .bin zusammenbauen (ggf. Pfad anpassen) */
-    document.getElementById(linkId).href = `/build/${prefix}_${ver}.bin`;
+    /* Download‑Link bleibt auf GitHub; href unverändert */
   } catch (e) {
     console.warn('Version fetch failed', txt, e);
     document.getElementById(spanId).textContent = '—';
-    document.getElementById(linkId).classList.add('disabled');
   }
 }
 
@@ -117,7 +114,7 @@ async function handleFwMainForm(ev) {
   document.getElementById('fwMainProgress').textContent = '0 %';
 
   const fd = new FormData();
-  fd.append('update', file, file.name);        // Muss "update" heißen!
+  fd.append('update', file, file.name);
 
   try {
     const res = await fetch('/uploadfw', { method:'POST', body:fd });
@@ -137,7 +134,7 @@ async function handleFwUiForm(ev) {
   document.getElementById('fwUiProgress').textContent = '0 %';
 
   const fd = new FormData();
-  fd.append('update', file, file.name);        // Muss "update" heißen!
+  fd.append('update', file, file.name);
 
   try {
     const res = await fetch('/uploadui', { method:'POST', body:fd });
@@ -153,18 +150,14 @@ async function handleFwUiForm(ev) {
 document.addEventListener('DOMContentLoaded', () => {
   initWebSocket();
 
-  /* Latest-Versionen nachladen + Download‑Links setzen */
+  /* Latest-Versionen nachladen – nur Text anzeigen */
   loadLatest({
     txt:    'VersionMain.txt',
-    spanId: 'fwMainVersionLast',
-    linkId: 'fwMainDownload',
-    prefix: 'MAIN_IC_Fw'
+    spanId: 'fwMainVersionLast'
   });
   loadLatest({
     txt:    'VersionUi.txt',
-    spanId: 'fwUiVersionLast',
-    linkId: 'fwUiDownload',
-    prefix: 'UI_IC_Fw'
+    spanId: 'fwUiVersionLast'
   });
 
   document.getElementById('fwMainForm')
@@ -172,5 +165,6 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('fwUiForm')
           .addEventListener('submit', handleFwUiForm);
 });
+
 
 
