@@ -22,8 +22,14 @@
 #include "esp_timer.h"
 #include <map>
 
-
 #include <esp_ota_ops.h>        // ↯ einmal ganz oben in A_Task_Web.cpp
+
+
+#ifndef FW_VERSION
+#define FW_VERSION "V.UNKNOWN"
+#endif
+
+
 
 /* ---------- OTA-MAIN-Status (global) ---------- */
 struct {
@@ -300,7 +306,7 @@ void periodic_timer_callback(void* arg) {
     ######################### MAIN Verion Write Here #########################
     ######################### MAIN Verion Write Here #########################
 */
-                doc["otaMainVersion"]  = "V.2025.07.14-001";    // Version
+                doc["otaMainVersion"]  = FW_VERSION;    // Version
              }
         serializeJson(doc, jsonString);
         webSocket.sendTXT(clientNum, jsonString);
