@@ -1,57 +1,69 @@
 // system.js  – Download-Link bleibt auf GitHub =================================
 
-// ---------------------------------------------------------------------
-// globale WS-Variable
+// global WebSocket variable
 let socket = null;
 
-/* ---------- WebSocket initialisieren ---------- */
+/* ---------- initialize WebSocket ---------- */
 function initWebSocket() {
   socket = new WebSocket('ws://' + location.hostname + ':81/');
 
-  socket.onopen   = () => {
+  socket.onopen = () => {
     console.log('WS open');
-    socket.send(JSON.stringify({ action:'subscribeUpdates', page:'system' }));
+    socket.send(JSON.stringify({ action: 'subscribeUpdates', page: 'system' }));
   };
 
   socket.onmessage = ev => processMsg(ev.data);
   socket.onclose   = ev => console.log('WS close', ev);
   socket.onerror   = err => console.error('WS error', err);
 
+  // unsubscribe when leaving the page
   window.addEventListener('beforeunload', () => {
     if (socket?.readyState === 1) {
-      socket.send(JSON.stringify({ action:'unsubscribeUpdates', page:'system' }));
+      socket.send(JSON.stringify({ action: 'unsubscribeUpdates', page: 'system' }));
       socket.close();
     }
   });
 }
 
-// ---------------------------------------------------------------------
-// Latest‑Version von GitHub holen
+// -----------------------------------------------------------------------------
+// fetch latest version strings from GitHub
 const GITHUB_RAW = 'https://raw.githubusercontent.com/sevelm/InnoChargeLC/main';
 
-async function loadLatest({ txt, spanId }) {
+async function loadLatest(txtFile, spanId) {
   try {
-    const res = await fetch(`${GITHUB_RAW}/${txt}`);
-    const ver = (await res.text()).split('\n')[0].trim();   // 1. Zeile
+    const res = await fetch(`${GITHUB_RAW}/${txtFile}`);
+    const ver = (await res.text()).split('\n')[0].trim();
     document.getElementById(spanId).textContent = ver;
-    /* Download‑Link bleibt auf GitHub; href unverändert */
   } catch (e) {
-    console.warn('Version fetch failed', txt, e);
+    console.warn('Version fetch failed', txtFile, e);
     document.getElementById(spanId).textContent = '—';
   }
 }
 
-// ---------------------------------------------------------------------
-// eingehende JSON-Pakete
+// -----------------------------------------------------------------------------
+// client‑side filename validation
+function validateFile(inputEl, requiredPrefix) {
+  const f = inputEl.files[0];
+  if (!f) return false;                              // nothing selected
+  if (!f.name.startsWith(requiredPrefix)) {
+    alert(`Wrong file selected!\nExpected prefix: ${requiredPrefix}`);
+    inputEl.value = '';                              // clear selection
+    return false;
+  }
+  return true;
+}
+
+// -----------------------------------------------------------------------------
+// handle incoming WebSocket frames
 function processMsg(txt) {
-  console.log('WS-Frame:', txt);
   let j;
   try { j = JSON.parse(txt); } catch { return; }
 
+  // current versions
   document.getElementById('fwMainVersion').textContent = j.otaMainVersion;
   document.getElementById('fwUiVersion').textContent   = j.otaUiVersion;
 
-  /* ---------- Prozent MAIN ---------- */
+  // progress MAIN
   if (j.otaMainProgress !== undefined) {
     const box = document.getElementById('fwMainBox');
     box.style.display = j.otaMainProgress > 0 ? 'table' : 'none';
@@ -59,7 +71,7 @@ function processMsg(txt) {
         j.otaMainProgress + ' %';
   }
 
-  /* ---------- Prozent UI ---------- */
+  // progress UI
   if (j.otaUiProgress !== undefined) {
     const box = document.getElementById('fwUiBox');
     box.style.display = j.otaUiProgress > 0 ? 'table' : 'none';
@@ -67,104 +79,94 @@ function processMsg(txt) {
         j.otaUiProgress + ' %';
   }
 
-  /* ---------- Code (busy / ok / error) MAIN ---------- */
+  // status codes
   if (j.otaMainCode !== undefined) {
-    const statusEl = document.getElementById('fwMainStatus');
-    statusEl.textContent = j.otaMainCode;
-    statusEl.style.color =
-        (j.otaMainCode > 0)  ? 'green'  :
-        (j.otaMainCode == 0) ? 'orange' : 'red';
+    const el = document.getElementById('fwMainStatus');
+    el.textContent = j.otaMainCode;
+    el.style.color = j.otaMainCode > 0 ? 'green'
+                   : j.otaMainCode == 0 ? 'orange' : 'red';
   }
-
-  /* ---------- Code (busy / ok / error) UI ---------- */
   if (j.otaUiCode !== undefined) {
-    const statusEl = document.getElementById('fwUiStatus');
-    statusEl.textContent = j.otaUiCode;
-    statusEl.style.color =
-        (j.otaUiCode > 0)  ? 'green'  :
-        (j.otaUiCode == 0) ? 'orange' : 'red';
+    const el = document.getElementById('fwUiStatus');
+    el.textContent = j.otaUiCode;
+    el.style.color = j.otaUiCode > 0 ? 'green'
+                   : j.otaUiCode == 0 ? 'orange' : 'red';
   }
 
-  /* ---------- Klartext-Message MAIN ---------- */
-  if (j.otaMainMessage !== undefined) {
+  // plain‑text messages
+  if (j.otaMainMessage !== undefined)
     document.getElementById('fwMainMsg').textContent = j.otaMainMessage;
-  }
-  if (j.otaMainCode === 1)
-       alert('Update-MAIN OK – device will restart… reload page');
-  if (j.otaMainCode && j.otaMainCode < 0)
-       alert('OTA-MAIN error: ' + (j.otaMainMessage || 'unknown'));
+  if (j.otaUiMessage   !== undefined)
+    document.getElementById('fwUiMsg').textContent   = j.otaUiMessage;
 
-  /* ---------- Klartext-Message UI ---------- */
-  if (j.otaUiMessage !== undefined) {
-    document.getElementById('fwUiMsg').textContent = j.otaUiMessage;
-  }
+  if (j.otaMainCode === 1)
+    alert('MAIN update OK – device will restart, reload the page.');
+  if (j.otaMainCode && j.otaMainCode < 0)
+    alert('MAIN OTA error: ' + (j.otaMainMessage || 'unknown'));
+
   if (j.otaUiCode === 1)
-       alert('Update-Ui OK – device will restart… reload page');
+    alert('UI update OK – device will restart, reload the page.');
   if (j.otaUiCode && j.otaUiCode < 0)
-       alert('OTA-Ui error: ' + (j.otaUiMessage || 'unknown'));
+    alert('UI OTA error: ' + (j.otaUiMessage || 'unknown'));
 }
 
-// ---------------------------------------------------------------------
-// Upload ohne Seiten‑Reload MAIN
+// -----------------------------------------------------------------------------
+// upload without page reload – MAIN
 async function handleFwMainForm(ev) {
   ev.preventDefault();
-  const file = document.getElementById('fwMainFile').files[0];
-  if (!file) { alert('No BIN selected'); return; }
+  const fileInput = document.getElementById('fwMainFile');
+  if (!validateFile(fileInput, 'MAIN_IC_Fw_')) return;
 
+  const file = fileInput.files[0];
   document.getElementById('fwMainProgress').textContent = '0 %';
 
   const fd = new FormData();
   fd.append('update', file, file.name);
 
   try {
-    const res = await fetch('/uploadfw', { method:'POST', body:fd });
-    console.log('MAIN-response:', await res.text());
+    const res = await fetch('/uploadfw', { method: 'POST', body: fd });
     if (!res.ok) alert('Upload failed!');
   } catch (e) {
-    alert('MAIN-Network error: ' + e);
+    alert('MAIN network error: ' + e);
   }
 }
 
-// Upload ohne Seiten‑Reload UI
+// upload without page reload – UI
 async function handleFwUiForm(ev) {
   ev.preventDefault();
-  const file = document.getElementById('fwUiFile').files[0];
-  if (!file) { alert('No BIN selected'); return; }
+  const fileInput = document.getElementById('fwUiFile');
+  if (!validateFile(fileInput, 'UI_IC_Fw_')) return;     // <- FIX
 
+  const file = fileInput.files[0];
   document.getElementById('fwUiProgress').textContent = '0 %';
 
   const fd = new FormData();
   fd.append('update', file, file.name);
 
   try {
-    const res = await fetch('/uploadui', { method:'POST', body:fd });
-    console.log('UI-response:', await res.text());
+    const res = await fetch('/uploadui', { method: 'POST', body: fd });
     if (!res.ok) alert('Upload failed!');
   } catch (e) {
-    alert('UI-Network error: ' + e);
+    alert('UI network error: ' + e);
   }
 }
 
-// ---------------------------------------------------------------------
+// -----------------------------------------------------------------------------
 // DOM ready
 document.addEventListener('DOMContentLoaded', () => {
   initWebSocket();
 
-  /* Latest-Versionen nachladen – nur Text anzeigen */
-  loadLatest({
-    txt:    'VersionMain.txt',
-    spanId: 'fwMainVersionLast'
-  });
-  loadLatest({
-    txt:    'VersionUi.txt',
-    spanId: 'fwUiVersionLast'
-  });
+  loadLatest('VersionMain.txt', 'fwMainVersionLast');
+  loadLatest('VersionUi.txt',   'fwUiVersionLast');
+
+  // validate immediately on file selection
+  document.getElementById('fwMainFile').addEventListener('change', () =>
+      validateFile(document.getElementById('fwMainFile'), 'MAIN_IC_Fw_'));
+  document.getElementById('fwUiFile').addEventListener('change', () =>
+      validateFile(document.getElementById('fwUiFile'), 'UI_IC_Fw_'));
 
   document.getElementById('fwMainForm')
           .addEventListener('submit', handleFwMainForm);
   document.getElementById('fwUiForm')
           .addEventListener('submit', handleFwUiForm);
 });
-
-
-
