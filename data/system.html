@@ -2,51 +2,67 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="UTF-8">
-  <title>InnoCharge-System</title>
-  <link rel="stylesheet" href="styles.css">
+  <meta charset="UTF-8" />
+  <title>InnoCharge System</title>
+  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-
   <div class="sidebar" id="navbar"></div>
 
   <div class="main-content">
     <h1>System</h1>
 
     <div class="container">
-      <h2>MAIN Firmware-Update</h2>
+      <h2>Main Firmware Update</h2>
       <table>
         <tr>
-          <td><label for="state">Current:</label></td>
+          <td><label for="fwMainVersion">Current:</label></td>
+          <!-- currently installed version -->
           <td><span id="fwMainVersion" style="font-size: 16px; color: #333; font-weight: bold;"></span></td>
+        </tr>
+        <tr>
+          <td><label for="fwMainVersionLast">Latest:</label></td>
+          <!-- latest published version + download button -->
+          <td>
+            <span id="fwMainVersionLast" class="fw-text"></span>
+            &nbsp;
+            <a
+              id="fwMainDownload"
+              href="https://github.com/sevelm/InnoChargeLC/tree/main/build"
+              target="_blank"
+              title="Download latest firmware from GitHub"
+              style="font-size: 16px; font-weight: bold; color: #007bff; text-decoration: underline;"
+              >Download</a
+            >
+          </td>
         </tr>
       </table>
       <form id="fwForm">
-        <input type="file"  id="fwFile"  accept=".bin" required>
+        <input type="file" id="fwFile" accept=".bin" required />
         <button type="submit">Update</button>
       </form>
-        <table id="fwMainBox" style="display:none">
-          <tr>
-            <td><label for="state">Progress:</label></td>
-            <td><span id="fwMainProgress" style="font-size: 16px; color: #333; font-weight: bold;"></span></td>
-          </tr>
-          <!-- Status Ausgeblendet !!!! -->
-          <tr id="rowStatus" style="display:none">
-            <td><label for="state">State:</label></td>
-            <td><span id="fwMainStatus" style="font-size: 16px; color: #333; font-weight: bold;"></span></td>
-          </tr>
-          <tr>
-            <td><label for="state">Messages:</label></td>
-            <td><span id="fwMainMsg" style="font-size: 16px; color: #333; font-weight: bold;"></span></td>
-          </tr>
-        </table>
+
+      <table id="fwMainBox" style="display: none">
+        <tr>
+          <td><label for="fwMainProgress">Progress:</label></td>
+          <td><span id="fwMainProgress" class="fw-text"></span></td>
+        </tr>
+        <!-- Status hidden -->
+        <tr id="rowStatus" style="display: none">
+          <td><label for="fwMainStatus">Status:</label></td>
+          <td><span id="fwMainStatus" class="fw-text"></span></td>
+        </tr>
+        <tr>
+          <td><label for="fwMainMsg">Messages:</label></td>
+          <td><span id="fwMainMsg" class="fw-text"></span></td>
+        </tr>
+      </table>
     </div>
   </div>
 
-  <!-- JS, falls du Progress per WebSocket anzeigen willst -->
+  <!-- Scripts -->
   <script src="common.js"></script>
   <script src="system.js"></script>
 </body>
 </html>
 <!-- END system.html -->
-
