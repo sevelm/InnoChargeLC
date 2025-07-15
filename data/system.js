@@ -99,13 +99,19 @@ function processMsg(txt) {
   if (j.otaUiMessage   !== undefined)
     document.getElementById('fwUiMsg').textContent   = j.otaUiMessage;
 
-  if (j.otaMainCode === 1)
-    alert('MAIN update OK – device will restart, reload the page.');
+  // -------------------------------------------------------------------
+  // reboot notifications → redirect to home after user confirms
+  if (j.otaMainCode === 1) {
+    alert('MAIN update OK – device will restart now.');
+    window.location.href = 'index.html';              // redirect to Home
+  }
   if (j.otaMainCode && j.otaMainCode < 0)
     alert('MAIN OTA error: ' + (j.otaMainMessage || 'unknown'));
 
-  if (j.otaUiCode === 1)
-    alert('UI update OK – device will restart, reload the page.');
+  if (j.otaUiCode === 1) {
+    alert('UI update OK – device will restart now.');
+    window.location.href = 'index.html';              // redirect to Home
+  }
   if (j.otaUiCode && j.otaUiCode < 0)
     alert('UI OTA error: ' + (j.otaUiMessage || 'unknown'));
 }
@@ -135,7 +141,7 @@ async function handleFwMainForm(ev) {
 async function handleFwUiForm(ev) {
   ev.preventDefault();
   const fileInput = document.getElementById('fwUiFile');
-  if (!validateFile(fileInput, 'UI_IC_Fw_')) return;     // <- FIX
+  if (!validateFile(fileInput, 'UI_IC_Fw_')) return;
 
   const file = fileInput.files[0];
   document.getElementById('fwUiProgress').textContent = '0 %';
@@ -160,10 +166,12 @@ document.addEventListener('DOMContentLoaded', () => {
   loadLatest('VersionUi.txt',   'fwUiVersionLast');
 
   // validate immediately on file selection
-  document.getElementById('fwMainFile').addEventListener('change', () =>
-      validateFile(document.getElementById('fwMainFile'), 'MAIN_IC_Fw_'));
-  document.getElementById('fwUiFile').addEventListener('change', () =>
-      validateFile(document.getElementById('fwUiFile'), 'UI_IC_Fw_'));
+  document.getElementById('fwMainFile')
+          .addEventListener('change', () =>
+              validateFile(document.getElementById('fwMainFile'), 'MAIN_IC_Fw_'));
+  document.getElementById('fwUiFile')
+          .addEventListener('change', () =>
+              validateFile(document.getElementById('fwUiFile'),  'UI_IC_Fw_'));
 
   document.getElementById('fwMainForm')
           .addEventListener('submit', handleFwMainForm);
