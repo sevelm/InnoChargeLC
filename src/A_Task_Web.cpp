@@ -25,10 +25,12 @@
 #include <esp_ota_ops.h>        // ↯ einmal ganz oben in A_Task_Web.cpp
 
 
-#ifndef FW_VERSION
-#define FW_VERSION "V.UNKNOWN"
+#ifndef FW_VERSION_MAIN
+#define FW_VERSION_MAIN "V.UNKNOWN"
 #endif
-
+#ifndef FW_VERSION_UI
+#define FW_VERSION_UI "V.UNKNOWN"
+#endif
 
 
 /* ---------- OTA-MAIN-Status (global) ---------- */
@@ -37,7 +39,12 @@ struct {
     volatile int8_t  code     =  0;  // 0=idle, 1=ok, <0 = Fehler
     String  message;                 // Mensch-lesbarer Text
 } otaMain;
-
+/* ---------- OTA-UI-Status (global) ---------- */
+struct {
+    volatile uint8_t progress = 0;   // 0-100
+    volatile int8_t  code     =  0;  // 0=idle, 1=ok, <0 = Fehler
+    String  message;                 // Mensch-lesbarer Text
+} otaUi;
 
 
 
@@ -299,14 +306,11 @@ void periodic_timer_callback(void* arg) {
                 doc["otaMainProgress"] = otaMain.progress;      // 0-100%
                 doc["otaMainCode"]     = otaMain.code;          // 1=ok,0=busy,<0 err
                 doc["otaMainMessage"]  = otaMain.message;       // Messages
-
-/*  ######################### MAIN Verion Write Here #########################
-    ######################### MAIN Verion Write Here #########################
-    ######################### MAIN Verion Write Here #########################
-    ######################### MAIN Verion Write Here #########################
-    ######################### MAIN Verion Write Here #########################
-*/
-                doc["otaMainVersion"]  = FW_VERSION;    // Version
+                doc["otaMainVersion"]  = FW_VERSION_MAIN;       // Version aus txt
+                doc["otaUiProgress"] = otaUi.progress;          // 0-100%
+                doc["otaUiCode"]     = otaUi.code;              // 1=ok,0=busy,<0 err
+                doc["otaUiMessage"]  = otaUi.message;           // Messages
+                doc["otaUiVersion"]  = FW_VERSION_UI;              // Version aus txt
              }
         serializeJson(doc, jsonString);
         webSocket.sendTXT(clientNum, jsonString);
@@ -393,8 +397,8 @@ void handleWifiScanRequest(AsyncWebServerRequest *request) {
 // * -----------------------------------------------------
 
 
-/* ---------- Upload-Handler ---------- */
-static void setupUpload()
+/* ---------- Upload-Handler MAIN ---------- */
+static void setupUploadMain()
 {
     /* Fortschritt ------------------------------------------------ */
     Update.onProgress([](size_t done, size_t total)
@@ -485,13 +489,90 @@ static void setupUpload()
         }
     });
 }
+/* ---------- Upload‑Handler SPIFFS ---------- */
+static void setupUploadUi()
+{
+    Update.onProgress([](size_t done, size_t total){
+        otaUi.progress = total ? (done * 100 / total) : 0;
+        otaUi.message  = "progress";
+        ESP_LOGI("OTA‑Ui","progress %u %%", otaUi.progress);
+    });
+
+    server.on("/uploadui", HTTP_POST,
+
+    /* ---------- (1) Antwort nach Abschluss ---------- */
+    [](AsyncWebServerRequest *req)
+    {
+        bool err = Update.hasError();
+        req->send(err ? 500 : 200, "text/plain",
+                  err ? "fs flash error" : "fs flash ok");
+
+        otaUi.code    = err ? -1 : 1;
+        otaUi.message = err ? "fs flash error" : "fs flash ok";
+
+        String json;
+        JsonDocument doc;
+        doc["otaUiProgress"] = otaUi.progress;
+        doc["otaUiCode"]     = otaUi.code;
+        doc["otaUiMessage"]  = otaUi.message;
+        serializeJson(doc, json);
+
+        for (auto &c : subscribedClients)
+            if (c.second == "system")
+                webSocket.sendTXT(c.first, json);
+
+        if (!err) {                         // nur bei Erfolg rebooten
+            vTaskDelay(pdMS_TO_TICKS(500));
+            esp_restart();
+        }
+    },
+
+    /* ---------- (2) Upload‑Stream ------------------- */
+    [](AsyncWebServerRequest *req, String, size_t idx,
+    uint8_t *data, size_t len, bool final)
+    {
+        static bool uiFailed = false;          // <‑‑ NEU: Fehler merken
+
+        if (idx == 0) {                        // erster Datenblock
+            size_t max = req->contentLength()  // nur reiner Upload‑Body
+                        - 0xC8;                // 200‑Byte‑Header abziehen!
+
+            if (SPIFFS.begin()) SPIFFS.end();  // Partition unmounten
+
+            if (!Update.begin(max, U_SPIFFS)) {   // Fehler? -> abbrechen
+                uiFailed      = true;              // <‑‑ NEU
+                otaUi.code    = -2;
+                otaUi.message = String("begin() ") + Update.errorString();
+                ESP_LOGE("OTA‑Ui", "%s", otaUi.message.c_str());
+                return;
+            }
+        }
+
+        /* nur schreiben, wenn kein früherer Fehler und Daten >0 */
+        if (!uiFailed && len && Update.write(data, len) != len) {
+            uiFailed      = true;              // <‑‑ NEU
+            otaUi.code    = -3;
+            otaUi.message = String("write() ") + Update.errorString();
+            ESP_LOGE("OTA‑Ui","%s", otaUi.message.c_str());
+        }
+
+        /* Abschluss nur, wenn Update überhaupt lief und kein Fehler */
+        if (final && !uiFailed) {
+            if (!Update.end(true)) {
+                otaUi.code    = -4;
+                otaUi.message = String("end() ") + Update.errorString();
+                ESP_LOGE("OTA‑Ui","%s", otaUi.message.c_str());
+            } else {
+                otaUi.code    = 1;
+                otaUi.message = "SPIFFS upload finished OK";
+                ESP_LOGI("OTA‑Ui","%s", otaUi.message.c_str());
+            }
+        }
+    });
+
+}
 
 
-
-
-
-
-/* ===================================================== */
 
 
 
@@ -509,8 +590,8 @@ void A_Task_Web(void *pvParameter) {
     });
 
 
-    setupUpload();
-
+    setupUploadMain();
+    setupUploadUi();
 
 
     // Register routes

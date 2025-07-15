@@ -510,7 +510,7 @@
                 "ARDUINO=10812",
                 "ARDUINO_VARIANT=\"esp32s3\"",
                 "ARDUINO_BOARD=\"Espressif ESP32-S3-wroom-1U-N8R2 (8 MB QD, 2MB PSRAM)\"",
-                "ARDUINO_PARTITION_default",
+                "ARDUINO_PARTITION_partitions_bigspiffs",
                 ""
             ],
             "cStandard": "gnu99",

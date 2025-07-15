@@ -30,11 +30,6 @@
 #include "esp_ota_ops.h"
 #include "esp_partition.h"
 
-
-#define FW_VER  APP_VERSION
-#define FW_NAME APP_NAME
-
-
 const char *MAIN_TAG = "Web: ";
 // Globals
 Preferences preferences;
@@ -99,7 +94,16 @@ void setup() {
         return;
     }
     ESP_LOGI(MAIN_TAG, "SPIFFS mounted successfully");
-       
+    // ---------- Größe ausgeben ----------
+    size_t total = SPIFFS.totalBytes();   // Gesamt­größe der Partition
+    size_t used  = SPIFFS.usedBytes();    // Belegter Speicher
+
+    ESP_LOGI(MAIN_TAG,
+            "SPIFFS size: %u bytes total, %u bytes used (%.1f %%)",
+            total, used,
+            total ? (used * 100.0 / total) : 0.0);
+
+
     // connect to wifi
     char ssid[32] = {0}; 
     char pwd[64] = {0}; 

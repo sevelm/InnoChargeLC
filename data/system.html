@@ -37,8 +37,8 @@
           </td>
         </tr>
       </table>
-      <form id="fwForm">
-        <input type="file" id="fwFile" accept=".bin" required />
+      <form id="fwMainForm">
+        <input type="file" id="fwMainFile" accept=".bin" required />
         <button type="submit">Update</button>
       </form>
 
@@ -48,7 +48,7 @@
           <td><span id="fwMainProgress" class="fw-text"></span></td>
         </tr>
         <!-- Status hidden -->
-        <tr id="rowStatus" style="display: none">
+        <tr id="rowStatusMain" style="display: none">
           <td><label for="fwMainStatus">Status:</label></td>
           <td><span id="fwMainStatus" class="fw-text"></span></td>
         </tr>
@@ -58,7 +58,54 @@
         </tr>
       </table>
     </div>
+      <!-- UI Beginn!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! -->
+  <div class="container">
+    <h2>Web-UI Firmware Update</h2>
+    <table>
+      <tr>
+        <td><label for="fwUiVersion">Current:</label></td>
+        <!-- currently installed version -->
+        <td><span id="fwUiVersion" style="font-size: 16px; color: #333; font-weight: bold;"></span></td>
+      </tr>
+      <tr>
+        <td><label for="fwUiVersionLast">Latest:</label></td>
+        <!-- latest published version + download button -->
+        <td>
+          <span id="fwUiVersionLast" class="fw-text"></span>
+          &nbsp;
+          <a
+            id="fwUiDownload"
+            href="https://github.com/sevelm/InnoChargeLC/tree/main/build"
+            target="_blank"
+            title="Download latest firmware from GitHub"
+            style="font-size: 16px; font-weight: bold; color: #007bff; text-decoration: underline;"
+            >Download</a
+          >
+        </td>
+      </tr>
+    </table>
+    <form id="fwUiForm">
+      <input type="file" id="fwUiFile" accept=".bin" required />
+      <button type="submit">Update</button>
+    </form>
+
+    <table id="fwUiBox" style="display: none">
+      <tr>
+        <td><label for="fwUiProgress">Progress:</label></td>
+        <td><span id="fwUiProgress" class="fw-text"></span></td>
+      </tr>
+      <!-- Status hidden -->
+      <tr id="rowStatusUi" style="display: none">
+        <td><label for="fwUiStatus">Status:</label></td>
+        <td><span id="fwUiStatus" class="fw-text"></span></td>
+      </tr>
+      <tr>
+        <td><label for="fwUiMsg">Messages:</label></td>
+        <td><span id="fwUiMsg" class="fw-text"></span></td>
+      </tr>
+    </table>
   </div>
+</div>
 
   <!-- Scripts -->
   <script src="common.js"></script>
