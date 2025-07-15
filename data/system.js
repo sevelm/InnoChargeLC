@@ -25,38 +25,50 @@ function initWebSocket() {
   });
 }
 
-/* ---------- eingehende JSON-Pakete ---------- */
+// ---------------------------------------------------------------------
+// Latest‑Version von GitHub holen
+const GITHUB_RAW = 'https://raw.githubusercontent.com/sevelm/InnoChargeLC/main';
+
+async function loadLatest({ txt, spanId, linkId, prefix }) {
+  try {
+    const res = await fetch(`${GITHUB_RAW}/${txt}`);
+    const ver = (await res.text()).split('\n')[0].trim();   // 1. Zeile
+    document.getElementById(spanId).textContent = ver;
+
+    /* Download‑Link zum .bin zusammenbauen (ggf. Pfad anpassen) */
+    document.getElementById(linkId).href = `/build/${prefix}_${ver}.bin`;
+  } catch (e) {
+    console.warn('Version fetch failed', txt, e);
+    document.getElementById(spanId).textContent = '—';
+    document.getElementById(linkId).classList.add('disabled');
+  }
+}
+
+// ---------------------------------------------------------------------
+// eingehende JSON-Pakete
 function processMsg(txt) {
-  console.log('WS-Frame:', txt); 
+  console.log('WS-Frame:', txt);
   let j;
   try { j = JSON.parse(txt); } catch { return; }
 
   document.getElementById('fwMainVersion').textContent = j.otaMainVersion;
-  document.getElementById('fwUiVersion').textContent = j.otaUiVersion;
+  document.getElementById('fwUiVersion').textContent   = j.otaUiVersion;
 
   /* ---------- Prozent MAIN ---------- */
   if (j.otaMainProgress !== undefined) {
-    /* NEU: Tabelle ein- / aus­blenden */
     const box = document.getElementById('fwMainBox');
-    if (j.otaMainProgress > 0) box.style.display = 'table';
-    else                       box.style.display = 'none';
-
+    box.style.display = j.otaMainProgress > 0 ? 'table' : 'none';
     document.getElementById('fwMainProgress').textContent =
         j.otaMainProgress + ' %';
   }
+
   /* ---------- Prozent UI ---------- */
   if (j.otaUiProgress !== undefined) {
-    /* NEU: Tabelle ein- / aus­blenden */
     const box = document.getElementById('fwUiBox');
-    if (j.otaUiProgress > 0) box.style.display = 'table';
-    else                       box.style.display = 'none';
-
+    box.style.display = j.otaUiProgress > 0 ? 'table' : 'none';
     document.getElementById('fwUiProgress').textContent =
         j.otaUiProgress + ' %';
   }
-
-
-
 
   /* ---------- Code (busy / ok / error) MAIN ---------- */
   if (j.otaMainCode !== undefined) {
@@ -66,6 +78,7 @@ function processMsg(txt) {
         (j.otaMainCode > 0)  ? 'green'  :
         (j.otaMainCode == 0) ? 'orange' : 'red';
   }
+
   /* ---------- Code (busy / ok / error) UI ---------- */
   if (j.otaUiCode !== undefined) {
     const statusEl = document.getElementById('fwUiStatus');
@@ -75,8 +88,6 @@ function processMsg(txt) {
         (j.otaUiCode == 0) ? 'orange' : 'red';
   }
 
-
-
   /* ---------- Klartext-Message MAIN ---------- */
   if (j.otaMainMessage !== undefined) {
     document.getElementById('fwMainMsg').textContent = j.otaMainMessage;
@@ -85,6 +96,7 @@ function processMsg(txt) {
        alert('Update-MAIN OK – device will restart… reload page');
   if (j.otaMainCode && j.otaMainCode < 0)
        alert('OTA-MAIN error: ' + (j.otaMainMessage || 'unknown'));
+
   /* ---------- Klartext-Message UI ---------- */
   if (j.otaUiMessage !== undefined) {
     document.getElementById('fwUiMsg').textContent = j.otaUiMessage;
@@ -93,13 +105,12 @@ function processMsg(txt) {
        alert('Update-Ui OK – device will restart… reload page');
   if (j.otaUiCode && j.otaUiCode < 0)
        alert('OTA-Ui error: ' + (j.otaUiMessage || 'unknown'));
-
 }
 
-
-/* ---------- Upload ohne Seiten-Reload MAIN ---------- */
+// ---------------------------------------------------------------------
+// Upload ohne Seiten‑Reload MAIN
 async function handleFwMainForm(ev) {
-  ev.preventDefault();                         // kein Reload!
+  ev.preventDefault();
   const file = document.getElementById('fwMainFile').files[0];
   if (!file) { alert('No BIN selected'); return; }
 
@@ -117,9 +128,9 @@ async function handleFwMainForm(ev) {
   }
 }
 
-/* ---------- Upload ohne Seiten-Reload Ui ---------- */
+// Upload ohne Seiten‑Reload UI
 async function handleFwUiForm(ev) {
-  ev.preventDefault();                         // kein Reload!
+  ev.preventDefault();
   const file = document.getElementById('fwUiFile').files[0];
   if (!file) { alert('No BIN selected'); return; }
 
@@ -137,14 +148,29 @@ async function handleFwUiForm(ev) {
   }
 }
 
-
-
-
-/* ---------- DOM ready ---------- */
+// ---------------------------------------------------------------------
+// DOM ready
 document.addEventListener('DOMContentLoaded', () => {
   initWebSocket();
+
+  /* Latest-Versionen nachladen + Download‑Links setzen */
+  loadLatest({
+    txt:    'VersionMain.txt',
+    spanId: 'fwMainVersionLast',
+    linkId: 'fwMainDownload',
+    prefix: 'MAIN_IC_Fw'
+  });
+  loadLatest({
+    txt:    'VersionUi.txt',
+    spanId: 'fwUiVersionLast',
+    linkId: 'fwUiDownload',
+    prefix: 'UI_IC_Fw'
+  });
+
   document.getElementById('fwMainForm')
           .addEventListener('submit', handleFwMainForm);
   document.getElementById('fwUiForm')
           .addEventListener('submit', handleFwUiForm);
 });
+
+

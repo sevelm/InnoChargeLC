@@ -1,5 +1,10 @@
 /* styles.css */
 
+input[type="file"].wide-file {
+    width: 340px;          
+    max-width: 100%;       
+} 
+
 body {
     margin: 0;
     font-family: Arial, sans-serif;

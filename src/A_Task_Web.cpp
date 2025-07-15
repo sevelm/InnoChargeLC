@@ -397,32 +397,20 @@ void handleWifiScanRequest(AsyncWebServerRequest *request) {
 // * -----------------------------------------------------
 
 
-/* ---------- Upload-Handler MAIN ---------- */
+/* ---------- Upload‑Handler MAIN ---------- */
 static void setupUploadMain()
 {
-    /* Fortschritt ------------------------------------------------ */
-    Update.onProgress([](size_t done, size_t total)
-    {
-        otaMain.progress = total ? (done * 100 / total) : 0;
-
-        /* Code NICHT überschreiben, sonst ginge -2/-3/-4 oder 1 verloren */
-        otaMain.message  = "progress";
-
-        ESP_LOGI("OTA","progress %u %%", otaMain.progress);
-    });
-
     server.on("/uploadfw", HTTP_POST,
 
     /* ---------- (1) Antwort nach Abschluss ---------- */
     [](AsyncWebServerRequest *req)
     {
-        const bool err = Update.hasError();
-        req->send(err ? 500 : 200,
-                  "text/plain",
+        bool err = Update.hasError();
+        req->send(err ? 500 : 200, "text/plain",
                   err ? "flash error" : "flash ok");
 
-        if (!err) { otaMain.code = 1;  otaMain.message = "flash ok";  }
-        else      { otaMain.code = -1; otaMain.message = "flash error"; }
+        otaMain.code    = err ? -1 : 1;
+        otaMain.message = err ? "flash error" : "flash ok";
 
         String json;
         JsonDocument doc;
@@ -434,70 +422,61 @@ static void setupUploadMain()
         for (auto &c : subscribedClients)
             if (c.second == "system")
                 webSocket.sendTXT(c.first, json);
-      
-        /* Reboot nur bei Erfolg */
-        if (!err) {
-            xTaskCreatePinnedToCore([](void*)
-            {
-                auto run  = esp_ota_get_running_partition();
-                auto boot = esp_ota_get_boot_partition();
-                ESP_LOGI("OTA","running=%s | willBoot=%s",
-                         run->label, boot->label);
-                vTaskDelay(pdMS_TO_TICKS(500));
-                esp_restart();
-            }, "reboot", 2048, nullptr, 5, nullptr, APP_CPU_NUM);
+
+        if (!err) {                        // bei Erfolg neu starten
+            vTaskDelay(pdMS_TO_TICKS(500));
+            esp_restart();
         }
     },
 
-    /* ---------- (2) Upload-Stream ------------------- */
-    [](AsyncWebServerRequest *req, String /*fn*/, size_t idx,
+    /* ---------- (2) Upload‑Stream ------------------- */
+    [](AsyncWebServerRequest *req, String, size_t idx,
        uint8_t *data, size_t len, bool final)
     {
-        static size_t totalLen = 0;
+        static bool   mainFailed = false;
+        static size_t totalLen   = 0;      // Gesamtgröße der BIN
 
-        /* -- erster Block --------------------------------------- */
-        if (idx == 0) {
+        if (idx == 0) {                    // erster Block
             totalLen = req->contentLength();
-            uint32_t max = totalLen ? totalLen : UPDATE_SIZE_UNKNOWN;
 
-            if (!Update.begin(max, U_FLASH)) {
-                otaMain.code    = -2;
-                otaMain.message = String("begin() ") + Update.errorString();
-                ESP_LOGE("OTA","%s", otaMain.message.c_str());
+            /* Progress‑Callback erst jetzt registrieren */
+            Update.onProgress([&](size_t done, size_t /*unused*/){
+                otaMain.progress = totalLen ? (done * 100 / totalLen) : 0;
+                otaMain.message  = "progress";
+                ESP_LOGI("OTA Main","progress %u %%", otaMain.progress);
+            });
+
+            if (!Update.begin(UPDATE_SIZE_UNKNOWN, U_FLASH)) {
+                mainFailed   = true;
+                otaMain.code = -2;
+                ESP_LOGE("OTA Main","begin() %s", Update.errorString());
                 return;
             }
         }
 
-        /* -- schreiben ----------------------------------------- */
-        if (Update.write(data, len) != len) {
-            otaMain.code    = -3;
-            otaMain.message = String("write() ") + Update.errorString();
-            ESP_LOGE("OTA","%s", otaMain.message.c_str());
+        if (!mainFailed && Update.write(data, len) != len) {
+            mainFailed   = true;
+            otaMain.code = -3;
+            ESP_LOGE("OTA Main","write() %s", Update.errorString());
         }
 
-        /* -- letzter Block ------------------------------------- */
         if (final) {
-            if (!Update.end(true)) {
-                otaMain.code    = -4;
-                otaMain.message = String("end() ") + Update.errorString();
-                ESP_LOGE("OTA","%s", otaMain.message.c_str());
-            } else {
-                otaMain.code    = 1;
-                otaMain.message = "Upload finished OK";
-                ESP_LOGI("OTA","%s", otaMain.message.c_str());
+            Update.onProgress(nullptr);    // Callback lösen
+
+            if (!mainFailed && !Update.end(true)) {
+                otaMain.code = -4;
+                ESP_LOGE("OTA Main","end() %s", Update.errorString());
+            } else if (!mainFailed) {
+                otaMain.code = 1;
+                ESP_LOGI("OTA Main","firmware upload finished OK");
             }
         }
     });
 }
+
 /* ---------- Upload‑Handler SPIFFS ---------- */
 static void setupUploadUi()
 {
-    Update.onProgress([](size_t done, size_t total){
-        otaUi.progress = total ? (done * 100 / total) : 0;
-        otaUi.message  = "progress";
-        ESP_LOGI("OTA‑Ui","progress %u %%", otaUi.progress);
-    });
-
     server.on("/uploadui", HTTP_POST,
 
     /* ---------- (1) Antwort nach Abschluss ---------- */
@@ -521,7 +500,7 @@ static void setupUploadUi()
             if (c.second == "system")
                 webSocket.sendTXT(c.first, json);
 
-        if (!err) {                         // nur bei Erfolg rebooten
+        if (!err) {                        // bei Erfolg neu starten
             vTaskDelay(pdMS_TO_TICKS(500));
             esp_restart();
         }
@@ -529,48 +508,50 @@ static void setupUploadUi()
 
     /* ---------- (2) Upload‑Stream ------------------- */
     [](AsyncWebServerRequest *req, String, size_t idx,
-    uint8_t *data, size_t len, bool final)
+       uint8_t *data, size_t len, bool final)
     {
-        static bool uiFailed = false;          // <‑‑ NEU: Fehler merken
+        static bool   uiFailed  = false;
+        static size_t totalLen  = 0;       // Gesamtgröße des SPIFFS‑Images
 
-        if (idx == 0) {                        // erster Datenblock
-            size_t max = req->contentLength()  // nur reiner Upload‑Body
-                        - 0xC8;                // 200‑Byte‑Header abziehen!
+        if (idx == 0) {                    // erster Block
+            if (SPIFFS.begin()) SPIFFS.end();          // unmount
+            totalLen = req->contentLength();
 
-            if (SPIFFS.begin()) SPIFFS.end();  // Partition unmounten
+            /* Progress‑Callback erst jetzt registrieren */
+            Update.onProgress([&](size_t done, size_t /*unused*/){
+                otaUi.progress = totalLen ? (done * 100 / totalLen) : 0;
+                otaUi.message  = "progress";
+                ESP_LOGI("OTA Ui","progress %u %%", otaUi.progress);
+            });
 
-            if (!Update.begin(max, U_SPIFFS)) {   // Fehler? -> abbrechen
-                uiFailed      = true;              // <‑‑ NEU
-                otaUi.code    = -2;
-                otaUi.message = String("begin() ") + Update.errorString();
-                ESP_LOGE("OTA‑Ui", "%s", otaUi.message.c_str());
+            if (!Update.begin(UPDATE_SIZE_UNKNOWN, U_SPIFFS)) {
+                uiFailed   = true;
+                otaUi.code = -2;
+                ESP_LOGE("OTA Ui","begin() %s", Update.errorString());
                 return;
             }
         }
 
-        /* nur schreiben, wenn kein früherer Fehler und Daten >0 */
-        if (!uiFailed && len && Update.write(data, len) != len) {
-            uiFailed      = true;              // <‑‑ NEU
-            otaUi.code    = -3;
-            otaUi.message = String("write() ") + Update.errorString();
-            ESP_LOGE("OTA‑Ui","%s", otaUi.message.c_str());
+        if (!uiFailed && Update.write(data, len) != len) {
+            uiFailed   = true;
+            otaUi.code = -3;
+            ESP_LOGE("OTA Ui","write() %s", Update.errorString());
         }
 
-        /* Abschluss nur, wenn Update überhaupt lief und kein Fehler */
-        if (final && !uiFailed) {
-            if (!Update.end(true)) {
-                otaUi.code    = -4;
-                otaUi.message = String("end() ") + Update.errorString();
-                ESP_LOGE("OTA‑Ui","%s", otaUi.message.c_str());
-            } else {
-                otaUi.code    = 1;
-                otaUi.message = "SPIFFS upload finished OK";
-                ESP_LOGI("OTA‑Ui","%s", otaUi.message.c_str());
+        if (final) {
+            Update.onProgress(nullptr);    // Callback lösen
+
+            if (!uiFailed && !Update.end(true)) {
+                otaUi.code = -4;
+                ESP_LOGE("OTA Ui","end() %s", Update.errorString());
+            } else if (!uiFailed) {
+                otaUi.code = 1;
+                ESP_LOGI("OTA Ui","SPIFFS upload finished OK");
             }
         }
     });
-
 }
+
 
 
 

@@ -24,7 +24,7 @@
           <td><label for="fwMainVersionLast">Latest:</label></td>
           <!-- latest published version + download button -->
           <td>
-            <span id="fwMainVersionLast" class="fw-text"></span>
+            <span id="fwMainVersionLast" style="font-size: 16px; color: #333; font-weight: bold;"></span>
             &nbsp;
             <a
               id="fwMainDownload"
@@ -38,7 +38,7 @@
         </tr>
       </table>
       <form id="fwMainForm">
-        <input type="file" id="fwMainFile" accept=".bin" required />
+        <input type="file" id="fwMainFile" class="wide-file" accept=".bin" required />
         <button type="submit">Update</button>
       </form>
 
@@ -71,7 +71,7 @@
         <td><label for="fwUiVersionLast">Latest:</label></td>
         <!-- latest published version + download button -->
         <td>
-          <span id="fwUiVersionLast" class="fw-text"></span>
+          <span id="fwUiVersionLast" style="font-size: 16px; color: #333; font-weight: bold;"></span>
           &nbsp;
           <a
             id="fwUiDownload"
@@ -85,7 +85,7 @@
       </tr>
     </table>
     <form id="fwUiForm">
-      <input type="file" id="fwUiFile" accept=".bin" required />
+      <input type="file" id="fwUiFile" class="wide-file" accept=".bin" required />
       <button type="submit">Update</button>
     </form>
 

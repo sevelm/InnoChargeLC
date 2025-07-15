@@ -50,7 +50,7 @@ void A_Task_Low(void *pvParameter){
 
         // Status ausgeben
       
-        ESP_LOGI(CP_LOGI, "IO9 Status: %s", inputState ? "HIGH" : "LOW");
+        ESP_LOGI(CP_LOGI, "+++++++ IO9 Status: %s", inputState ? "HIGH" : "LOW");
 
 
 
