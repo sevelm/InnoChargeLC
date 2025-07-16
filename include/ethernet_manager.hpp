@@ -33,5 +33,4 @@ void get_eth_ip(char *ip);
 void get_ethernet_state( ethernet_state_t *eth_status);
 void stop_eth();
 void restart_new_settings_eth();
-void wifi_scan();
 #endif // ETHERNET_MANAGER_HPP

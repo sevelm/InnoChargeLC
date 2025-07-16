@@ -4,41 +4,41 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>InnoCharge-Home</title>
+  <title>InnoCharge Home</title>
   <link rel="stylesheet" type="text/css" href="styles.css">
-  <!-- scripts.js wird am Ende des Body eingebunden -->
+  <!-- scripts.js is included at the end of the body -->
 </head>
 <body>
   <div class="sidebar" id="navbar">
-    <!-- Navigation wird hier geladen -->
+    <!-- Navigation is loaded here -->
   </div>
   
   <div class="main-content">
-    <h1>Startseite</h1>
+    <h1>Home</h1>
   
     <div class="container">
-      <h2>Aktueller Status</h2>
+      <h2>Current Status</h2>
       <table>
         <tr>
-          <td><label for="state">CP-Status:</label></td>
+          <td><label for="state">CP Status:</label></td>
           <td>
             <span id="cpState" style="font-size: 16px; color: #333; font-weight: bold;"></span>
           </td>
         </tr>
         <tr>
-          <td><label for="state">CP-Spannung (V):</label></td>
+          <td><label for="state">CP Voltage (V):</label></td>
           <td>
             <span id="cpVoltage" style="font-size: 16px; color: #333; font-weight: bold;"></span>
           </td>
         </tr>
         <tr>
-          <td><label for="state">Vorgabe Ladestrom (A):</label></td>
+          <td><label for="state">Target Charge Current (A):</label></td>
           <td>
             <span id="targetChargeCurrent" style="font-size: 16px; color: #333; font-weight: bold;"></span>
           </td>
         </tr>
         <tr>
-          <td><label for="state">Vorgabe Ladeleistung (kW):</label></td>
+          <td><label for="state">Target Charge Power (kW):</label></td>
           <td>
             <span id="targetChargePower" style="font-size: 16px; color: #333; font-weight: bold;"></span>
           </td>
@@ -46,10 +46,10 @@
       </table>
     </div>
     <div class="container">
-        <h2>Steuern</h2>
+        <h2>Controls</h2>
         <table>
           <tr>
-            <td><label for="state">CP-Freigeben:</label></td>
+            <td><label for="state">Control Pilot Cutoff:</label></td>
             <td>
               <label class="switch">
                 <input type="checkbox" id="toggleCpRelay">
@@ -57,13 +57,13 @@
               </label>
             </td>
           <tr>
-            <td><label for="state">Ladestrom (A):</label></td>
+            <td><label for="state">Charge Current (A):</label></td>
             <td>
               <input type="number" id="setChargeCurrent" name="setChargeCurrent">
             </td>
           </tr>
           <tr>
-            <td><label for="state">Ladeleistung (kW):</label></td>
+            <td><label for="state">Charge Power (kW):</label></td>
             <td>
               <input type="number" id="setChargePower" name="setChargePower">
             </td>
@@ -73,16 +73,16 @@
       </div>
 
    <!-- <div class="container">
-      <h2>CP-Relais</h2>
-      <label for="setCpRelay">CP-Relais:</label>
-      <button id="BTN_SET_RELAY">AUS</button>
+      <h2>CP Relay</h2>
+      <label for="setCpRelay">CP Relay:</label>
+      <button id="BTN_SET_RELAY">OFF</button>
     </div>
 
-    <button id="BTN_GO_TO_SETTINGS">Zu den Einstellungen</button>
+    <button id="BTN_GO_TO_SETTINGS">To Settings</button>
 
     
     <div class="container">
-      <label for="new-toggle">Neuer Schalter:</label>
+      <label for="new-toggle">New Switch:</label>
       <label class="switch">
         <input type="checkbox" id="new-toggle">
         <span class="slider"></span>
@@ -90,7 +90,7 @@
     </div>
   </div> -->
 
-  <!-- Einbindung von scripts.js am Ende des Body -->
+  <!-- Including common.js and index.js at the end of the body -->
   <script src="common.js"></script>
   <script src="index.js"></script>
 </body>

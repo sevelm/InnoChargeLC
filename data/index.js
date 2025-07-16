@@ -75,10 +75,9 @@ function processCommand(event) {
     document.getElementById('targetChargePower').innerHTML = obj.targetChargePower;
   }
 
-
   // Update cpRelayState if the element exists on the page
   if (obj.cpRelayState !== undefined && document.getElementById('BTN_SET_RELAY') !== null) {
-    var relayState = obj.cpRelayState ? 'EIN' : 'AUS';
+    var relayState = obj.cpRelayState ? 'ON' : 'OFF';
     document.getElementById('BTN_SET_RELAY').textContent = relayState;
   }
 }
@@ -108,9 +107,6 @@ document.addEventListener('DOMContentLoaded', function() {
     toggle_cp_relay();
   });
 
-
-
-
   document.getElementById('BTN_GO_TO_SETTINGS')?.addEventListener('click', go_to_settings);
   document.getElementById('BTN_SET_RELAY')?.addEventListener('click', toggle_cp_relay);
 });
@@ -131,7 +127,7 @@ function set_charge_current() {
   var currentValue = parseFloat(document.getElementById('setChargeCurrent').value);
   // Check if currentValue is between 0 and 32
   if (currentValue < 0 || currentValue > 32) {
-    alert('Der Ladestrom muss zwischen 0 und 32 Ampere liegen.');
+    alert('Charging current must be between 0 and 32 amperes.');
     return;
   }
   var data = {
@@ -142,12 +138,12 @@ function set_charge_current() {
   console.log('Sending Charge values to server:', data);
 }
 
-// Function to set the charging current
+// Function to set the charging power
 function set_charge_power() {
   var powerValue = parseFloat(document.getElementById('setChargePower').value);  
-  // Check if powerValue is between 0 und 22
+  // Check if powerValue is between 0 and 22
   if (powerValue < 0 || powerValue > 22) {
-    alert('Die Ladeleistung muss zwischen 0 und 22 kW liegen.');
+    alert('Charging power must be between 0 and 22 kW.');
     return;
   }
   var data = {
@@ -158,13 +154,10 @@ function set_charge_power() {
   console.log('Sending Charge values to server:', data);
 }
 
-
 // Function to navigate to the settings page
 function go_to_settings() {
   // Implement the logic to navigate to the settings page
   window.location.href = 'settings.html';
 }
-
-
 
   

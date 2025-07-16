@@ -152,8 +152,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
 
 
- // document.getElementById('BTN_GO_TO_SETTINGS')?.addEventListener('click', go_to_settings);
- // document.getElementById('toggleEnergyMeterON')?.addEventListener('click', toggle_cp_relay);
 });
 
 // Function to handle toggling of OFF and ON

@@ -56,6 +56,9 @@ const char *WEB_TAG = "Task_Web: ";
 // Initialization of webserver and websocket
 AsyncWebServer server(80); // the server uses port 80 (standard port for websites
 
+const char* www_username = "admin";
+const char* www_password = "admin";
+
 class CaptiveRequestHandler : public AsyncWebHandler {
 public:
     CaptiveRequestHandler() {}
@@ -67,11 +70,14 @@ public:
     }
 
     void handleRequest(AsyncWebServerRequest *request) {
-        ESP_LOGI(WEB_TAG, "Handling request for %s", request->url().c_str());
+        if (!request->authenticate(www_username, www_password)) {
+            return request->requestAuthentication(); // fordert Benutzer+Passwort an
+        }
+        //ESP_LOGI(WEB_TAG, "Handling request for %s", request->url().c_str());
         File file = SPIFFS.open("/index.html", "r");
         if (!file) {
             // If the file cannot be opened, send a default response
-            ESP_LOGE(WEB_TAG, "Failed to open /index.html");
+        //    ESP_LOGE(WEB_TAG, "Failed to open /index.html");
             AsyncResponseStream *response = request->beginResponseStream("text/html");
             response->print("<!DOCTYPE html><html><head><title>Captive Portal</title></head><body>");
             response->print("<p>Failed to open file for reading.</p>");
@@ -81,7 +87,7 @@ public:
             request->send(response);
         } else {
             // If the file is opened successfully, send its content
-            ESP_LOGI(WEB_TAG, "Serving /index.html");
+         //   ESP_LOGI(WEB_TAG, "Serving /index.html");
             AsyncWebServerResponse *response = request->beginResponse(SPIFFS, "/index.html", "text/html");
             request->send(response);
             file.close();
@@ -255,7 +261,7 @@ void webSocketEvent(byte num, WStype_t type, uint8_t * payload, size_t length) {
               
                  String jsonString;
                  serializeJsonPretty(doc, jsonString);  // Speichert das JSON im String jsonString
-                 ESP_LOGI(WEB_TAG, "Received JSON data:\n%s", jsonString.c_str());
+               //  ESP_LOGI(WEB_TAG, "Received JSON data:\n%s", jsonString.c_str());
             }
             break;
     }
@@ -353,6 +359,11 @@ void handleEthNetworkRequest(AsyncWebServerRequest *request) {
 }
 
 void handleWifiNetworkRequest(AsyncWebServerRequest *request) {
+    if (!preferences.getBool("wifiEnable", false)) {
+        request->send(200, "application/json",
+                      "{\"wifi_enable\":false}");
+        return;
+    }
     wifi_sta_state_t wifi_status;
     get_wifi_sta_state(&wifi_status);
     char macStr[18];
@@ -560,9 +571,10 @@ static void setupUploadUi()
 
 void A_Task_Web(void *pvParameter) {
     // Setup code
+    server.serveStatic("/", SPIFFS, "/").setAuthentication(www_username, www_password);
     server.addHandler(new CaptiveRequestHandler()).setFilter(ON_STA_FILTER); // Only handle requests from STA
     server.onNotFound([](AsyncWebServerRequest *request) {
-        ESP_LOGI(WEB_TAG, "Not found: %s", request->url().c_str());
+    //    ESP_LOGI(WEB_TAG, "Not found: %s", request->url().c_str());
         request->send(404, "text/plain", "Not Found");
     });
 
@@ -573,7 +585,6 @@ void A_Task_Web(void *pvParameter) {
 
     setupUploadMain();
     setupUploadUi();
-
 
     // Register routes
     registerWebRoutes(server);

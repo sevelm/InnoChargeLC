@@ -4,7 +4,7 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>InnoCharge-Network</title>
+  <title>InnoCharge Network</title>
   <link rel="stylesheet" type="text/css" href="styles.css">
   <style>
     /* Custom style to align WiFi scan options and results side by side */
@@ -26,16 +26,16 @@
 <!-- Popup Modal -->
 <div id="confirmation-popup" class="popup-overlay" style="display: none;">
   <div class="popup-content">
-    <p>Das System wird neu gestartet. Möchten Sie fortfahren?</p>
-    <button id="popup-yes">JA</button>
-    <button id="popup-no">NEIN</button>
+    <p>The system will restart. Do you want to proceed?</p>
+    <button id="popup-yes">YES</button>
+    <button id="popup-no">NO</button>
   </div>
 </div>
 
-<!-- waiting display -->
+<!-- Waiting display -->
 <div id="loading-indicator" class="loading-overlay" style="display: none;">
   <div class="loading-content">
-    <p>Sie werden in kürze auf die Startseite weitergeleitet. Bitte warten... </p>
+    <p>You will be redirected to the home page shortly. Please wait...</p>
     <div class="spinner"></div>
   </div>
 </div>
@@ -43,13 +43,13 @@
 
 
   <div class="main-content">
-    <h1>Ethernet-Verbindung</h1>
+    <h1>Ethernet Connection</h1>
     <div class="container">
-      <h2>Einstellungen</h2>
+      <h2>Settings</h2>
       <table>
         <!-- Ethernet settings table -->
         <tr>
-          <td><label for="eth_dhcp-toggle">Statische IP:</label></td>
+          <td><label for="eth_dhcp-toggle">Static IP:</label></td>
           <td>
             <label class="switch">
               <input type="checkbox" id="eth_dhcp-toggle">
@@ -58,11 +58,11 @@
           </td>
         </tr>
         <tr>
-          <td><label for="eth_ip-address">IP-Adresse:</label></td>
+          <td><label for="eth_ip-address">IP Address:</label></td>
           <td><input type="text" id="eth_ip-address" value=""></td>
         </tr>
         <tr>
-          <td><label for="eth_subnet-mask">Subnetzmaske:</label></td>
+          <td><label for="eth_subnet-mask">Subnet Mask:</label></td>
           <td><input type="text" id="eth_subnet-mask" value=""></td>
         </tr>
         <tr>
@@ -78,16 +78,16 @@
           <td><input type="text" id="eth_dns2" value=""></td>
         </tr>
         <tr>
-          <td><label for="eth_mac-address">MAC-Adresse:</label></td>
+          <td><label for="eth_mac-address">MAC Address:</label></td>
           <td><input type="text" id="eth_mac-address" readonly></td>
         </tr>
         <tr>
-          <td colspan="2"><button id="eth_btn_save">Speichern</button></td>
+          <td colspan="2"><button id="eth_btn_save">Save</button></td>
         </tr>
       </table>
     </div>
     
-    <h1>WiFi-Verbindung</h1>
+    <h1>WiFi Connection</h1>
     <!-- Wrapper for side-by-side WiFi scan options and results -->
     <div id="wifi-options-results-wrapper">
       <!-- Container for WiFi toggle switch -->
@@ -95,13 +95,13 @@
         <h2>Status</h2>
         <table>
           <tr>
-            <td><label for="wifi_connected">Verbindung:</label></td>
+            <td><label for="wifi_connected">Connection:</label></td>
             <td>
               <span id="wifi_connected" style="font-size: 16px; color: #333; font-weight: bold;"></span>
             </td>
           </tr>
           <tr>
-            <td><label for="wifi_ssid_selected">WiFi-Netzwerk:</label></td>
+            <td><label for="wifi_ssid_selected">WiFi Network:</label></td>
             <td>
               <span id="wifi_ssid_selected" style="font-size: 16px; color: #333; font-weight: bold;"></span>
             </td>   
@@ -109,10 +109,10 @@
         </table>
         
 
-        <h2>Einstellungen</h2>
+        <h2>Settings</h2>
         <table>
           <tr>
-            <td><label for="wifi_enable">WiFi aktivieren:</label></td>
+            <td><label for="wifi_enable">Enable WiFi:</label></td>
             <td>
               <label class="switch">
                 <input type="checkbox" id="wifi_enable">
@@ -125,7 +125,7 @@
         <!-- WiFi input fields -->
         <table id="wifi_input_fields">
           <tr>
-            <td><label for="wifi_ssid">WiFi-Netzwerk:</label></td>
+            <td><label for="wifi_ssid">WiFi Network:</label></td>
             <td>
               <select id="wifi_ssid">
                 <!-- Options will be populated dynamically -->
@@ -133,14 +133,14 @@
             </td>
           </tr>
           <tr>
-            <td><label for="wifi_password">Passwort:</label></td>
+            <td><label for="wifi_password">Password:</label></td>
             <td><input type="password" id="wifi_password" value=""></td>
           </tr>
           <tr style="height: 80px;">
             <td colspan="2"></td>
           </tr>
           <tr>
-            <td><label for="wifi_dhcp-toggle">Statische IP:</label></td>
+            <td><label for="wifi_dhcp-toggle">Static IP:</label></td>
             <td>
               <label class="switch">
                 <input type="checkbox" id="wifi_dhcp-toggle">
@@ -149,11 +149,11 @@
             </td>
           </tr>
           <tr>
-            <td><label for="wifi_ip-address">IP-Adresse:</label></td>
+            <td><label for="wifi_ip-address">IP Address:</label></td>
             <td><input type="text" id="wifi_ip-address" value=""></td>
           </tr>
           <tr>
-            <td><label for="wifi_subnet-mask">Subnetzmaske:</label></td>
+            <td><label for="wifi_subnet-mask">Subnet Mask:</label></td>
             <td><input type="text" id="wifi_subnet-mask" value=""></td>
           </tr>
           <tr>
@@ -169,27 +169,27 @@
             <td><input type="text" id="wifi_dns2" value=""></td>
           </tr>
           <tr>
-            <td><label for="wifi_mac-address">MAC-Adresse:</label></td>
+            <td><label for="wifi_mac-address">MAC Address:</label></td>
             <td><input type="text" id="wifi_mac-address" readonly></td>
           </tr>
         </table>
 
-        <!-- Move the "Speichern" button outside of the input fields table -->
+        <!-- Move the "Save" button outside of the input fields table -->
         <div style="margin-top: 10px;">
-          <button id="wifi_btn_save">Speichern</button>
+          <button id="wifi_btn_save">Save</button>
         </div>
       </div>
 
       <!-- Container for WiFi scan options and results -->
       <div class="container" id="wifi-options-results" style="display: none;">
-        <h2>Netzwerke</h2>
+        <h2>Networks</h2>
         <div class="wifi-options">
           <!-- Button to trigger WiFi rescan -->
-          <button id="wifi_rescan_btn" style="display: none;">Erneut scannen</button>
+          <button id="wifi_rescan_btn" style="display: none;">Rescan</button>
         </div>
         <div class="wifi-scan-results" style="font-size: 14px; color: #333;">
           <!-- Message displayed during WiFi scan -->
-          <div id="wifi_scan_message">Scan wird durchgeführt...</div>
+          <div id="wifi_scan_message">Scanning...</div>
           <!-- Container to display WiFi scan results -->
           <div id="wifi_scan_results"></div>           
         </div>
