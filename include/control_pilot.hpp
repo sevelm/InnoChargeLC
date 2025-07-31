@@ -11,6 +11,8 @@ float get_high_voltage(void);
 float get_low_voltage(void);
 bool get_cp_relays_status(void);
 float get_control_pilot_duty(void);
+void set_control_pilot_duty(float duty);
+void set_control_pilot_duty_Error(float duty);
 int16_t get_cp_state_int(void);
 void turn_relay_on(void);
 void turn_relay_off(void);

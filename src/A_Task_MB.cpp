@@ -25,6 +25,9 @@
 #endif
 
 #define BTN_DIN 11            // GPIO-Number (Button by LED)
+#define RELAY_DRIVE 41
+#define RESET_RCD 40
+
 int16_t mbTcpRegRead09 = 0;
 
 /* ---------- Error-Counter ------------------------------ */
@@ -90,6 +93,11 @@ uint16_t cbCtrl(TRegister* reg, uint16_t val)
         case 4: set_charging_current(float(sVal)); break;
         case 5: set_charging_power  (float(sVal)); break;
         case 9: mbTcpRegRead09 = sVal; break;
+        case 6: digitalWrite(RELAY_DRIVE, (sVal)); break;
+        case 7: digitalWrite(RESET_RCD, (sVal)); break;
+
+
+
         /* weitere Kommandos hier … */
     }
     return val;
@@ -134,69 +142,79 @@ void A_Task_MB(void*)
     // Button
     pinMode(BTN_DIN, INPUT_PULLUP);   // Pull-Up ON
 
+    pinMode(RELAY_DRIVE, OUTPUT);
+    digitalWrite(RELAY_DRIVE, LOW);
+    pinMode(RESET_RCD, OUTPUT);
+    digitalWrite(RESET_RCD, LOW);
+
     while (true)
     {
         mbTCP.task();
         mbRTU.task();
 
         /* ---------- SDM-Polling & Cleanup --------------------------------- */
-        if (millis() - tSDM >= SDM_POLL_MS)          // alle 2 s
+        if (sdm.enable)
         {
-            tSDM = millis();
-            /* 1. Energymeter aktiv → normal pollen ------------------------ */
-            if (sdm.enable)
-            {
-                bool ok = true;
-                /* --- erster Registerblock -------------------------------- */
-                const uint16_t FIRST1 = 0x0000, CNT1 = 54;
-                uint16_t buf1[CNT1];
+            bool ok = true;
+            const uint16_t FIRST1 = 0x0000, CNT1 = 54;
+            uint16_t buf1[CNT1];
 
-                if (!mbRTU.readIreg(SDM_ID, FIRST1, buf1, CNT1, trxCB)) ok = false;
-                while (mbRTU.slave()) { mbRTU.task(); mbTCP.task(); vTaskDelay(1); }
-                if (lastRc != Modbus::EX_SUCCESS) ok = false;
-
-                /* --- zweiter Registerblock ------------------------------- */
-                uint16_t buf2[4];
-                if (!mbRTU.readIreg(SDM_ID, 0x0156, buf2, 4, trxCB)) ok = false;
-                while (mbRTU.slave()) { mbRTU.task(); mbTCP.task(); vTaskDelay(1); }
-                if (lastRc != Modbus::EX_SUCCESS) ok = false;
-
-                /* --- Werte ablegen, wenn beide Blöcke ok ----------------- */
-                if (ok) {
-                    for (uint8_t i = 0; i < 10; ++i) {
-                        const uint16_t* w = &buf1[SDM_MAP[i].sdm - FIRST1];
-                        hregFloat(SDM_MAP[i].tcp, w);
-                        union { uint32_t u32; float f; } v{ (uint32_t(w[0])<<16)|w[1] };
-                        *SDM_SLOT[i] = v.f;
-                    }
-                    for (uint8_t i = 10; i < SDM_CNT; ++i) {
-                        const uint16_t* w = &buf2[SDM_MAP[i].sdm - 0x0156];
-                        hregFloat(SDM_MAP[i].tcp, w);
-                        union { uint32_t u32; float f; } v{ (uint32_t(w[0])<<16)|w[1] };
-                        *SDM_SLOT[i] = v.f;
-                    }
-                }
-
-                /* --- Entprellung / Fehlerzähler -------------------------- */
-                if (ok) {
-                    sdmErrCnt = 0;
-                    sdm.error = false;
-                } else if (++sdmErrCnt >= SDM_ERR_MAX) {
-                    sdm.error = true;          // erst nach 3 Fehlzyklen
-                }
+            ESP_LOGI(TAG, "Lese SDM Registerblock 1 (0x%04X, %u)", FIRST1, CNT1);
+            if (!mbRTU.readIreg(SDM_ID, FIRST1, buf1, CNT1, trxCB)) {
+                ESP_LOGE(TAG, "readIreg block 1 fehlgeschlagen");
+                ok = false;
+            }
+            while (mbRTU.slave()) {
+                mbRTU.task(); mbTCP.task(); vTaskDelay(1);
+            }
+            if (lastRc != Modbus::EX_SUCCESS) {
+                ESP_LOGE(TAG, "Modbus error block 1: %d", lastRc);
+                ok = false;
             }
 
-            /* 2. Energymeter deaktiviert → Aufräumen --------------------- */
-            else   /* sdm.enable == false */
-            {
-                for (uint16_t i = 0; i < 24; ++i)
-                    mbTCP.Hreg(SDM_TCP_BASE + i, 0);
-                for (uint8_t i = 0; i < SDM_CNT; ++i) *SDM_SLOT[i] = 0.0f;
-                /* Fehlerstatus zurücksetzen */
+            uint16_t buf2[4];
+            ESP_LOGI(TAG, "Lese SDM Registerblock 2 (0x0156, 4)");
+            if (!mbRTU.readIreg(SDM_ID, 0x0156, buf2, 4, trxCB)) {
+                ESP_LOGE(TAG, "readIreg block 2 fehlgeschlagen");
+                ok = false;
+            }
+            while (mbRTU.slave()) {
+                mbRTU.task(); mbTCP.task(); vTaskDelay(1);
+            }
+            if (lastRc != Modbus::EX_SUCCESS) {
+                ESP_LOGE(TAG, "Modbus error block 2: %d", lastRc);
+                ok = false;
+            }
+
+            if (ok) {
+                ESP_LOGI(TAG, "SDM-Daten erfolgreich gelesen");
+
+                for (uint8_t i = 0; i < 10; ++i) {
+                    const uint16_t* w = &buf1[SDM_MAP[i].sdm - FIRST1];
+                    union { uint32_t u32; float f; } v{ (uint32_t(w[0])<<16)|w[1] };
+                    ESP_LOGD(TAG, "SDM[%d] @0x%04X = %.2f", i, SDM_MAP[i].sdm, v.f);
+                    hregFloat(SDM_MAP[i].tcp, w);
+                    *SDM_SLOT[i] = v.f;
+                }
+                for (uint8_t i = 10; i < SDM_CNT; ++i) {
+                    const uint16_t* w = &buf2[SDM_MAP[i].sdm - 0x0156];
+                    union { uint32_t u32; float f; } v{ (uint32_t(w[0])<<16)|w[1] };
+                    ESP_LOGD(TAG, "SDM[%d] @0x%04X = %.2f", i, SDM_MAP[i].sdm, v.f);
+                    hregFloat(SDM_MAP[i].tcp, w);
+                    *SDM_SLOT[i] = v.f;
+                }
+
                 sdmErrCnt = 0;
                 sdm.error = false;
+            } else {
+                ESP_LOGW(TAG, "Fehler beim Lesen der SDM-Werte (%d Fehler in Folge)", sdmErrCnt + 1);
+                if (++sdmErrCnt >= SDM_ERR_MAX) {
+                    ESP_LOGE(TAG, "SDM hat %d Fehlzyklen erreicht → Fehlerstatus gesetzt", SDM_ERR_MAX);
+                    sdm.error = true;
+                }
             }
         }
+
 
 
 

@@ -25,5 +25,7 @@ void waveEffect();
 void orangeWaveEffect2();
 void callLedEffect();
 void mbColor();
+void rescueLedBlink();
+
 
 #endif // LEDEFFECT_HPP

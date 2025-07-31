@@ -56,6 +56,8 @@ const char* cpStateToName(charging_state_t state);
 extern volatile charging_state_t vCurrentCpState;
 extern volatile uint32_t lastStateChangeTime;
 extern volatile charging_state_t currentCpStateDelay;
+extern float getCpDuty;
+extern float setCpDuty;
 
 //############### CP-Measurements declaration END
 
@@ -63,4 +65,8 @@ extern volatile charging_state_t currentCpStateDelay;
 extern NeoPixelBus<NeoGrbFeature, Neo800KbpsMethod> strip;
 extern wifi_sta_start_config_t wifi_sta_config;
 extern int16_t mbTcpRegRead09;          //LED-Status-Steuern
+
+// Dipswitch 2 (rechts) 
+constexpr gpio_num_t RESCUE_PIN = GPIO_NUM_2;   
+extern bool rescueMode;                         // true ⇔ DIP „ON“
 #endif 

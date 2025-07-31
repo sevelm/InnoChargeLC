@@ -37,7 +37,8 @@ Preferences preferences;
 // cp_measurements_t measurements = {0.0, 0.0, {0.0}, 0};
 NeoPixelBus<NeoGrbFeature, Neo800KbpsMethod> strip(8, 10); // Set to Pin 10
 int cpState;
-float highVoltage;
+float highVoltage, getCpDuty, setCpDuty;
+
 charging_state_t currentCpState = StateA_NotConnected;
 
 // Globale Variablen für WiFi-Status
@@ -47,6 +48,8 @@ wifi_sta_start_config_t wifi_sta_config = {
     .max_retry = -1
 };
 
+// Dipswitch 2 (rechts) IP-Fallback 10.10.10.10
+bool rescueMode = false;          
 
 //////////////////////////////////////////////////// Setup ///////////////////////////////////////////////////
 //////////////////////////////////////////////////// Setup ///////////////////////////////////////////////////
@@ -75,9 +78,25 @@ void setup() {
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
-    ESP_LOGI(MAIN_TAG, "Starting Ethernet...");
-    restart_new_settings_eth();
-    ESP_LOGI(MAIN_TAG, "Ethernet started.");
+    pinMode(RESCUE_PIN, INPUT_PULLUP);
+    rescueMode = (digitalRead(RESCUE_PIN) == LOW);   // DIP „ON“?
+    if (rescueMode) {
+        ethernet_start_config_t rescueCfg = {
+            .ip_addr = {10, 10, 10, 10},
+            .netmask = {255, 255, 255, 0},
+            .gw      = {10, 10, 10, 1},     // Gateway beliebig, sonst 0,0,0,0
+            .dns1    = {10, 10, 10, 1},     // DNS  optional
+            .dns2    = {8,  8,  8,  8}
+        };
+        ESP_LOGW(MAIN_TAG, "Rescue‑IP activated → 10.10.10.10");
+        start_eth(false, &rescueCfg);        // DHCP OFF
+    } else {
+        ESP_LOGI(MAIN_TAG, "Starting Ethernet...");
+        restart_new_settings_eth();
+        ESP_LOGI(MAIN_TAG, "Ethernet started.");
+    }
+
+
 
     // ######################### LED-Pixles
     strip.Begin(); // Initialize NeoPixel strip object (REQUIRED)
@@ -125,10 +144,10 @@ void setup() {
 
 // ######################### Create Task and Start
 
-    xTaskCreatePinnedToCore(A_Task_CP, "Controlpilot Task", 8192, NULL, 1, NULL, 1);
-    xTaskCreatePinnedToCore(A_Task_MB, "Task_Modbus_Operation", 8192, NULL, 2, NULL, 1);   
-    xTaskCreatePinnedToCore(A_Task_Web, "Task_Web_Operation", 8192, NULL, 4, NULL, 0);
-    xTaskCreatePinnedToCore(A_Task_Low, "Task_Low_Operation", 8192, NULL, 5, NULL, 1);
+    xTaskCreatePinnedToCore(A_Task_CP, "Controlpilot Task", 8192, NULL, 1, NULL, 0);
+    xTaskCreatePinnedToCore(A_Task_MB, "Task_Modbus_Operation", 8192, NULL, 10, NULL, 0);   
+    xTaskCreatePinnedToCore(A_Task_Web, "Task_Web_Operation", 8192, NULL, 5, NULL, 1);
+    xTaskCreatePinnedToCore(A_Task_Low, "Task_Low_Operation", 8192, NULL, 1, NULL, 1);
 
     // Scan WiFi networks
    // wifi_scan();

@@ -23,74 +23,16 @@ int ledNum = 5;
 
 //################################### ??? -> Connected
 void stateB () {
-
-initStateC = 0;
-
-if (initStateB == 1) {
-  switch (counterTag1[0]) {     // LED1 UP LED2 DOWN
-    case 0: counter1[0]--;
-            counter1[2]++;
-       if (counter1[0] <= 50 and counter1[2] >= 255){
-            counterTag1[0] = 1;
-            counter1[0] = 50;
-            counter1[2] = 255;
-           }
-        break;         
-    case 1: counter1[0]++;
-            counter1[1]--;
-       if (counter1[0] >= 255 and counter1[1] <= 50){
-            counterTag1[0] = 2;
-            counter1[0] = 255;
-            counter1[1] = 50;
-           }
-        break;        
-    case 2: counter1[1]++;
-            counter1[2]--;
-       if (counter1[1] >= 255 and counter1[2] <= 50){
-            counterTag1[0] = 0;
-            counter1[1] = 255;
-            counter1[2] = 50;
-           }  
-        break;           
-    case 3: counter1[2]++;
-       if (counter1[2] >= 255) {
-            counterTag1[0] = 0;
-            counter1[2] = 255;
-           } 
-        break;
-    case 4: counter1[4]++;
-            counter1[5]--;
-       if (counter1[4] >= 255 and counter1[5] <= 0){
-            counterTag1[0] = 5;
-            counter1[4] = 255;
-            counter1[5] = 0;
-           }   
-        break;
-    case 5: counter1[5]++;
-            counter1[0]--;
-       if (counter1[5] >= 255 and counter1[0] <= 0){
-            counterTag1[0] = 0;
-            counter1[5] = 255;
-            counter1[0] = 0;            
-           }  
-        break;                                
-  }
-} else {
-  counter1[0] = 255;
-  counter1[1] = 255;
-  counter1[2] = 255;
-  counter1[3] = 255;
-  counter1[4] = 255;
-  counter1[5] = 255; 
-  initStateB = 1;
-  counterTag1[0];           
-}
-  strip.SetPixelColor(4, RgbColor(counter1[0], counter1[0], 0));
-  strip.SetPixelColor(3, RgbColor(counter1[0], counter1[0], 0));
-  strip.SetPixelColor(5, RgbColor(counter1[1], counter1[1], 0));
-  strip.SetPixelColor(2, RgbColor(counter1[1], counter1[1], 0));
-  strip.SetPixelColor(6, RgbColor(counter1[2], counter1[2], 0));
-  strip.SetPixelColor(1, RgbColor(counter1[2], counter1[2], 0));
+   initStateB = 0;  
+   initStateC = 0;     
+  strip.SetPixelColor(0, RgbColor(255, 195, 0));
+  strip.SetPixelColor(1, RgbColor(255, 195, 0));
+  strip.SetPixelColor(2, RgbColor(255, 195, 0));
+  strip.SetPixelColor(3, RgbColor(255, 195, 0));
+  strip.SetPixelColor(4, RgbColor(255, 195, 0));
+  strip.SetPixelColor(5, RgbColor(255, 195, 0));
+  strip.SetPixelColor(6, RgbColor(255, 195, 0));
+  strip.SetPixelColor(7, RgbColor(255, 195, 0));
   strip.Show();   // Send the updated pixel colors to the hardware.
 }
 
@@ -311,19 +253,23 @@ void stateE () {
   strip.Show();   // Send the updated pixel colors to the hardware.
 }
 
-//################################### ??? -> Error
-void stateF () {
-  initStateB = 0;  
-  initStateC = 0;    
-  strip.SetPixelColor(0, RgbColor(255, 20, 0));
-  strip.SetPixelColor(1, RgbColor(255, 20, 0));
-  strip.SetPixelColor(2, RgbColor(255, 20, 0));
-  strip.SetPixelColor(3, RgbColor(255, 20, 0));
-  strip.SetPixelColor(4, RgbColor(255, 20, 0));
-  strip.SetPixelColor(5, RgbColor(255, 20, 0));
-  strip.SetPixelColor(6, RgbColor(255, 20, 0));
-  strip.SetPixelColor(7, RgbColor(255, 20, 0));    
-  strip.Show();   // Send the updated pixel colors to the hardware.
+void stateF()
+{
+    static bool        on   = false;                // merken ob An/​Aus
+    static TickType_t  next = 0;                    // nächster Umschalt‑Tick
+    const  TickType_t  interval = pdMS_TO_TICKS(250);
+
+    TickType_t now = xTaskGetTickCount();
+    if (now >= next) {                              // Zeit zum Umschalten?
+        next = now + interval;
+        on   = !on;                                 // An ↔ Aus toggeln
+
+        RgbColor col = on ? RgbColor(255, 0, 0)     // Rot
+                          : RgbColor(0,   0, 0);    // Aus
+
+        for (uint8_t i = 0; i < 8; ++i) strip.SetPixelColor(i, col);
+        strip.Show();
+    }
 }
 
 //################################### Switch is OFF
@@ -357,6 +303,26 @@ void statePwmOff () {
 }
 
 
+
+//################################### true ⇔ DIP „ON“ -> Rescue-Mode
+void rescueLedBlink()
+{
+    static bool   ledOn  = false;
+    static uint32_t lastToggle = 0;
+    const  uint32_t interval   = 300;           // ms
+    
+    uint32_t now = millis();
+    if (now - lastToggle >= interval) {
+        lastToggle = now;
+        ledOn      = !ledOn;
+
+        RgbColor col = ledOn ? RgbColor(255, 0, 255)   // Magenta
+                             : RgbColor(0);            // Off
+
+        for (uint8_t i = 0; i < 8; ++i) strip.SetPixelColor(i, col);
+        strip.Show();
+    }
+}
 
 void simpleColorChange() {
   static uint8_t hue = 0; // Hue-Wert (Farbwert) von 0 bis 255
@@ -510,6 +476,12 @@ void callLedEffect()
         return;
     prevMillisLED = xTaskGetTickCount();
 
+    /* ---------- Notfall‑Blinken                     ----------------- */
+    if (rescueMode) {                
+        rescueLedBlink();
+        return;                               // alles Weitere überspringen
+    }
+
     /* ---------- Modbus-Override (1-255 = Farbwert) ----------------- */
     if (mbTcpRegRead09 > 0) {                 // 0  ⇒ kein Override
         mbColor(static_cast<uint8_t>(mbTcpRegRead09));
@@ -519,15 +491,15 @@ void callLedEffect()
     /* ---------- Normaler CP-Status-Animator ------------------------ */
     switch (currentCpState) {
         case StateA_NotConnected:       stateA();            break;
-        case StateB_Connected:          orangeWaveEffect2(); break;
+        case StateB_Connected:          stateB();            break;
         case StateC_Charge:             stateC();            break;
         case StateD_VentCharge:         stateC();            break;
         case StateE_Error:              stateE();            break;
         case StateF_Fault:              stateF();            break;
         case StateCustom_CpRelayOff:    stateSwOff();        break;
         case StateCustom_InvalidValue:  mbColor(9);         break;
-        case StateCustom_DutyCycle_100: 
-        case StateCustom_DutyCycle_0:   statePwmOff();       break;
+        case StateCustom_DutyCycle_100: orangeWaveEffect2(); break;
+        case StateCustom_DutyCycle_0:   orangeWaveEffect2(); break;
         /* kein default – alle States abgedeckt */
     }
 }

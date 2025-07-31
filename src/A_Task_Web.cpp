@@ -277,11 +277,10 @@ void periodic_timer_callback(void* arg) {
             String jsonString;
             JsonDocument doc;
              if (page == "index") {
-                float duty = get_control_pilot_duty();
                 doc["cpState"] = cpStateToName(currentCpState);
                 doc["cpVoltage"] = round(highVoltage * 10) / 10.0;
-                doc["targetChargeCurrent"] = round(get_current_from_duty(duty));
-                doc["targetChargePower"] = round(get_power_from_duty(duty)) / 10.0;                
+                doc["targetChargeCurrent"] = round(get_current_from_duty(getCpDuty));
+                doc["targetChargePower"] = round(get_power_from_duty(getCpDuty)) / 10.0;                
               // doc["targetChargePower"] = (int)(get_power_from_duty(duty) / 10 * 10 + 0.5) / 10.0;
                 doc["cpRelayState"] = get_cp_relays_status();
              }

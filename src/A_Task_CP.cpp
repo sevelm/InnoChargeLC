@@ -76,64 +76,104 @@ State:   Pilot Voltage:  EV Resistance:  Description:       Analog theoretic: (i
 #include "A_Task_CP.hpp"
 
 volatile charging_state_t vCurrentCpState;
-volatile uint32_t lastStateChangeTime = 0;
+volatile uint32_t lastStateChangeTimeState = 0;
+volatile uint32_t lastStateChangeTimeDuty = 0;
 volatile charging_state_t currentCpStateDelay;
 
-// Function to determine charging state based on voltage, duty cycle, and switch with ±0.5V tolerance
-charging_state_t actualCpState(float highVoltage, float lowVoltage) {
-    int highVoltageInt = round(highVoltage * 10);  // Conversion to tenths
-    charging_state_t state; // initialized
-    state = StateCustom_OutOffRange;
-    int offset = 15;
-    int maxV = 130;
-    int minV = 19;
 
-    const int vA = 123;        // 12,3 V
-    const int vB = 93;         // 9,3 V
-    const int vC = 63;         // 6,3 V
-    const int vD = 36;         // 3,6 V
 
-        state = StateCustom_InvalidValue;
-        if (abs(highVoltageInt - vA) <= offset) {
-            state = StateA_NotConnected;
-        }
-        else if (abs(highVoltageInt - vB) <= offset) {
-            state = StateB_Connected;
-        }
-        else if (abs(highVoltageInt - vC) <= offset) {
-            state = StateC_Charge;
-        }
-        else if (abs(highVoltageInt - vD) <= offset) {
-            state = StateD_VentCharge;
-        }
-        else if (highVoltageInt > maxV || highVoltageInt < minV) {
-            state = StateE_Error;
-        }
+/**************************************************************************
+ *  Aktualisierte State‑Funktion mit integriertem RCM‑Latch & CP‑Schnüffeln
+ **************************************************************************/
+charging_state_t actualCpState(float highVoltage, float /*lowVoltage*/)
+{
+    /* --------- Konstanten & Tabellen --------- */
+    const int vA   = 123, vB = 93, vC = 63, vD = 36;
+    const int off  = 15,  maxV = 130, minV = 19;
+    const TickType_t sniffInt  = 1000 / portTICK_PERIOD_MS;   // 1 s
+    const TickType_t sniffDur  =   30 / portTICK_PERIOD_MS;   // 30 ms
+    const float hvResetThresh  = 10.8f;                       // +12 V ≈ Stecker ab
 
-        // Special handling for duty cycle states
-        if (round(get_control_pilot_duty()) == 100) {
-            state = StateCustom_DutyCycle_100;
+    /* --------- Statische Variablen (behalten Wert über Aufrufe) --------- */
+    static bool         faultLatched   = false;               // Fault aktiv
+    static enum { SNF_IDLE, SNF_WAIT } sniffStage = SNF_IDLE; // Schnüffel‑FSM
+    static TickType_t   sniffNext    = 0;                     // 1‑s‑Timer
+    static TickType_t   sniffStart   = 0;                     // Beginn Fenster
+
+    TickType_t now = xTaskGetTickCount();
+    int hvInt = round(highVoltage * 10);                      // 0.1 V‑Raster
+    bool hvOutOfRange = (hvInt > maxV || hvInt < minV); 
+
+
+    /**********************************************************************
+     *  1) Fault‑Latch   (RCM löst aus → State F & CP -12 V)
+     **********************************************************************/
+    if (!faultLatched && get_rcm_status() != 1) {               // Trip erkannt
+        faultLatched = true;
+        set_control_pilot_duty_Error(0.0f);                       // Fault‑Pegel
+        sniffStage = SNF_IDLE;                                // FSM resetten
+    }
+
+    /**********************************************************************
+     *  2) Versuch zum Auto‑Reset, wenn RCM wieder OK
+     **********************************************************************/
+    if (faultLatched && get_rcm_status() == 1)
+    {
+        switch (sniffStage)
+        {
+        case SNF_IDLE:
+            if (now >= sniffNext) {                           // nur alle 1 s
+                set_control_pilot_duty_Error(100.0f);          // CP freigeben
+                sniffStart = now;
+                sniffStage = SNF_WAIT;                        // 30‑ms‑Fenster
+            }
+            break;
+
+        case SNF_WAIT:
+            if ((now - sniffStart) >= sniffDur) {
+                float hv = get_high_voltage();                // erneut messen
+                if (hv > hvResetThresh) {                     // +12 V ⇒ A
+                    faultLatched = false;    
+                    set_control_pilot_duty(setCpDuty);  
+                    // CP bleibt in High‑Z → liefert automatisch +12 V
+                } else {                                      // Stecker steckt
+                    set_control_pilot_duty_Error(0.0f);        // Fault halten
+                    sniffNext = now + sniffInt;               // nächster Test
+                }
+                sniffStage = SNF_IDLE;                        // Zyklus beendet
+            }
+            break;
         }
-        if (round(get_control_pilot_duty()) == 0) {
-            state = StateCustom_DutyCycle_0;
-        }
-        // CP-Relay OFF
-        if (get_cp_relays_status() != 1) {
-        state = StateCustom_CpRelayOff;
-        }
-        if (highVoltageInt > maxV || highVoltageInt < minV) {
-            state = StateE_Error;
-        }
-        // RCM Error
-      //  if (get_rcm_status() != 0) {
-      //      state = StateE_Error;
-      //  }
+    }
+
+    /**********************************************************************
+     *  3) Wenn Fault gelatcht, sofort zurückmelden
+     **********************************************************************/
+    if (faultLatched) return StateF_Fault;
+
+    /**********************************************************************
+     *  4) Normale Spannungs‑ und PWM‑Auswertung
+     **********************************************************************/
+    charging_state_t state = StateCustom_InvalidValue;
+
+
+    if (abs(hvInt - vB) <= off) state = StateB_Connected;
+    else if (abs(hvInt - vC) <= off) state = StateC_Charge;
+    else if (abs(hvInt - vD) <= off) state = StateD_VentCharge;
+    else if (hvInt > maxV || hvInt < minV) state = StateE_Error;
+
+    /* --- PWM‑Sonderfälle --- */
+    int duty = round(get_control_pilot_duty());
+    if (duty == 100) state = StateCustom_DutyCycle_100;
+    else if (duty == 0) state = StateCustom_DutyCycle_0;
+
+    if (abs(hvInt - vA) <= off) state = StateA_NotConnected;
+
+    /* --- CP‑Relais OFF --- */
+    if (get_cp_relays_status() != 1) state = StateCustom_CpRelayOff;
 
     return state;
 }
-
-
-
 
 
 const char *cpStateToName(charging_state_t state){
@@ -170,8 +210,6 @@ void A_Task_CP(void *pvParameter){
     init_control_pilot();
     set_charging_current(16);
     turn_on_cp_relay();
-
-
     vTaskDelay(pdMS_TO_TICKS(5000));
 
 
@@ -183,21 +221,24 @@ void A_Task_CP(void *pvParameter){
 
 
         highVoltage = get_high_voltage();
+        currentCpStateDelay = actualCpState(highVoltage, 0);
 
-        currentCpStateDelay = actualCpState(highVoltage,0);
+        TickType_t now = xTaskGetTickCount();
 
-        // CP-Delay Timer to debounce the signals
+        /* State‑Debounce 500 ms */
         if (vCurrentCpState == currentCpStateDelay) {
-        lastStateChangeTime = xTaskGetTickCount();  
-        } else if ((xTaskGetTickCount() - lastStateChangeTime) >= 500) {
-            vCurrentCpState = currentCpStateDelay;
+            lastStateChangeTimeState = now;                       // gleich → Timer neu
+        } else if (now - lastStateChangeTimeState >= pdMS_TO_TICKS(500)) {
+            vCurrentCpState      = currentCpStateDelay;           // Wechsel übernehmen
+            lastStateChangeTimeDuty = now;                        // Duty erst 500 ms später
         }
 
-        if (vCurrentCpState == StateE_Error ) {
-            turn_off_cp_relay();
-        } else {
-            turn_on_cp_relay();
+        /* Duty nur alle 500 ms lesen */
+        if (now - lastStateChangeTimeDuty >= pdMS_TO_TICKS(500)) {
+            getCpDuty = get_control_pilot_duty();
+            lastStateChangeTimeDuty = now;
         }
+
 
         if (vCurrentCpState == StateC_Charge || vCurrentCpState == StateD_VentCharge) {
             turn_relay_on();

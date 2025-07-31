@@ -24,6 +24,8 @@
 #define cp_control_channel 0
 #define RELAY_PIN_L1_N 36
 #define RELAY_PIN_L2_L3 38
+//#define RELAY_DRIVE 41
+//#define RESET_RCD 40
 #define rcm_fault 9
 
 
@@ -33,7 +35,7 @@
 #define cp_scaling_factor_a 0.0053
 #define cp_scaling_factor_b -9.3632
 
-bool cp_relay_status = false;
+bool cp_relay_status = false; 
 static portMUX_TYPE cp_adc_spinlock = portMUX_INITIALIZER_UNLOCKED;
 
 const char *CP_LOG = "Control Pilot: ";
@@ -57,6 +59,10 @@ void init_control_pilot(void){
     digitalWrite(RELAY_PIN_L1_N, LOW);
     pinMode(RELAY_PIN_L2_L3, OUTPUT);
     digitalWrite(RELAY_PIN_L2_L3, LOW);
+   // pinMode(RELAY_DRIVE, OUTPUT);
+  //  digitalWrite(RELAY_DRIVE, LOW);
+  //  pinMode(RESET_RCD, OUTPUT);
+  //  digitalWrite(RESET_RCD, LOW);
     pinMode(rcm_fault, INPUT_PULLUP);
 }
 
@@ -98,6 +104,12 @@ return static_cast<int16_t>(vCurrentCpState);
     * @return void
 */
 void set_control_pilot_duty(float duty){
+    setCpDuty = duty;
+    int i_duty = 4095 * duty / 100;
+    ledcWrite(cp_control_channel, i_duty);
+}
+
+void set_control_pilot_duty_Error(float duty){
     int i_duty = 4095 * duty / 100;
     ledcWrite(cp_control_channel, i_duty);
 }
@@ -139,7 +151,7 @@ float get_duty_from_current(float current) {
  * @param float duty_cycle Duty cycle as a percentage
  * @return float power_in_tenth_kw Power in 1/10 kW (e.g., 42 = 4.2 kW)
  */
-float get_power_from_duty(float duty_cycle) {
+float get_power_from_duty(float duty_cycle) { 
 //ESP_LOGI(CP_LOG, "Duty Cycle: %f", duty_cycle);
     if (duty_cycle <= 0) return 0.0;                        // Duty cycle <= 0% -> 0 power
     float power_kw = 0.0;
@@ -214,7 +226,7 @@ void set_charging_power(float power){
     * @param float duty
     * @return float current
 */
-float get_current_from_duty(float duty) {
+float get_current_from_duty(float duty) {             
     return (duty <= 85) ? duty * 0.6 : (duty - 64) * 2.5;
 }
 
