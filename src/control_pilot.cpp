@@ -14,17 +14,19 @@
 #include "ethernet_manager.hpp"
 #include "A_Task_MB.hpp"
 
-#define cp_gen_pin 8
-#define cp_feedback_pin 37
+#define cp_gen_pin 8            //AO generate PWM
+#define cp_feedback_pin 37      //DI
 #define cp_measure_pin 4
 #define cp_relay_pin 18
 #define cp_gen_freq 1000
 #define cp_gen_duty 50
 #define cp_measure_channel ADC1_CHANNEL_3
 #define cp_control_channel 0
+#define RELAY_CH_L1_N      1   // PWM-Kanal 1 für L1/N
+#define RELAY_CH_L2_L3     2   // PWM-Kanal 2 für L2/L3
 #define RELAY_PIN_L1_N 36
 #define RELAY_PIN_L2_L3 38
-//#define RELAY_DRIVE 41
+#define RELAY_DRIVE 41  // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! To Delete Q11
 //#define RESET_RCD 40
 #define rcm_fault 9
 
@@ -50,17 +52,26 @@ void init_control_pilot(void){
     pinMode(cp_gen_pin, OUTPUT);
     ledcSetup(cp_control_channel, cp_gen_freq, 12);
     ledcAttachPin(cp_gen_pin, cp_control_channel);
-    pinMode(cp_feedback_pin, INPUT);
+     pinMode(cp_feedback_pin, INPUT);
     pinMode(cp_relay_pin, OUTPUT);
     digitalWrite(cp_relay_pin, LOW);
     adc1_config_width(ADC_WIDTH_BIT_12);
     adc1_config_channel_atten(cp_measure_channel, ADC_ATTEN_DB_11);
-    pinMode(RELAY_PIN_L1_N, OUTPUT);
-    digitalWrite(RELAY_PIN_L1_N, LOW);
-    pinMode(RELAY_PIN_L2_L3, OUTPUT);
-    digitalWrite(RELAY_PIN_L2_L3, LOW);
-   // pinMode(RELAY_DRIVE, OUTPUT);
-  //  digitalWrite(RELAY_DRIVE, LOW);
+ 
+    ledcSetup(RELAY_CH_L1_N, 1000, 12);
+    ledcAttachPin(RELAY_PIN_L1_N, RELAY_CH_L1_N);
+    ledcSetup(RELAY_CH_L2_L3, 1000, 12);
+    ledcAttachPin(RELAY_PIN_L2_L3, RELAY_CH_L2_L3);
+
+ //   pinMode(RELAY_PIN_L1_N, OUTPUT);
+ //   digitalWrite(RELAY_PIN_L1_N, LOW);
+ //   pinMode(RELAY_PIN_L2_L3, OUTPUT);
+ //   digitalWrite(RELAY_PIN_L2_L3, LOW);
+ 
+ 
+ 
+    pinMode(RELAY_DRIVE, OUTPUT);   // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! To Delete Q11
+    digitalWrite(RELAY_DRIVE, HIGH);// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! To Delete Q11
   //  pinMode(RESET_RCD, OUTPUT);
   //  digitalWrite(RESET_RCD, LOW);
     pinMode(rcm_fault, INPUT_PULLUP);
@@ -369,4 +380,14 @@ void turn_relay_on() {
 void turn_relay_off() {
     digitalWrite(RELAY_PIN_L1_N, LOW);
     digitalWrite(RELAY_PIN_L2_L3, LOW);
+}
+
+void turn_relay_pwm_L1N(float duty) {
+    int i_duty = 4095 * duty / 100.0f;
+    ledcWrite(RELAY_CH_L1_N, i_duty);
+}
+
+void turn_relay_pwm_L2L3(float duty) {
+    int i_duty = 4095 * duty / 100.0f;
+    ledcWrite(RELAY_CH_L2_L3, i_duty);
 }

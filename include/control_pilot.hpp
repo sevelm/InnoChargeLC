@@ -21,3 +21,5 @@ float get_power_from_duty(float duty);
 float get_duty_from_current(float current);
 float get_duty_from_power(float power);
 bool get_rcm_status(void);
+void turn_relay_pwm_L1N(float duty);
+void turn_relay_pwm_L2L3(float duty);

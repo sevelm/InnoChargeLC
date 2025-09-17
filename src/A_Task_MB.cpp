@@ -159,7 +159,7 @@ void A_Task_MB(void*)
         const uint16_t FIRST1 = 0x0000, CNT1 = 54;
         uint16_t buf1[CNT1];
 
-        ESP_LOGI(TAG, "Reading SDM register block 1 (0x%04X, %u)", FIRST1, CNT1);
+      //  ESP_LOGI(TAG, "Reading SDM register block 1 (0x%04X, %u)", FIRST1, CNT1);
         if (!mbRTU.readIreg(SDM_ID, FIRST1, buf1, CNT1, trxCB)) {
             ESP_LOGE(TAG, "readIreg block 1 failed");
             ok = false;
@@ -173,7 +173,7 @@ void A_Task_MB(void*)
         }
 
         uint16_t buf2[4];
-        ESP_LOGI(TAG, "Reading SDM register block 2 (0x0156, 4)");
+      //  ESP_LOGI(TAG, "Reading SDM register block 2 (0x0156, 4)");
         if (!mbRTU.readIreg(SDM_ID, 0x0156, buf2, 4, trxCB)) {
             ESP_LOGE(TAG, "readIreg block 2 failed");
             ok = false;
@@ -187,19 +187,19 @@ void A_Task_MB(void*)
         }
 
         if (ok) {
-            ESP_LOGI(TAG, "Successfully read SDM data");
+       //     ESP_LOGI(TAG, "Successfully read SDM data");
 
             for (uint8_t i = 0; i < 10; ++i) {
                 const uint16_t* w = &buf1[SDM_MAP[i].sdm - FIRST1];
                 union { uint32_t u32; float f; } v{ (uint32_t(w[0])<<16)|w[1] };
-                ESP_LOGD(TAG, "SDM[%d] @0x%04X = %.2f", i, SDM_MAP[i].sdm, v.f);
+          //      ESP_LOGD(TAG, "SDM[%d] @0x%04X = %.2f", i, SDM_MAP[i].sdm, v.f);
                 hregFloat(SDM_MAP[i].tcp, w);
                 *SDM_SLOT[i] = v.f;
             }
             for (uint8_t i = 10; i < SDM_CNT; ++i) {
                 const uint16_t* w = &buf2[SDM_MAP[i].sdm - 0x0156];
                 union { uint32_t u32; float f; } v{ (uint32_t(w[0])<<16)|w[1] };
-                ESP_LOGD(TAG, "SDM[%d] @0x%04X = %.2f", i, SDM_MAP[i].sdm, v.f);
+           //     ESP_LOGD(TAG, "SDM[%d] @0x%04X = %.2f", i, SDM_MAP[i].sdm, v.f);
                 hregFloat(SDM_MAP[i].tcp, w);
                 *SDM_SLOT[i] = v.f;
             }

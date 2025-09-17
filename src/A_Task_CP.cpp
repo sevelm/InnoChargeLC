@@ -80,7 +80,9 @@ volatile uint32_t lastStateChangeTimeState = 0;
 volatile uint32_t lastStateChangeTimeDuty = 0;
 volatile charging_state_t currentCpStateDelay;
 
-
+//----- Timer für Haltespannung der Relais
+static TickType_t relayL1N_on_time = 0;
+static TickType_t relayL2L3_on_time = 0;
 
 /**************************************************************************
  *  Aktualisierte State‑Funktion mit integriertem RCM‑Latch & CP‑Schnüffeln
@@ -240,11 +242,40 @@ void A_Task_CP(void *pvParameter){
         }
 
 
+      //  if (vCurrentCpState == StateC_Charge || vCurrentCpState == StateD_VentCharge) {
+      //      turn_relay_on();
+      //  } else {
+      //      turn_relay_off();
+      //  }
+
+
         if (vCurrentCpState == StateC_Charge || vCurrentCpState == StateD_VentCharge) {
-            turn_relay_on();
+            // --- L1+N ---
+            if (relayL1N_on_time == 0) {
+                turn_relay_pwm_L1N(100.0f);                 // Anziehen
+                relayL1N_on_time = now;
+            } else if (now - relayL1N_on_time > pdMS_TO_TICKS(2000)) {
+                turn_relay_pwm_L1N(42.0f);                  // Haltestrom //42
+            }
+
+            // --- L2+L3 ---
+            if (relayL2L3_on_time == 0) {
+                turn_relay_pwm_L2L3(100.0f);                // Anziehen
+                relayL2L3_on_time = now;
+            } else if (now - relayL2L3_on_time > pdMS_TO_TICKS(2000)) {
+                turn_relay_pwm_L2L3(42.0f);                 // Haltestrom  //42
+            }
+
         } else {
-            turn_relay_off();
+            turn_relay_pwm_L1N(0.0f);                       // Relais aus
+            turn_relay_pwm_L2L3(0.0f);
+            relayL1N_on_time = 0;
+            relayL2L3_on_time = 0;
         }
+
+
+
+
 
         currentCpState = vCurrentCpState;
         vTaskDelay(5 / portTICK_PERIOD_MS); // Adjusted delay

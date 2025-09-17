@@ -18,7 +18,6 @@ const char *CP_LOGI = "Task_Low: ";
 #define INPUT_PIN 9  // IO9 als digitaler Eingang
 
 
-
 //bool enableWifiScan = false;
 //bool prevWifiEnable; 
 
@@ -45,13 +44,11 @@ void A_Task_Low(void *pvParameter){
         get_wifi_ip(eth_ip);
         ESP_LOGI(CP_LOGI, "WIFI IP: %s", eth_ip);
 
-
         bool inputState = digitalRead(INPUT_PIN);  
 
         // Status ausgeben
       
         ESP_LOGI(CP_LOGI, "+++++++ IO9 Status: %s", inputState ? "HIGH" : "LOW");
-
 
 
 

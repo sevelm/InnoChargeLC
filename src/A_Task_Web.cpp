@@ -32,6 +32,13 @@
 #define FW_VERSION_UI "V.UNKNOWN"
 #endif
 
+/* ---------- ESP32 Temperatur ---------- */
+static float readEspTemperatureC() {
+  float v = temperatureRead();
+  // If it's clearly Fahrenheit (typical idle values 90–140 F), convert to °C
+  if (v > 85.0f) return (v - 32.0f) / 1.8f;
+  return v; // likely already °C on ESP32-S2/S3/C3
+}
 
 /* ---------- OTA-MAIN-Status (global) ---------- */
 struct {
@@ -279,6 +286,7 @@ void periodic_timer_callback(void* arg) {
              if (page == "index") {
                 doc["cpState"] = cpStateToName(currentCpState);
                 doc["cpVoltage"] = round(highVoltage * 10) / 10.0;
+                doc["espTemp"] = round(readEspTemperatureC() * 10) / 10.0;
                 doc["targetChargeCurrent"] = round(get_current_from_duty(getCpDuty));
                 doc["targetChargePower"] = round(get_power_from_duty(getCpDuty)) / 10.0;                
               // doc["targetChargePower"] = (int)(get_power_from_duty(duty) / 10 * 10 + 0.5) / 10.0;
