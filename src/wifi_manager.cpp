@@ -80,13 +80,13 @@ void wifi_scan() {
             .max_retry = -1
         };
         wifi_init_sta(&wifi_sta_config);
-    } else if (!was_connected) {
-        ESP_LOGI(WIFI_TAG, "Disconnecting Wi-Fi before scan...");
-        err = esp_wifi_disconnect();
-        if (err != ESP_OK && err != ESP_ERR_WIFI_NOT_CONNECT) {
-            ESP_LOGE(WIFI_TAG, "Failed to disconnect Wi-Fi before scan: %s", esp_err_to_name(err));
-            return;
-        }
+    //} else if (!was_connected) {
+    //    ESP_LOGI(WIFI_TAG, "Disconnecting Wi-Fi before scan...");
+    //    err = esp_wifi_disconnect();
+    //    if (err != ESP_OK && err != ESP_ERR_WIFI_NOT_CONNECT) {
+    //        ESP_LOGE(WIFI_TAG, "Failed to disconnect Wi-Fi before scan: %s", esp_err_to_name(err));
+    //        return;
+     //   }
         
     }
     // Wi-Fi scan configuration
@@ -98,21 +98,21 @@ void wifi_scan() {
         .scan_type = WIFI_SCAN_TYPE_ACTIVE,
         .scan_time = {
             .active = {
-                .min = 100,
-                .max = 300
+                .min = 60,
+                .max = 150
             }
         }
     };
 
     // Start Wi-Fi scan
-    err = esp_wifi_scan_start(&scan_config, true);
+    err = esp_wifi_scan_start(&scan_config, true); //async
     if (err != ESP_OK) {
         ESP_LOGE(WIFI_TAG, "Wi-Fi scan failed to start: %s", esp_err_to_name(err));
         return;
     }
 
     // Get scan results
-    wifi_ap_record_t wifi_records[MAXIMUM_AP];
+    static wifi_ap_record_t wifi_records[MAXIMUM_AP];
     uint16_t max_records = MAXIMUM_AP;
     ESP_ERROR_CHECK(esp_wifi_scan_get_ap_records(&max_records, wifi_records));
 

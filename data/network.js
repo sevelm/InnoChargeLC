@@ -56,12 +56,21 @@ async function initialiseNetworkPage() {
     await fetchEthSettings();                    // 1️⃣ Ethernet
     const wifi = await fetchWifiSettings();      // 2️⃣ Wi‑Fi
 
-    if (wifi.wifi_enable) {                     // 3️⃣ optional Scan
-      startWifiScan();
-    } else {
-      hideWifiScanResults();
-    }
-  } catch (err) {
+  //  if (wifi.wifi_enable) {                     // 3️⃣ optional Scan
+  //    startWifiScan();
+  //  } else {
+  //    hideWifiScanResults();
+  //  }
+  if (wifi.wifi_enable) {
+    // Scan NICHT automatisch starten – nur UI zeigen und Button aktivieren
+    showWifiScanResults();
+    document.getElementById('wifi_rescan_btn').style.display = 'inline-block';
+    document.getElementById('wifi_scan_message').style.display = 'none';
+    document.getElementById('wifi_scan_results').innerHTML = '';
+  } else {
+    hideWifiScanResults();
+  }
+} catch (err) {
     console.error('[INIT] failed:', err);
   }
 }
@@ -309,7 +318,15 @@ document.addEventListener('DOMContentLoaded', () => {
     wifiEnable.onchange = (e) => {
       const en = e.target.checked;
       toggleWifiInputFields(en);
-      en ? startWifiScan() : hideWifiScanResults();
+      //en ? startWifiScan() : hideWifiScanResults();
+      if (en) {
+        showWifiScanResults();
+        document.getElementById('wifi_rescan_btn').style.display = 'inline-block';
+        document.getElementById('wifi_scan_message').style.display = 'none';
+        document.getElementById('wifi_scan_results').innerHTML = '';
+      } else {
+        hideWifiScanResults();
+      }
     };
   }
   document.getElementById('wifi_rescan_btn').onclick = () => startWifiScan();

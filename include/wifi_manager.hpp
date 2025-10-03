@@ -23,7 +23,7 @@ typedef struct {
 } wifi_sta_state_t;
 
 // Wifi Scan
-#define MAXIMUM_AP 20
+#define MAXIMUM_AP 10
 struct wifi_scan_ap_data {
     char ssid[33];
     int32_t rssi;
