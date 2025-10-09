@@ -90,7 +90,7 @@ static TickType_t relayL2L3_on_time = 0;
 charging_status_t actualCpState(float highVoltage, float /*lowVoltage*/)
 {
     /* --------- Konstanten & Tabellen --------- */
-    const int vA   = 123, vB = 93, vC = 63, vD = 36;
+    const int vA   = 123, vB = 92, vC = 62, vD = 35;
     const int off  = 15,  maxV = 130, minV = 19;
     const TickType_t sniffInt  = 1000 / portTICK_PERIOD_MS;   // 1 s
     const TickType_t sniffDur  =   30 / portTICK_PERIOD_MS;   // 30 ms

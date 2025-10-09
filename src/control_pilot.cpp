@@ -52,7 +52,7 @@ void init_control_pilot(void){
     pinMode(cp_gen_pin, OUTPUT);
     ledcSetup(cp_control_channel, cp_gen_freq, 12);
     ledcAttachPin(cp_gen_pin, cp_control_channel);
-     pinMode(cp_feedback_pin, INPUT);
+    pinMode(cp_feedback_pin, INPUT);
     pinMode(cp_relay_pin, OUTPUT);
     digitalWrite(cp_relay_pin, LOW);
     adc1_config_width(ADC_WIDTH_BIT_12);
@@ -328,7 +328,7 @@ void sync_cp_edge(bool edge){
     * This function gets the high voltage
     * @param void
     * @return float high_voltage
-*/
+
 float get_high_voltage(){
     float high_voltage=0;
     // taskENTER_CRITICAL(&cp_adc_spinlock);
@@ -340,6 +340,49 @@ float get_high_voltage(){
     high_voltage= high_voltage*cp_scaling_factor_a+cp_scaling_factor_b;
     return high_voltage;
 }
+*/
+// Erfasst innerhalb ~1ms eine ganze PWM-Periode und liefert High/Low stabil
+static inline void sample_cp_window(float* out_high, float* out_low) {
+    const int period_us = 1000;     // 1kHz PWM
+    const int N = 64;               // 64 Samples -> ~15.6 µs Schritt
+    const int step_us = period_us / N;
+
+    int max_raw = INT32_MIN;
+    int min_raw = INT32_MAX;
+
+    taskENTER_CRITICAL(&cp_adc_spinlock);
+    uint32_t start = micros();
+    for (int i = 0; i < N; ++i) {
+        int r = adc1_get_raw(cp_measure_channel);
+        if (r > max_raw) max_raw = r;
+        if (r < min_raw) min_raw = r;
+        ets_delay_us(step_us);
+    }
+    taskEXIT_CRITICAL(&cp_adc_spinlock);
+
+    // ADC -> Volt umrechnen
+    const float a = cp_scaling_factor_a, b = cp_scaling_factor_b;
+    if (out_high) *out_high = max_raw * a + b;
+
+    if (out_low) {
+        float lv = min_raw * a + b;
+        if (lv < 0) lv *= 1.5f;   // deine bestehende Korrektur
+        *out_low = lv;
+    }
+}
+
+// ------- Drop-in Replacements -------
+
+float get_high_voltage() {
+    float hv = 0.0f;
+    sample_cp_window(&hv, nullptr);
+    return hv;
+}
+
+
+
+
+
 
 /**
     * @brief Get the low voltage
@@ -347,7 +390,7 @@ float get_high_voltage(){
     * This function gets the low voltage
     * @param void
     * @return float low_voltage
-*/
+
 float get_low_voltage(){
     float low_voltage=0;
     // taskENTER_CRITICAL(&cp_adc_spinlock);
@@ -361,7 +404,15 @@ float get_low_voltage(){
         low_voltage = low_voltage*1.5;
     }
     return low_voltage;
+}*/
+
+float get_low_voltage() {
+    float lv = 0.0f;
+    sample_cp_window(nullptr, &lv);
+    return lv;
 }
+
+
 
 // Control AC-Relay
 
