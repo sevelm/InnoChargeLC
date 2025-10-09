@@ -150,7 +150,11 @@ void webSocketEvent(byte num, WStype_t type, uint8_t * payload, size_t length) {
                         bool state = doc["state"].as<bool>();
                         preferences.putBool("emEnable", state);  
                         sdm.enable = state;
-                      //  sdm.error = state;  
+                      //  sdm.error = state;
+                    } else if (strcmp(action, "setEnergySign") == 0 && doc["state"].is<bool>()) {
+                        bool state = doc["state"].as<bool>();
+                        preferences.putBool("emSignEnable", state); 
+                        sdm.invSign = state;    
                     } else if (strcmp(action, "setRfid") == 0 && doc["state"].is<bool>()) {
                         bool state = doc["state"].as<bool>();
                         preferences.putBool("rfidEnable", state); 
@@ -284,7 +288,7 @@ void periodic_timer_callback(void* arg) {
             String jsonString;
             JsonDocument doc;
              if (page == "index") {
-                doc["cpState"] = cpStateToName(currentCpState);
+                doc["cpState"] = cpStateToName(currentCpState.state);
                 doc["cpVoltage"] = round(highVoltage * 10) / 10.0;
                 doc["espTemp"] = round(readEspTemperatureC() * 10) / 10.0;
                 doc["targetChargeCurrent"] = round(get_current_from_duty(getCpDuty));
@@ -295,6 +299,7 @@ void periodic_timer_callback(void* arg) {
              if (page == "interfaces") {
                 // Energymeter
                 doc["energyMeterState"] = preferences.getBool("emEnable", false);
+                doc["energySignState"] = preferences.getBool("emSignEnable", false);
                 doc["l1Voltage"] =  (int16_t)roundf(sdm.voltL1 * 10);
                 doc["l2Voltage"] =  (int16_t)roundf(sdm.voltL2 * 10);
                 doc["l3Voltage"] =  (int16_t)roundf(sdm.voltL3 * 10);

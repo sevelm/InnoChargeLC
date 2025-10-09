@@ -15,7 +15,7 @@
 
 const char *CP_LOGI = "Task_Low: ";
 
-#define INPUT_PIN 9  // IO9 als digitaler Eingang
+#define INPUT_PIN 11  // IO9 als digitaler Eingang
 
 
 //bool enableWifiScan = false;

@@ -39,7 +39,7 @@ NeoPixelBus<NeoGrbFeature, Neo800KbpsMethod> strip(8, 10); // Set to Pin 10
 int cpState;
 float highVoltage, getCpDuty, setCpDuty;
 
-charging_state_t currentCpState = StateA_NotConnected;
+charging_status_t currentCpState{ StateA_NotConnected, false, false };
 
 // Globale Variablen für WiFi-Status
 bool wifiEnabled = false; // Muss initialisiert werden
@@ -140,6 +140,7 @@ void setup() {
     }
     // RFID or Energymeter Enable
     sdm.enable  = preferences.getBool("emEnable",  false);
+    sdm.invSign = preferences.getBool("emSignEnable", false);
     rfid.enable = preferences.getBool("rfidEnable", false);
 
 // ######################### Create Task and Start

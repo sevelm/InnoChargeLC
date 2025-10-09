@@ -75,10 +75,10 @@ State:   Pilot Voltage:  EV Resistance:  Description:       Analog theoretic: (i
 #include "ledEffect.hpp"
 #include "A_Task_CP.hpp"
 
-volatile charging_state_t vCurrentCpState;
+volatile charging_status_t vCurrentCpState;
 volatile uint32_t lastStateChangeTimeState = 0;
 volatile uint32_t lastStateChangeTimeDuty = 0;
-volatile charging_state_t currentCpStateDelay;
+volatile charging_status_t currentCpStateDelay;
 
 //----- Timer für Haltespannung der Relais
 static TickType_t relayL1N_on_time = 0;
@@ -87,57 +87,62 @@ static TickType_t relayL2L3_on_time = 0;
 /**************************************************************************
  *  Aktualisierte State‑Funktion mit integriertem RCM‑Latch & CP‑Schnüffeln
  **************************************************************************/
-charging_state_t actualCpState(float highVoltage, float /*lowVoltage*/)
+charging_status_t actualCpState(float highVoltage, float /*lowVoltage*/)
 {
     /* --------- Konstanten & Tabellen --------- */
     const int vA   = 123, vB = 93, vC = 63, vD = 36;
     const int off  = 15,  maxV = 130, minV = 19;
-    const TickType_t sniffInt  = 1000 / portTICK_PERIOD_MS;   // 1 s
-    const TickType_t sniffDur  =   30 / portTICK_PERIOD_MS;   // 30 ms
-    const float hvResetThresh  = 10.8f;                       // +12 V ≈ Stecker ab
+    const TickType_t sniffInt  = 1000 / portTICK_PERIOD_MS;   // 1 s
+    const TickType_t sniffDur  =   30 / portTICK_PERIOD_MS;   // 30 ms
+    const float hvResetThresh  = 10.8f;                       // +12 V ≈ Stecker ab
 
     /* --------- Statische Variablen (behalten Wert über Aufrufe) --------- */
     static bool         faultLatched   = false;               // Fault aktiv
-    static enum { SNF_IDLE, SNF_WAIT } sniffStage = SNF_IDLE; // Schnüffel‑FSM
-    static TickType_t   sniffNext    = 0;                     // 1‑s‑Timer
+    static enum { SNF_IDLE, SNF_WAIT } sniffStage = SNF_IDLE; // Schnüffel-FSM
+    static TickType_t   sniffNext    = 0;                     // 1-s-Timer
     static TickType_t   sniffStart   = 0;                     // Beginn Fenster
 
+    charging_status_t res{};
+    res.state = StateCustom_InvalidValue;
+    res.vehicleConnected = false;
+    res.chargingActive   = false;
+
     TickType_t now = xTaskGetTickCount();
-    int hvInt = round(highVoltage * 10);                      // 0.1 V‑Raster
+    int hvInt = round(highVoltage * 10);                      // 0.1 V-Raster
     bool hvOutOfRange = (hvInt > maxV || hvInt < minV); 
 
 
     /**********************************************************************
-     *  1) Fault‑Latch   (RCM löst aus → State F & CP -12 V)
+     *  1) Fault-Latch   (RCM löst aus → State F & CP -12 V)
      **********************************************************************/
     if (!faultLatched && get_rcm_status() != 1) {               // Trip erkannt
         faultLatched = true;
-        set_control_pilot_duty_Error(0.0f);                       // Fault‑Pegel
+        set_control_pilot_duty_Error(0.0f);                       // Fault-Pegel
         sniffStage = SNF_IDLE;                                // FSM resetten
     }
 
     /**********************************************************************
-     *  2) Versuch zum Auto‑Reset, wenn RCM wieder OK
+     *  2) Versuch zum Auto-Reset, wenn RCM wieder OK
      **********************************************************************/
     if (faultLatched && get_rcm_status() == 1)
     {
         switch (sniffStage)
         {
         case SNF_IDLE:
-            if (now >= sniffNext) {                           // nur alle 1 s
+            if (now >= sniffNext) {                           // nur alle 1 s
                 set_control_pilot_duty_Error(100.0f);          // CP freigeben
                 sniffStart = now;
-                sniffStage = SNF_WAIT;                        // 30‑ms‑Fenster
+                sniffStage = SNF_WAIT;                        // 30-ms-Fenster
             }
             break;
 
         case SNF_WAIT:
             if ((now - sniffStart) >= sniffDur) {
                 float hv = get_high_voltage();                // erneut messen
-                if (hv > hvResetThresh) {                     // +12 V ⇒ A
+                if (hv > hvResetThresh) {                     // +12 V ⇒ A
                     faultLatched = false;    
                     set_control_pilot_duty(setCpDuty);  
-                    // CP bleibt in High‑Z → liefert automatisch +12 V
+                    // CP bleibt in High-Z → liefert automatisch +12 V
                 } else {                                      // Stecker steckt
                     set_control_pilot_duty_Error(0.0f);        // Fault halten
                     sniffNext = now + sniffInt;               // nächster Test
@@ -151,30 +156,27 @@ charging_state_t actualCpState(float highVoltage, float /*lowVoltage*/)
     /**********************************************************************
      *  3) Wenn Fault gelatcht, sofort zurückmelden
      **********************************************************************/
-    if (faultLatched) return StateF_Fault;
+    if (faultLatched) { res.state = StateF_Fault; return res; }
 
     /**********************************************************************
-     *  4) Normale Spannungs‑ und PWM‑Auswertung
+     *  4) Normale Spannungs- und PWM-Auswertung
      **********************************************************************/
-    charging_state_t state = StateCustom_InvalidValue;
+    if (abs(hvInt - vB) <= off) { res.state = StateB_Connected;    res.vehicleConnected = true;  res.chargingActive = false; }
+    else if (abs(hvInt - vC) <= off) { res.state = StateC_Charge;  res.vehicleConnected = true;  res.chargingActive = true;  }
+    else if (abs(hvInt - vD) <= off) { res.state = StateD_VentCharge; res.vehicleConnected = true; res.chargingActive = true; }
+    else if (hvInt > maxV || hvInt < minV) { res.state = StateE_Error; }
 
-
-    if (abs(hvInt - vB) <= off) state = StateB_Connected;
-    else if (abs(hvInt - vC) <= off) state = StateC_Charge;
-    else if (abs(hvInt - vD) <= off) state = StateD_VentCharge;
-    else if (hvInt > maxV || hvInt < minV) state = StateE_Error;
-
-    /* --- PWM‑Sonderfälle --- */
+    /* --- PWM-Sonderfälle --- */
     int duty = round(get_control_pilot_duty());
-    if (duty == 100) state = StateCustom_DutyCycle_100;
-    else if (duty == 0) state = StateCustom_DutyCycle_0;
+    if (duty == 100) { res.state = StateCustom_DutyCycle_100; res.chargingActive = false; }
+    else if (duty == 0) { res.state = StateCustom_DutyCycle_0; res.chargingActive = false; }
 
-    if (abs(hvInt - vA) <= off) state = StateA_NotConnected;
+    if (abs(hvInt - vA) <= off) { res.state = StateA_NotConnected; res.vehicleConnected = false; res.chargingActive = false; }
 
-    /* --- CP‑Relais OFF --- */
-    if (get_cp_relays_status() != 1) state = StateCustom_CpRelayOff;
+    /* --- CP-Relais OFF --- */
+    if (get_cp_relays_status() != 1) {res.state = StateCustom_CpRelayOff; res.vehicleConnected = false; res.chargingActive = false; }
 
-    return state;
+    return res;
 }
 
 
@@ -215,32 +217,38 @@ void A_Task_CP(void *pvParameter){
     vTaskDelay(pdMS_TO_TICKS(5000));
 
 
-    while (1) {
+while (1) {
 //////////////////////////////////////////////////// Loop ///////////////////////////////////////////////////
 //////////////////////////////////////////////////// Loop ///////////////////////////////////////////////////
 //////////////////////////////////////////////////// Loop ///////////////////////////////////////////////////
 //////////////////////////////////////////////////// Loop ///////////////////////////////////////////////////
-
 
         highVoltage = get_high_voltage();
-        currentCpStateDelay = actualCpState(highVoltage, 0);
+
+        // Struct-Return zuerst in tmp holen (nicht-volatile), dann feldweise in volatile kopieren
+        charging_status_t tmp = actualCpState(highVoltage, 0);
+        currentCpStateDelay.state            = tmp.state;
+        currentCpStateDelay.vehicleConnected = tmp.vehicleConnected;
+        currentCpStateDelay.chargingActive   = tmp.chargingActive;
 
         TickType_t now = xTaskGetTickCount();
 
-        /* State‑Debounce 500 ms */
-        if (vCurrentCpState == currentCpStateDelay) {
+        /* State-Debounce 500 ms */
+        if (vCurrentCpState.state == currentCpStateDelay.state) {
             lastStateChangeTimeState = now;                       // gleich → Timer neu
         } else if (now - lastStateChangeTimeState >= pdMS_TO_TICKS(500)) {
-            vCurrentCpState      = currentCpStateDelay;           // Wechsel übernehmen
-            lastStateChangeTimeDuty = now;                        // Duty erst 500 ms später
+            // feldweise kopieren wegen volatile
+            vCurrentCpState.state            = currentCpStateDelay.state;    // Wechsel übernehmen
+            vCurrentCpState.vehicleConnected = currentCpStateDelay.vehicleConnected;
+            vCurrentCpState.chargingActive   = currentCpStateDelay.chargingActive;
+            lastStateChangeTimeDuty = now;                                    // Duty erst 500 ms später
         }
 
-        /* Duty nur alle 500 ms lesen */
+        /* Duty nur alle 500 ms lesen */
         if (now - lastStateChangeTimeDuty >= pdMS_TO_TICKS(500)) {
             getCpDuty = get_control_pilot_duty();
             lastStateChangeTimeDuty = now;
         }
-
 
       //  if (vCurrentCpState == StateC_Charge || vCurrentCpState == StateD_VentCharge) {
       //      turn_relay_on();
@@ -248,8 +256,8 @@ void A_Task_CP(void *pvParameter){
       //      turn_relay_off();
       //  }
 
-
-        if (vCurrentCpState == StateC_Charge || vCurrentCpState == StateD_VentCharge) {
+        // Entweder weiterhin state-basiert:
+        if (vCurrentCpState.state == StateC_Charge || vCurrentCpState.state == StateD_VentCharge) {
             // --- L1+N ---
             if (relayL1N_on_time == 0) {
                 turn_relay_pwm_L1N(100.0f);                 // Anziehen
@@ -274,10 +282,11 @@ void A_Task_CP(void *pvParameter){
         }
 
 
+        // Ebenfalls feldweise kopieren (falls currentCpState nicht-volatile ist, trotzdem ok):
+        currentCpState.state            = vCurrentCpState.state;
+        currentCpState.vehicleConnected = vCurrentCpState.vehicleConnected;
+        currentCpState.chargingActive   = vCurrentCpState.chargingActive;
 
-
-
-        currentCpState = vCurrentCpState;
         vTaskDelay(5 / portTICK_PERIOD_MS); // Adjusted delay
-    }
+}
 }

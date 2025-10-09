@@ -14,6 +14,7 @@ extern Preferences preferences;
 // SDM-630
 typedef struct {
     volatile bool    enable;
+    volatile bool    invSign;    
     volatile bool    error;    
     float voltL1, voltL2, voltL3;
     float currL1, currL2, currL3;
@@ -50,12 +51,21 @@ typedef enum {
     StateCustom_DutyCycle_0,
 } charging_state_t;
 
-extern charging_state_t currentCpState;
+// Struktur mit Status + Zusatzinformationen
+typedef struct {
+    charging_state_t state;         // eigentlicher CP-State
+    bool vehicleConnected;          // Fahrzeug verbunden
+    bool chargingActive;            // Ladevorgang aktiv
+} charging_status_t;
+
+
+
+extern charging_status_t currentCpState;
 const char* cpStateToName(charging_state_t state);
 
-extern volatile charging_state_t vCurrentCpState;
+extern volatile charging_status_t vCurrentCpState;
 extern volatile uint32_t lastStateChangeTime;
-extern volatile charging_state_t currentCpStateDelay;
+extern volatile charging_status_t currentCpStateDelay;
 extern float getCpDuty;
 extern float setCpDuty;
 

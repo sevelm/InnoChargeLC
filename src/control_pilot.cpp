@@ -62,18 +62,8 @@ void init_control_pilot(void){
     ledcAttachPin(RELAY_PIN_L1_N, RELAY_CH_L1_N);
     ledcSetup(RELAY_CH_L2_L3, 1000, 12);
     ledcAttachPin(RELAY_PIN_L2_L3, RELAY_CH_L2_L3);
-
- //   pinMode(RELAY_PIN_L1_N, OUTPUT);
- //   digitalWrite(RELAY_PIN_L1_N, LOW);
- //   pinMode(RELAY_PIN_L2_L3, OUTPUT);
- //   digitalWrite(RELAY_PIN_L2_L3, LOW);
- 
- 
- 
     pinMode(RELAY_DRIVE, OUTPUT);   // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! To Delete Q11
     digitalWrite(RELAY_DRIVE, HIGH);// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! To Delete Q11
-  //  pinMode(RESET_RCD, OUTPUT);
-  //  digitalWrite(RESET_RCD, LOW);
     pinMode(rcm_fault, INPUT_PULLUP);
 }
 
@@ -83,7 +73,7 @@ void init_control_pilot(void){
  * @brief Return the current Control-Pilot state as a 16-bit integer.
  *
  * The value corresponds to the numeric representation of the
- * `charging_state_t` enumeration.  The current mapping is
+ * `charging_status_t` enumeration.  The current mapping is
  *
  *   Value | Enum constant                | IEC 61851-1 meaning
  *   ------|------------------------------|-----------------------------
@@ -92,19 +82,22 @@ void init_control_pilot(void){
  *     2   | StateC_Charge                | Charging active
  *     3   | StateD_VentCharge            | Charging, ventilation required
  *     4   | StateE_Error                 | Error / voltage window lost
- *     5   | StateF_Fault                 | Fault (short-circuit etc.)
- *     6   | StateCustom_CpRelayOff       | CP relay off
- *     7   | StateCustom_DutyCycle_100    | PWM = 100 %
- *     8   | StateCustom_DutyCycle_0      | PWM = 0 %
- *     9   | StateCustom_OutOffRange      | CP signal out of range
+ *     5   | StateF_Fault                 | Fault (short-circuit, RCD etc.)
+ *     6   | StateCustom_InvalidValue     | CP signal invalid value
+ *     7   | StateCustom_OutOffRange      | CP signal out of range
+ *     8   | StateCustom_CpRelayOff       | CP relay off
+ *     9   | StateCustom_DutyCycle_100    | PWM = 100 %
+ *     10  | StateCustom_DutyCycle_0      | PWM = 0 %
  *
  * @note  Extend this table if you add new enum values.
  *
  * @return int16_t  Current CP state (see table above).
  */
-int16_t get_cp_state_int(void){
-return static_cast<int16_t>(vCurrentCpState);
+int16_t get_cp_state_int() {
+    return static_cast<int16_t>(vCurrentCpState.state);
 }
+
+
 
 
 /**

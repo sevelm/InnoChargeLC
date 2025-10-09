@@ -25,8 +25,6 @@
 #endif
 
 #define BTN_DIN 11            // GPIO-Number (Button by LED)
-#define RELAY_DRIVE 41
-#define RESET_RCD 40
 
 int16_t mbTcpRegRead09 = 0;
 
@@ -79,9 +77,6 @@ static float* const SDM_SLOT[] = {
 uint16_t mbRegChargeCurrent=0, mbRegChargePower=1;
 void set_charging_current_mb(float,int){}
 void set_charging_power_mb(float,int){}
-void mb_set_charging_current(int){}
-void mb_set_charging_power(int){}
-void mb_set_charging_curr_pwr(int,int){}
 
 /* ---------- Callback – reagiert auf Schreibzugriffe --------*/
 uint16_t cbCtrl(TRegister* reg, uint16_t val)
@@ -91,11 +86,9 @@ uint16_t cbCtrl(TRegister* reg, uint16_t val)
 
     switch (adr) {
         case 4: set_charging_current(float(sVal)); break;
-        case 5: set_charging_power  (float(sVal)); break;
+        case 5: set_charging_power  (float(sVal)/100); break;
+        case 6: sVal ? turn_off_cp_relay() : turn_on_cp_relay(); break;
         case 9: mbTcpRegRead09 = sVal; break;
-        case 6: digitalWrite(RELAY_DRIVE, (sVal)); break;
-        case 7: digitalWrite(RESET_RCD, (sVal)); break;
-
 
 
         /* weitere Kommandos hier … */
@@ -142,10 +135,6 @@ void A_Task_MB(void*)
     // Button
     pinMode(BTN_DIN, INPUT_PULLUP);   // Pull-Up ON
 
-    pinMode(RELAY_DRIVE, OUTPUT);
-    digitalWrite(RELAY_DRIVE, LOW);
-    pinMode(RESET_RCD, OUTPUT);
-    digitalWrite(RESET_RCD, LOW);
 
     while (true)
     {
@@ -188,14 +177,31 @@ void A_Task_MB(void*)
 
         if (ok) {
        //     ESP_LOGI(TAG, "Successfully read SDM data");
-
             for (uint8_t i = 0; i < 10; ++i) {
                 const uint16_t* w = &buf1[SDM_MAP[i].sdm - FIRST1];
-                union { uint32_t u32; float f; } v{ (uint32_t(w[0])<<16)|w[1] };
-          //      ESP_LOGD(TAG, "SDM[%d] @0x%04X = %.2f", i, SDM_MAP[i].sdm, v.f);
-                hregFloat(SDM_MAP[i].tcp, w);
+                union { uint32_t u32; float f; } v{ (uint32_t(w[0])<<16) | w[1] };
+                // --- nur bei Power-Werten (Index 6..9) Vorzeichen invertieren ---
+                // Index-Layout: 0..2=Volt, 3..5=Curr, 6..8=Power L1..L3, 9=Power Total
+                if (i >= 6 && i <= 9) {
+                    if (preferences.getBool("emSignEnable", false)) {
+                        v.f = -v.f;
+                        // in Register auch invertierten Wert schreiben
+                        union { uint32_t u32; float f; } out;
+                        out.f = v.f;
+                        uint16_t ow[2] = { uint16_t(out.u32 >> 16), uint16_t(out.u32 & 0xFFFF) };
+                        hregFloat(SDM_MAP[i].tcp, ow);
+                    } else {
+                        // unverändert in Register
+                        hregFloat(SDM_MAP[i].tcp, w);
+                    }
+                } else {
+                    // Nicht-Power: unverändert
+                    hregFloat(SDM_MAP[i].tcp, w);
+                }
+                // immer: lokale Kopie aktualisieren
                 *SDM_SLOT[i] = v.f;
             }
+
             for (uint8_t i = 10; i < SDM_CNT; ++i) {
                 const uint16_t* w = &buf2[SDM_MAP[i].sdm - 0x0156];
                 union { uint32_t u32; float f; } v{ (uint32_t(w[0])<<16)|w[1] };
@@ -286,6 +292,8 @@ void A_Task_MB(void*)
 
 
         /* ---------- CP-State nach TCP ------------------------- */
+        mbTCP.Hreg(IO_TCP_BASE +  0, vCurrentCpState.vehicleConnected);
+        mbTCP.Hreg(IO_TCP_BASE +  1, vCurrentCpState.chargingActive);
         mbTCP.Hreg(IO_TCP_BASE + 10, get_cp_state_int());
         mbTCP.Hreg(IO_TCP_BASE + 11, digitalRead(BTN_DIN) == LOW);
 

@@ -489,7 +489,7 @@ void callLedEffect()
     }
 
     /* ---------- Normaler CP-Status-Animator ------------------------ */
-    switch (currentCpState) {
+    switch (currentCpState.state) {
         case StateA_NotConnected:       stateA();            break;
         case StateB_Connected:          stateB();            break;
         case StateC_Charge:             stateC();            break;

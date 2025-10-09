@@ -53,6 +53,9 @@ function processCommand(event) {
     if (obj.rfidState !== undefined && document.getElementById('toggleRfid') !== null) {
       document.getElementById('toggleRfid').checked = obj.rfidState
     }
+    if (obj.energySignState !== undefined && document.getElementById('invertEnergySign') !== null) {
+      document.getElementById('invertEnergySign').checked = obj.energySignState
+    }
     inputsInitialized = true; // Set the flag to true after initializing
   }
 
@@ -103,12 +106,14 @@ if (obj.energyMeterState !== undefined && obj.energyMeterError !== undefined) {
   const on = obj.energyMeterState === true || obj.energyMeterState === "true";
   setStatus('energyMeterStatus', on, obj.energyMeterError);
 }
-
 if (obj.rfidState !== undefined && obj.rfidError !== undefined) {
   const on = obj.rfidState === true || obj.rfidState === "true";
   setStatus('rfidStatus', on, obj.rfidError);
 }
-
+//if (obj.energySignState !== undefined && obj.energyMeterError !== undefined) {
+//  const on = obj.energySignState === true || obj.energySignState === "true";
+//  setStatus('energyMeterStatus', on, obj.energyMeterError);
+//}
 
 
 
@@ -132,6 +137,11 @@ if (obj.rfidState !== undefined && obj.rfidError !== undefined) {
     var relayState = obj.rfidState ? 'EIN' : 'AUS';
     document.getElementById('toggleRfidON').textContent = relayState;
   }
+  // Update energySignState if the element exists on the page
+  if (obj.energySignState !== undefined && document.getElementById('invertEnergySignON') !== null) {
+    var relayState = obj.energySignState ? 'EIN' : 'AUS';
+    document.getElementById('invertEnergySignON').textContent = relayState;
+  }
 }
 
 //--------------------------------DOMContentLoaded-----------------------------------//
@@ -149,7 +159,9 @@ document.addEventListener('DOMContentLoaded', function() {
   document.getElementById('toggleRfid')?.addEventListener('change', function(event) {
     toggle_Rfid();
   });
-
+  document.getElementById('invertEnergySign')?.addEventListener('change', function(event) {
+    toggle_invertEnergySign();
+  });
 
 
 });
@@ -176,6 +188,16 @@ function toggle_Rfid() {
   console.log('Sending toggleRfid values to server:', data);
 }
 
+// Function to handle toggling of OFF and ON
+function toggle_invertEnergySign() {
+  const isChecked = document.getElementById('invertEnergySign').checked;
+  const data = {
+    action: 'setEnergySign',
+    state: isChecked 
+  };
+  Socket.send(JSON.stringify(data));
+  console.log('Sending InvertEnergySign values to server:', data);
+}
 
 
 
