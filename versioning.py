@@ -21,4 +21,9 @@ with open(ver_file_ui, encoding="utf-8") as f:
     if not ver_ui:
         sys.exit("[versioning.py]  versionUi.txt ist leer")
 
-env.Append(CPPDEFINES = [("FW_VERSION_UI", f"\\\"{ver_ui}\\\"")])
+# Stattdessen: Version in SPIFFS-Datei für die Web-UI ablegen
+data_dir = os.path.join(proj_dir, "data")
+os.makedirs(data_dir, exist_ok=True)
+ui_ver_path = os.path.join(data_dir, "ui_version.txt")
+with open(ui_ver_path, "w", encoding="utf-8") as f:
+    f.write(ver_ui + "\n")

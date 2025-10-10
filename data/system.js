@@ -1,4 +1,4 @@
-// system.js  – Download-Link bleibt auf GitHub =================================
+// system.js  – Download-Link bleibt auf GitHub =================================
 
 // global WebSocket variable
 let socket = null;
@@ -41,7 +41,7 @@ async function loadLatest(txtFile, spanId) {
 }
 
 // -----------------------------------------------------------------------------
-// client‑side filename validation
+// client-side filename validation
 function validateFile(inputEl, requiredPrefix) {
   const f = inputEl.files[0];
   if (!f) return false;                              // nothing selected
@@ -61,7 +61,7 @@ function processMsg(txt) {
 
   // current versions
   document.getElementById('fwMainVersion').textContent = j.otaMainVersion;
-  document.getElementById('fwUiVersion').textContent   = j.otaUiVersion;
+  // UI-Version NICHT mehr aus WS setzen: fwUiVersion bleibt ausschließlich aus /ui_version.txt
 
   // progress MAIN
   if (j.otaMainProgress !== undefined) {
@@ -93,7 +93,7 @@ function processMsg(txt) {
                    : j.otaUiCode == 0 ? 'orange' : 'red';
   }
 
-  // plain‑text messages
+  // plain-text messages
   if (j.otaMainMessage !== undefined)
     document.getElementById('fwMainMsg').textContent = j.otaMainMessage;
   if (j.otaUiMessage   !== undefined)
@@ -164,6 +164,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
   loadLatest('VersionMain.txt', 'fwMainVersionLast');
   loadLatest('VersionUi.txt',   'fwUiVersionLast');
+
+  // Aktuelle UI-Version ausschließlich aus SPIFFS-Datei lesen
+  fetch('/ui_version.txt')
+    .then(r => r.text())
+    .then(t => { document.getElementById('fwUiVersion').textContent = t.trim(); })
+    .catch(() => { document.getElementById('fwUiVersion').textContent = '—'; });
 
   // validate immediately on file selection
   document.getElementById('fwMainFile')

@@ -28,9 +28,6 @@
 #ifndef FW_VERSION_MAIN
 #define FW_VERSION_MAIN "V.UNKNOWN"
 #endif
-#ifndef FW_VERSION_UI
-#define FW_VERSION_UI "V.UNKNOWN"
-#endif
 
 /* ---------- ESP32 Temperatur ---------- */
 static float readEspTemperatureC() {
@@ -328,7 +325,6 @@ void periodic_timer_callback(void* arg) {
                 doc["otaUiProgress"] = otaUi.progress;          // 0-100%
                 doc["otaUiCode"]     = otaUi.code;              // 1=ok,0=busy,<0 err
                 doc["otaUiMessage"]  = otaUi.message;           // Messages
-                doc["otaUiVersion"]  = FW_VERSION_UI;              // Version aus txt
              }
         serializeJson(doc, jsonString);
         webSocket.sendTXT(clientNum, jsonString);
@@ -583,12 +579,39 @@ static void setupUploadUi()
 
 void A_Task_Web(void *pvParameter) {
     // Setup code
-    server.serveStatic("/", SPIFFS, "/").setAuthentication(www_username, www_password);
-    server.addHandler(new CaptiveRequestHandler()).setFilter(ON_STA_FILTER); // Only handle requests from STA
-    server.onNotFound([](AsyncWebServerRequest *request) {
-    //    ESP_LOGI(WEB_TAG, "Not found: %s", request->url().c_str());
-        request->send(404, "text/plain", "Not Found");
+    server.serveStatic("/", SPIFFS, "/")
+      .setDefaultFile("index.html")
+      .setAuthentication(www_username, www_password);
+
+
+    //server.serveStatic("/", SPIFFS, "/").setAuthentication(www_username, www_password);
+    //server.addHandler(new CaptiveRequestHandler()).setFilter(ON_STA_FILTER); // Only handle requests from STA
+    // Hilfs-Lambda für 204 No Content (ohne zweite Auth-Challenge)
+    auto send204 = [&](AsyncWebServerRequest* req) {
+    if (!req->authenticate(www_username, www_password))
+        return req->requestAuthentication();
+    req->send(204);
+    };
+
+    // Wenn du (noch) KEIN Icon im SPIFFS hast:
+    server.on("/favicon.ico", HTTP_ANY, send204);
+    // Typische weitere automatische Requests:
+    server.on("/apple-touch-icon.png", HTTP_ANY, send204);
+    server.on("/site.webmanifest",     HTTP_ANY, send204);
+    server.on("/robots.txt",           HTTP_ANY, send204);
+
+
+
+    server.onNotFound([&](AsyncWebServerRequest* req){
+    if (!req->authenticate(www_username, www_password))
+        return req->requestAuthentication();
+    req->send(SPIFFS, "/index.html", "text/html");
     });
+    
+    //server.onNotFound([](AsyncWebServerRequest *request) {
+    //    ESP_LOGI(WEB_TAG, "Not found: %s", request->url().c_str());
+    //    request->send(404, "text/plain", "Not Found");
+    //});
 
     server.onRequestBody([](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
         ESP_LOGI(WEB_TAG, "Body: %s", (char *)data);

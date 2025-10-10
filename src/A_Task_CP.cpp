@@ -89,9 +89,9 @@ static TickType_t relayL2L3_on_time = 0;
  **************************************************************************/
 charging_status_t actualCpState(float highVoltage, float /*lowVoltage*/)
 {
-    /* --------- Konstanten & Tabellen --------- */
+    /* --------- Konstanten & Tabellen ---------*/ 
     const int vA   = 123, vB = 92, vC = 62, vD = 35;
-    const int off  = 15,  maxV = 130, minV = 19;
+    const int off  = 10,  maxV = 130, minV = 19;
     const TickType_t sniffInt  = 1000 / portTICK_PERIOD_MS;   // 1 s
     const TickType_t sniffDur  =   30 / portTICK_PERIOD_MS;   // 30 ms
     const float hvResetThresh  = 10.8f;                       // +12 V ≈ Stecker ab
@@ -164,7 +164,8 @@ charging_status_t actualCpState(float highVoltage, float /*lowVoltage*/)
     if (abs(hvInt - vB) <= off) { res.state = StateB_Connected;    res.vehicleConnected = true;  res.chargingActive = false; }
     else if (abs(hvInt - vC) <= off) { res.state = StateC_Charge;  res.vehicleConnected = true;  res.chargingActive = true;  }
     else if (abs(hvInt - vD) <= off) { res.state = StateD_VentCharge; res.vehicleConnected = true; res.chargingActive = true; }
-    else if (hvInt > maxV || hvInt < minV) { res.state = StateE_Error; }
+    else if (hvInt > maxV || hvInt < minV) { res.state = StateE_Error; res.chargingActive = false; }
+    else { res.state = StateE_Error; res.chargingActive = false; } 
 
     /* --- PWM-Sonderfälle --- */
     int duty = round(get_control_pilot_duty());
