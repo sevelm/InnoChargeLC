@@ -3,6 +3,10 @@
 #include "Arduino.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
+#include <vector>
+
+
 #include "esp_log.h"
 #include "esp_event.h"
 #include "A_Task_Web.hpp"
@@ -18,6 +22,7 @@
 #include "control_pilot.hpp"
 #include "ethernet_manager.hpp"
 #include "wifi_manager.hpp"
+#include "esp_wifi.h"
 
 #include "esp_timer.h"
 #include <map>
@@ -37,22 +42,12 @@ static float readEspTemperatureC() {
   return v; // likely already °C on ESP32-S2/S3/C3
 }
 
-/* ---------- OTA-MAIN-Status (global) ---------- */
-struct {
-    volatile uint8_t progress = 0;   // 0-100
-    volatile int8_t  code     =  0;  // 0=idle, 1=ok, <0 = Fehler
-    String  message;                 // Mensch-lesbarer Text
-} otaMain;
-/* ---------- OTA-UI-Status (global) ---------- */
-struct {
-    volatile uint8_t progress = 0;   // 0-100
-    volatile int8_t  code     =  0;  // 0=idle, 1=ok, <0 = Fehler
-    String  message;                 // Mensch-lesbarer Text
-} otaUi;
+OtaStatus otaMain{};
+OtaStatus otaUi{};
 
+SemaphoreHandle_t g_wsSubsMutex;   // schützt subscribedClients
+static std::vector<uint8_t> g_pendingNetworkOnce;
 
-
-esp_timer_handle_t periodic_timer;      // periotic JSON send
 std::map<uint8_t, std::string> subscribedClients;    // Client number with page
 
 const char *WEB_TAG = "Task_Web: ";
@@ -126,6 +121,20 @@ void webSocketEvent(byte num, WStype_t type, uint8_t * payload, size_t length) {
                 val = doc["action"];
                 if (!val.isNull()) {
                     const char* action = val.as<const char*>();
+
+                // NEU: One-Shot Network-Info anfordern (kein Subscribe)
+                    if (strcmp(action, "requestNetworkInfo") == 0) {
+                        if (xSemaphoreTake(g_wsSubsMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+                            // Deduplizieren: Client nur einmal einreihen
+                            if (std::find(g_pendingNetworkOnce.begin(),
+                                        g_pendingNetworkOnce.end(), num) == g_pendingNetworkOnce.end()) {
+                                g_pendingNetworkOnce.push_back(num);
+                            }
+                            xSemaphoreGive(g_wsSubsMutex);
+                        }
+                        return; // hier nichts weiter tun
+                    }
+
                     if (strcmp(action, "subscribeUpdates") == 0) {
                         const char* page = doc["page"];
                         subscribedClients[num] = std::string(page);
@@ -276,123 +285,207 @@ void webSocketEvent(byte num, WStype_t type, uint8_t * payload, size_t length) {
 }
 
 
+static void Task_WebPush(void* arg) {
+  // Caches der letzten JSONs je Seite (um identische Frames nicht zu spammen)
+  String lastIndex, lastInterfaces, lastSystem;
 
-void periodic_timer_callback(void* arg) {
-    if (!subscribedClients.empty()) {
-        for (const auto& clientPair : subscribedClients) {
-            uint8_t clientNum = clientPair.first;
-            const std::string& page = clientPair.second;
-            String jsonString;
-            JsonDocument doc;
-             if (page == "index") {
-                doc["cpState"] = cpStateToName(currentCpState.state);
-                doc["cpVoltage"] = round(highVoltage * 10) / 10.0;
-                doc["espTemp"] = round(readEspTemperatureC() * 10) / 10.0;
-                doc["targetChargeCurrent"] = round(get_current_from_duty(getCpDuty));
-                doc["targetChargePower"] = round(get_power_from_duty(getCpDuty)) / 10.0;                
-              // doc["targetChargePower"] = (int)(get_power_from_duty(duty) / 10 * 10 + 0.5) / 10.0;
-                doc["cpRelayState"] = get_cp_relays_status();
-             }
-             if (page == "interfaces") {
-                // Energymeter
-                doc["energyMeterState"] = preferences.getBool("emEnable", false);
-                doc["energySignState"] = preferences.getBool("emSignEnable", false);
-                doc["l1Voltage"] =  (int16_t)roundf(sdm.voltL1 * 10);
-                doc["l2Voltage"] =  (int16_t)roundf(sdm.voltL2 * 10);
-                doc["l3Voltage"] =  (int16_t)roundf(sdm.voltL3 * 10);
-                doc["l1Current"] =  (int16_t)roundf(sdm.currL1 * 10);
-                doc["l2Current"] =  (int16_t)roundf(sdm.currL2 * 10);
-                doc["l3Current"] =  (int16_t)roundf(sdm.currL3 * 10);
-                doc["l1Power"] =  (int16_t)roundf(sdm.pwrL1 * 10);
-                doc["l2Power"] =  (int16_t)roundf(sdm.pwrL2 * 10);
-                doc["l3Power"] =  (int16_t)roundf(sdm.pwrL3 * 10);
-                doc["totPower"] =  (int16_t)roundf(sdm.pwrTot * 10);
-                doc["impPower"] =  (int16_t)roundf(sdm.enrImp * 100);
-                doc["expPower"] =  (int16_t)roundf(sdm.enrExp * 100);
-                doc["energyMeterError"] =  sdm.error;
-                // RFID
-                doc["rfidState"]        = preferences.getBool("rfidEnable", false);
-                doc["rfidTag"] =  rfid.uidStr;
-                doc["lastRfidTag"] =  rfid.lastUidStr;
-                doc["rfidError"] =  rfid.error;
-             }
-             if (page == "system") {
-                // System
-                doc["otaMainProgress"] = otaMain.progress;      // 0-100%
-                doc["otaMainCode"]     = otaMain.code;          // 1=ok,0=busy,<0 err
-                doc["otaMainMessage"]  = otaMain.message;       // Messages
-                doc["otaMainVersion"]  = FW_VERSION_MAIN;       // Version aus txt
-                doc["otaUiProgress"] = otaUi.progress;          // 0-100%
-                doc["otaUiCode"]     = otaUi.code;              // 1=ok,0=busy,<0 err
-                doc["otaUiMessage"]  = otaUi.message;           // Messages
-             }
-        serializeJson(doc, jsonString);
-        webSocket.sendTXT(clientNum, jsonString);
-        //ESP_LOGI(WEB_TAG, "Sending JSON: %s", jsonString.c_str());
+  for (;;) {
+
+    // === A) One-Shot: pending Network-Infos verschicken, falls angefragt ===
+    {
+      std::vector<uint8_t> pending;
+      if (xSemaphoreTake(g_wsSubsMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
+        pending.swap(g_pendingNetworkOnce);  // Liste leeren & lokale Kopie holen
+        xSemaphoreGive(g_wsSubsMutex);
+      }
+
+      if (!pending.empty()) {
+
+        ethernet_state_t eth;
+        get_ethernet_state(&eth);
+
+        wifi_sta_state_t wifi;
+        get_wifi_sta_state(&wifi);
+
+        StaticJsonDocument<640> doc;
+        char mac[18];
+        char ip [16];
+
+        // --- ETH ---
+        snprintf(mac, sizeof(mac), "%02X:%02X:%02X:%02X:%02X:%02X",
+                 eth.mac_addr[0], eth.mac_addr[1], eth.mac_addr[2],
+                 eth.mac_addr[3], eth.mac_addr[4], eth.mac_addr[5]);
+        doc["eth_mac"] = mac;
+
+        snprintf(ip, sizeof(ip), "%u.%u.%u.%u", eth.ip_addr[0], eth.ip_addr[1], eth.ip_addr[2], eth.ip_addr[3]);
+        doc["eth_ip"] = ip;
+        snprintf(ip, sizeof(ip), "%u.%u.%u.%u", eth.netmask[0], eth.netmask[1], eth.netmask[2], eth.netmask[3]);
+        doc["eth_netmask"] = ip;
+        snprintf(ip, sizeof(ip), "%u.%u.%u.%u", eth.gw[0], eth.gw[1], eth.gw[2], eth.gw[3]);
+        doc["eth_gateway"] = ip;
+        snprintf(ip, sizeof(ip), "%u.%u.%u.%u", eth.dns1[0], eth.dns1[1], eth.dns1[2], eth.dns1[3]);
+        doc["eth_dns1"] = ip;
+        snprintf(ip, sizeof(ip), "%u.%u.%u.%u", eth.dns2[0], eth.dns2[1], eth.dns2[2], eth.dns2[3]);
+        doc["eth_dns2"] = ip;
+        doc["eth_static"]  = preferences.getBool("ethStatic", false);
+
+        // --- WiFi (nur aus Status-Struktur, KEINE esp_wifi_* Aufrufe hier!) ---
+        // --- RSSI & Qualitäts-Prozent (nur wenn verbunden) ---
+        int8_t rssi = -127;          // -127 als "unbekannt"
+        int quality = 0;
+
+        if (wifi.connected) {
+        wifi_ap_record_t ap;
+        if (esp_wifi_sta_get_ap_info(&ap) == ESP_OK) {
+            rssi = ap.rssi;  // dBm, typ. -30 .. -90
+            // 0..100% aus dBm: -100→0%, -50→100% (linear)
+            quality = (rssi <= -100) ? 0 :
+                    (rssi >= -50)  ? 100 :
+                    2 * (rssi + 100);
         }
+        }
+        snprintf(mac, sizeof(mac), "%02X:%02X:%02X:%02X:%02X:%02X",
+                 wifi.mac[0], wifi.mac[1], wifi.mac[2],
+                 wifi.mac[3], wifi.mac[4], wifi.mac[5]);
+        doc["wifi_mac"]        = mac;
+        doc["wifi_ssid"]       = (const char*)wifi.ssid;
+        doc["wifi_pwd"]       = (const char*)wifi.passphrase;
+        doc["wifi_rssi"]    = rssi;     // z.B. -63
+        doc["wifi_signal"] = quality;  // z.B. 74 (in %)
+
+        snprintf(ip, sizeof(ip), "%u.%u.%u.%u", wifi.ip[0], wifi.ip[1], wifi.ip[2], wifi.ip[3]);
+        doc["wifi_ip"] = ip;
+        snprintf(ip, sizeof(ip), "%u.%u.%u.%u", wifi.netmask[0], wifi.netmask[1], wifi.netmask[2], wifi.netmask[3]);
+        doc["wifi_netmask"] = ip;
+        snprintf(ip, sizeof(ip), "%u.%u.%u.%u", wifi.gateway[0], wifi.gateway[1], wifi.gateway[2], wifi.gateway[3]);
+        doc["wifi_gateway"] = ip;
+        snprintf(ip, sizeof(ip), "%u.%u.%u.%u", wifi.dns1[0], wifi.dns1[1], wifi.dns1[2], wifi.dns1[3]);
+        doc["wifi_dns1"] = ip;
+        snprintf(ip, sizeof(ip), "%u.%u.%u.%u", wifi.dns2[0], wifi.dns2[1], wifi.dns2[2], wifi.dns2[3]);
+        doc["wifi_dns2"] = ip;
+
+        doc["wifi_static"]    = preferences.getBool("wifiStatic", false);
+        doc["wifi_connected"] = wifi.connected;
+        doc["wifi_enable"]    = preferences.getBool("wifiEnable", false);
+
+/*
+
+// --- Strings für Log (separat, damit wir sie im Log gemeinsam ausgeben können)
+char wifiIpStr[16], wifiMaskStr[16], wifiGwStr[16], wifiDns1Str[16], wifiDns2Str[16], wifiMacStr[18];
+snprintf(wifiIpStr,   sizeof(wifiIpStr),   "%u.%u.%u.%u", wifi.ip[0],      wifi.ip[1],      wifi.ip[2],      wifi.ip[3]);
+snprintf(wifiMaskStr, sizeof(wifiMaskStr), "%u.%u.%u.%u", wifi.netmask[0], wifi.netmask[1], wifi.netmask[2], wifi.netmask[3]);
+snprintf(wifiGwStr,   sizeof(wifiGwStr),   "%u.%u.%u.%u", wifi.gateway[0], wifi.gateway[1], wifi.gateway[2], wifi.gateway[3]);
+snprintf(wifiDns1Str, sizeof(wifiDns1Str), "%u.%u.%u.%u", wifi.dns1[0],    wifi.dns1[1],    wifi.dns1[2],    wifi.dns1[3]);
+snprintf(wifiDns2Str, sizeof(wifiDns2Str), "%u.%u.%u.%u", wifi.dns2[0],    wifi.dns2[1],    wifi.dns2[2],    wifi.dns2[3]);
+snprintf(wifiMacStr,  sizeof(wifiMacStr),  "%02X:%02X:%02X:%02X:%02X:%02X",
+         wifi.mac[0], wifi.mac[1], wifi.mac[2], wifi.mac[3], wifi.mac[4], wifi.mac[5]);
+
+// --- Logausgabe (Passwort NICHT loggen)
+ESP_LOGI(WEB_TAG,
+         "WiFi: enable=%d connected=%d SSID='%s' MAC=%s RSSI=%d dBm quality=%d%% "
+         "IP=%s MASK=%s GW=%s DNS1=%s DNS2=%s DHCP=%d",
+         (int)preferences.getBool("wifiEnable", false),
+         (int)wifi.connected,
+         (const char*)wifi.ssid,
+         wifiMacStr,
+         (int)rssi,
+         (int)quality,
+         wifiIpStr, wifiMaskStr, wifiGwStr, wifiDns1Str, wifiDns2Str,
+         (int)preferences.getBool("wifiStatic", false));*/
+
+        String jsonOnce; jsonOnce.reserve(512);
+        serializeJson(doc, jsonOnce);
+
+        for (auto id : pending) {
+          webSocket.sendTXT(id, jsonOnce);   // EINMAL an alle Anfragenden
+        }
+      }
     }
-}
-void start_periodic_timer() {
-    const esp_timer_create_args_t periodic_timer_args = {
-            .callback = &periodic_timer_callback,
-            .name = "periodic_timer"
-    };
-    ESP_ERROR_CHECK(esp_timer_create(&periodic_timer_args, &periodic_timer));
-    // start timer 800 ms intervall
-    ESP_ERROR_CHECK(esp_timer_start_periodic(periodic_timer, 800000)); // 800000 µs = 800 ms
-}
+    // === Ende One-Shot ===
 
 
-void handleEthNetworkRequest(AsyncWebServerRequest *request) {
-    ethernet_state_t eth_status;
-    get_ethernet_state(&eth_status);
-    char macStr[18];
-    sprintf(macStr, "%02X:%02X:%02X:%02X:%02X:%02X", eth_status.mac_addr[0], eth_status.mac_addr[1], eth_status.mac_addr[2], eth_status.mac_addr[3], eth_status.mac_addr[4], eth_status.mac_addr[5]);
-    
-    // Add the other values to the response
-    String response = "{";
-    // Ethernet
-    response += "\"eth_mac\":\"" + String(macStr) + "\",";
-    response += "\"eth_ip\":\"" + String(eth_status.ip_addr[0]) + "." + String(eth_status.ip_addr[1]) + "." + String(eth_status.ip_addr[2]) + "." + String(eth_status.ip_addr[3]) + "\",";
-    response += "\"eth_netmask\":\"" + String(eth_status.netmask[0]) + "." + String(eth_status.netmask[1]) + "." + String(eth_status.netmask[2]) + "." + String(eth_status.netmask[3]) + "\",";
-    response += "\"eth_gateway\":\"" + String(eth_status.gw[0]) + "." + String(eth_status.gw[1]) + "." + String(eth_status.gw[2]) + "." + String(eth_status.gw[3]) + "\",";
-    response += "\"eth_dns1\":\"" + String(eth_status.dns1[0]) + "." + String(eth_status.dns1[1]) + "." + String(eth_status.dns1[2]) + "." + String(eth_status.dns1[3]) + "\",";
-    response += "\"eth_dns2\":\"" + String(eth_status.dns2[0]) + "." + String(eth_status.dns2[1]) + "." + String(eth_status.dns2[2]) + "." + String(eth_status.dns2[3]) + "\",";
-    response += "\"eth_static\":" + String(preferences.getBool("ethStatic", false) ? "true" : "false") + ",";
-    // Wireless
-    response += "\"wifi_enable\":" + String(preferences.getBool("wifiEnable", false) ? "true" : "false");
-
-    response += "}";
-    request->send(200, "application/json", response);
-}
-
-void handleWifiNetworkRequest(AsyncWebServerRequest *request) {
-    if (!preferences.getBool("wifiEnable", false)) {
-        request->send(200, "application/json",
-                      "{\"wifi_enable\":false}");
-        return;
+    // --- 1) Thread-sicher Kopie der Abos ziehen ---
+    std::vector<std::pair<uint8_t, std::string>> clients;
+    if (xSemaphoreTake(g_wsSubsMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
+      clients.assign(subscribedClients.begin(), subscribedClients.end());
+      xSemaphoreGive(g_wsSubsMutex);
     }
-    wifi_sta_state_t wifi_status;
-    get_wifi_sta_state(&wifi_status);
-    char macStr[18];
-    sprintf(macStr, "%02X:%02X:%02X:%02X:%02X:%02X", wifi_status.mac[0], wifi_status.mac[1], wifi_status.mac[2], wifi_status.mac[3], wifi_status.mac[4], wifi_status.mac[5]);
 
-    // Add the other values to the response
-    String response = "{";
-    response += "\"wifi_mac\":\"" + String(macStr) + "\",";
-    response += "\"wifi_ssid\":\"" + String((char*)wifi_status.ssid) + "\",";
-    response += "\"wifi_ip\":\"" + String(wifi_status.ip[0]) + "." + String(wifi_status.ip[1]) + "." + String(wifi_status.ip[2]) + "." + String(wifi_status.ip[3]) + "\",";
-    response += "\"wifi_netmask\":\"" + String(wifi_status.netmask[0]) + "." + String(wifi_status.netmask[1]) + "." + String(wifi_status.netmask[2]) + "." + String(wifi_status.netmask[3]) + "\",";
-    response += "\"wifi_gateway\":\"" + String(wifi_status.gateway[0]) + "." + String(wifi_status.gateway[1]) + "." + String(wifi_status.gateway[2]) + "." + String(wifi_status.gateway[3]) + "\",";
-    response += "\"wifi_dns1\":\"" + String(wifi_status.dns1[0]) + "." + String(wifi_status.dns1[1]) + "." + String(wifi_status.dns1[2]) + "." + String(wifi_status.dns1[3]) + "\",";
-    response += "\"wifi_dns2\":\"" + String(wifi_status.dns2[0]) + "." + String(wifi_status.dns2[1]) + "." + String(wifi_status.dns2[2]) + "." + String(wifi_status.dns2[3]) + "\",";
-    response += "\"wifi_static\":" + String(preferences.getBool("wifiStatic", false) ? "true" : "false") + ",";
-    response += "\"wifi_connected\":" + String(wifi_status.connected ? "true" : "false") + ",";
-    response += "\"wifi_enable\":" + String(preferences.getBool("wifiEnable", false) ? "true" : "false") + ",";
-    response += "\"wifi_pwd\":\"" + String((char*)wifi_status.passphrase) + "\"";
-    response += "}";
-    // Send answer
-    request->send(200, "application/json", response);
+    // --- 2) Bedarf je Seite feststellen ---
+    bool needIndex = false, needInterfaces = false, needSystem = false;
+    for (auto &c : clients) {
+      if      (c.second == "index")      needIndex      = true;
+      else if (c.second == "interfaces") needInterfaces = true;
+      else if (c.second == "system")     needSystem     = true;
+    }
+
+    // --- 3) JSONs je Seite GENAU EINMAL bauen (nur wenn benötigt) ---
+    String jsonIndex, jsonInterfaces, jsonSystem;
+
+    if (needIndex) {
+      StaticJsonDocument<384> doc;
+      doc["cpState"]             = cpStateToName(currentCpState.state);
+      doc["cpVoltage"]           = round(highVoltage * 10) / 10.0;
+      doc["espTemp"]             = round(readEspTemperatureC() * 10) / 10.0;
+      doc["targetChargeCurrent"] = (int)round(get_current_from_duty(getCpDuty));
+      doc["targetChargePower"]   = round(get_power_from_duty(getCpDuty)) / 10.0;
+      doc["cpRelayState"]        = get_cp_relays_status();
+      jsonIndex.reserve(256);
+      serializeJson(doc, jsonIndex);
+    }
+
+    if (needInterfaces) {
+      StaticJsonDocument<512> doc;
+      doc["energyMeterState"] = preferences.getBool("emEnable", false);
+      doc["energySignState"]  = preferences.getBool("emSignEnable", false);
+      doc["l1Voltage"] =  (int16_t)roundf(sdm.voltL1 * 10);
+      doc["l2Voltage"] =  (int16_t)roundf(sdm.voltL2 * 10);
+      doc["l3Voltage"] =  (int16_t)roundf(sdm.voltL3 * 10);
+      doc["l1Current"] =  (int16_t)roundf(sdm.currL1 * 10);
+      doc["l2Current"] =  (int16_t)roundf(sdm.currL2 * 10);
+      doc["l3Current"] =  (int16_t)roundf(sdm.currL3 * 10);
+      doc["l1Power"]   =  (int16_t)roundf(sdm.pwrL1  * 10);
+      doc["l2Power"]   =  (int16_t)roundf(sdm.pwrL2  * 10);
+      doc["l3Power"]   =  (int16_t)roundf(sdm.pwrL3  * 10);
+      doc["totPower"]  =  (int16_t)roundf(sdm.pwrTot * 10);
+      doc["impPower"]  =  (int16_t)roundf(sdm.enrImp * 100);
+      doc["expPower"]  =  (int16_t)roundf(sdm.enrExp * 100);
+      doc["energyMeterError"] = sdm.error;
+      doc["rfidState"]        = preferences.getBool("rfidEnable", false);
+      doc["rfidTag"]          = rfid.uidStr;
+      doc["lastRfidTag"]      = rfid.lastUidStr;
+      doc["rfidError"]        = rfid.error;
+      jsonInterfaces.reserve(384);
+      serializeJson(doc, jsonInterfaces);
+    }
+
+    if (needSystem) {
+      StaticJsonDocument<256> doc;
+      doc["otaMainProgress"] = otaMain.progress;
+      doc["otaMainCode"]     = otaMain.code;
+      doc["otaMainMessage"]  = otaMain.message;
+      doc["otaMainVersion"]  = FW_VERSION_MAIN;
+      doc["otaUiProgress"]   = otaUi.progress;
+      doc["otaUiCode"]       = otaUi.code;
+      doc["otaUiMessage"]    = otaUi.message;
+      jsonSystem.reserve(256);
+      serializeJson(doc, jsonSystem);
+    }
+
+    // --- 4) Optional: nur bei Änderung senden (spart Last) ---
+    if (needIndex      && jsonIndex      == lastIndex)      needIndex      = false; else lastIndex      = jsonIndex;
+    if (needInterfaces && jsonInterfaces == lastInterfaces) needInterfaces = false; else lastInterfaces = jsonInterfaces;
+    if (needSystem     && jsonSystem     == lastSystem)     needSystem     = false; else lastSystem     = jsonSystem;
+
+    // --- 5) Verteilen ---
+    for (auto &c : clients) {
+      if      (c.second == "index"      && needIndex)      webSocket.sendTXT(c.first, jsonIndex);
+      else if (c.second == "interfaces" && needInterfaces) webSocket.sendTXT(c.first, jsonInterfaces);
+      else if (c.second == "system"     && needSystem)     webSocket.sendTXT(c.first, jsonSystem);
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(800));  // gleiche Rate wie zuvor
+  }
 }
 
 
@@ -411,165 +504,7 @@ void handleWifiScanRequest(AsyncWebServerRequest *request) {
     request->send(200, "application/json", response);
 }
 
-// * =====================================================
-// * OTA-UPLOAD-HANDLER  (neu)
-// * -----------------------------------------------------
 
-
-/* ---------- Upload‑Handler MAIN ---------- */
-static void setupUploadMain()
-{
-    server.on("/uploadfw", HTTP_POST,
-
-    /* ---------- (1) Antwort nach Abschluss ---------- */
-    [](AsyncWebServerRequest *req)
-    {
-        bool err = Update.hasError();
-        req->send(err ? 500 : 200, "text/plain",
-                  err ? "flash error" : "flash ok");
-
-        otaMain.code    = err ? -1 : 1;
-        otaMain.message = err ? "flash error" : "flash ok";
-
-        String json;
-        JsonDocument doc;
-        doc["otaMainProgress"] = otaMain.progress;
-        doc["otaMainCode"]     = otaMain.code;
-        doc["otaMainMessage"]  = otaMain.message;
-        serializeJson(doc, json);
-
-        for (auto &c : subscribedClients)
-            if (c.second == "system")
-                webSocket.sendTXT(c.first, json);
-
-        if (!err) {                        // bei Erfolg neu starten
-            vTaskDelay(pdMS_TO_TICKS(500));
-            esp_restart();
-        }
-    },
-
-    /* ---------- (2) Upload‑Stream ------------------- */
-    [](AsyncWebServerRequest *req, String, size_t idx,
-       uint8_t *data, size_t len, bool final)
-    {
-        static bool   mainFailed = false;
-        static size_t totalLen   = 0;      // Gesamtgröße der BIN
-
-        if (idx == 0) {                    // erster Block
-            totalLen = req->contentLength();
-
-            /* Progress‑Callback erst jetzt registrieren */
-            Update.onProgress([&](size_t done, size_t /*unused*/){
-                otaMain.progress = totalLen ? (done * 100 / totalLen) : 0;
-                otaMain.message  = "progress";
-                ESP_LOGI("OTA Main","progress %u %%", otaMain.progress);
-            });
-
-            if (!Update.begin(UPDATE_SIZE_UNKNOWN, U_FLASH)) {
-                mainFailed   = true;
-                otaMain.code = -2;
-                ESP_LOGE("OTA Main","begin() %s", Update.errorString());
-                return;
-            }
-        }
-
-        if (!mainFailed && Update.write(data, len) != len) {
-            mainFailed   = true;
-            otaMain.code = -3;
-            ESP_LOGE("OTA Main","write() %s", Update.errorString());
-        }
-
-        if (final) {
-            Update.onProgress(nullptr);    // Callback lösen
-
-            if (!mainFailed && !Update.end(true)) {
-                otaMain.code = -4;
-                ESP_LOGE("OTA Main","end() %s", Update.errorString());
-            } else if (!mainFailed) {
-                otaMain.code = 1;
-                ESP_LOGI("OTA Main","firmware upload finished OK");
-            }
-        }
-    });
-}
-
-/* ---------- Upload‑Handler SPIFFS ---------- */
-static void setupUploadUi()
-{
-    server.on("/uploadui", HTTP_POST,
-
-    /* ---------- (1) Antwort nach Abschluss ---------- */
-    [](AsyncWebServerRequest *req)
-    {
-        bool err = Update.hasError();
-        req->send(err ? 500 : 200, "text/plain",
-                  err ? "fs flash error" : "fs flash ok");
-
-        otaUi.code    = err ? -1 : 1;
-        otaUi.message = err ? "fs flash error" : "fs flash ok";
-
-        String json;
-        JsonDocument doc;
-        doc["otaUiProgress"] = otaUi.progress;
-        doc["otaUiCode"]     = otaUi.code;
-        doc["otaUiMessage"]  = otaUi.message;
-        serializeJson(doc, json);
-
-        for (auto &c : subscribedClients)
-            if (c.second == "system")
-                webSocket.sendTXT(c.first, json);
-
-        if (!err) {                        // bei Erfolg neu starten
-            vTaskDelay(pdMS_TO_TICKS(500));
-            esp_restart();
-        }
-    },
-
-    /* ---------- (2) Upload‑Stream ------------------- */
-    [](AsyncWebServerRequest *req, String, size_t idx,
-       uint8_t *data, size_t len, bool final)
-    {
-        static bool   uiFailed  = false;
-        static size_t totalLen  = 0;       // Gesamtgröße des SPIFFS‑Images
-
-        if (idx == 0) {                    // erster Block
-            if (SPIFFS.begin()) SPIFFS.end();          // unmount
-            totalLen = req->contentLength();
-
-            /* Progress‑Callback erst jetzt registrieren */
-            Update.onProgress([&](size_t done, size_t /*unused*/){
-                otaUi.progress = totalLen ? (done * 100 / totalLen) : 0;
-                otaUi.message  = "progress";
-                ESP_LOGI("OTA Ui","progress %u %%", otaUi.progress);
-            });
-
-            if (!Update.begin(UPDATE_SIZE_UNKNOWN, U_SPIFFS)) {
-                uiFailed   = true;
-                otaUi.code = -2;
-                ESP_LOGE("OTA Ui","begin() %s", Update.errorString());
-                return;
-            }
-        }
-
-        if (!uiFailed && Update.write(data, len) != len) {
-            uiFailed   = true;
-            otaUi.code = -3;
-            ESP_LOGE("OTA Ui","write() %s", Update.errorString());
-        }
-
-        if (final) {
-            Update.onProgress(nullptr);    // Callback lösen
-
-            if (!uiFailed && !Update.end(true)) {
-                otaUi.code = -4;
-                ESP_LOGE("OTA Ui","end() %s", Update.errorString());
-            } else if (!uiFailed) {
-                otaUi.code = 1;
-                ESP_LOGI("OTA Ui","SPIFFS upload finished OK");
-            }
-        }
-    });
-}
 
 
 
@@ -583,10 +518,6 @@ void A_Task_Web(void *pvParameter) {
       .setDefaultFile("index.html")
       .setAuthentication(www_username, www_password);
 
-
-    //server.serveStatic("/", SPIFFS, "/").setAuthentication(www_username, www_password);
-    //server.addHandler(new CaptiveRequestHandler()).setFilter(ON_STA_FILTER); // Only handle requests from STA
-    // Hilfs-Lambda für 204 No Content (ohne zweite Auth-Challenge)
     auto send204 = [&](AsyncWebServerRequest* req) {
     if (!req->authenticate(www_username, www_password))
         return req->requestAuthentication();
@@ -600,38 +531,30 @@ void A_Task_Web(void *pvParameter) {
     server.on("/site.webmanifest",     HTTP_ANY, send204);
     server.on("/robots.txt",           HTTP_ANY, send204);
 
-
-
     server.onNotFound([&](AsyncWebServerRequest* req){
     if (!req->authenticate(www_username, www_password))
         return req->requestAuthentication();
     req->send(SPIFFS, "/index.html", "text/html");
     });
     
-    //server.onNotFound([](AsyncWebServerRequest *request) {
-    //    ESP_LOGI(WEB_TAG, "Not found: %s", request->url().c_str());
-    //    request->send(404, "text/plain", "Not Found");
-    //});
-
     server.onRequestBody([](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
         ESP_LOGI(WEB_TAG, "Body: %s", (char *)data);
     });
-
 
     setupUploadMain();
     setupUploadUi();
 
     // Register routes
     registerWebRoutes(server);
-    server.on("/get_EthNetwork_info", HTTP_GET, handleEthNetworkRequest);
-    server.on("/get_WifiNetwork_info", HTTP_GET, handleWifiNetworkRequest);
     server.on("/wifi_scan", HTTP_GET, handleWifiScanRequest);
 
     server.begin(); // start server
 
     webSocket.begin();
     webSocket.onEvent(webSocketEvent);
-    start_periodic_timer();
+    //start_periodic_timer();
+    g_wsSubsMutex = xSemaphoreCreateMutex();
+    xTaskCreatePinnedToCore(Task_WebPush, "WebPush", 4096, nullptr, 3, nullptr, 1);
 
     while(1) {
         webSocket.loop();

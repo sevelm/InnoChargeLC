@@ -10,100 +10,69 @@ let scanInProgress = false;   // verhindert Parallel‑Scans
 /* ------------------------------------------------------------------
    WebSocket initialisation
 ------------------------------------------------------------------ */
-let wsReconnectTimer = null;
-
 function initWebSocket() {
-  // bestehende Verbindung ggf. schließen
-  try { if (Socket && Socket.readyState === WebSocket.OPEN) Socket.close(); } catch {}
-
   Socket = new WebSocket('ws://' + window.location.hostname + ':81/');
 
   Socket.onopen = () => {
     console.log('[WS] opened');
-    // One-Shot: einmalig ETH + WiFi anfordern
-    requestNetworkInfo();
+    //Socket.send(JSON.stringify({ action: 'subscribeUpdates', page: 'network' }));
   };
 
-  Socket.onmessage = (e) => {
-    // One-Shot Antwort verarbeiten
-    let d;
-    try {
-      d = JSON.parse(e.data);
-    } catch (err) {
-      console.warn('[WS] non-JSON or parse error:', err, e.data);
-      return;
-    }
+  Socket.onmessage = (e) => console.log('[WS] msg:', e.data);
+  Socket.onclose   = (e) => console.log('[WS] closed:', e);
+  Socket.onerror   = (e) => console.log('[WS] error:',  e);
 
-    // Netzwerkpaket erkannt? → UI füllen
-    if (d.eth_mac || d.eth_ip || d.wifi_ssid || d.wifi_ip) {
-      if (typeof setEthernetInfo === 'function') setEthernetInfo(d);
-      if (typeof setWifiInfo === 'function') setWifiInfo(d);
-
-      // WiFi-Scan-Bereich passend ein-/ausblenden (defensiv)
-      const rescanBtn  = document.getElementById('wifi_rescan_btn');
-      const scanMsg    = document.getElementById('wifi_scan_message');
-      const scanResult = document.getElementById('wifi_scan_results');
-
-      if (d.wifi_enable) {
-        if (typeof showWifiScanResults === 'function') showWifiScanResults();
-        if (rescanBtn)  rescanBtn.style.display = 'inline-block';
-        if (scanMsg)    scanMsg.style.display   = 'none';
-        if (scanResult) scanResult.innerHTML    = '';
-      } else {
-        if (typeof hideWifiScanResults === 'function') hideWifiScanResults();
-        if (rescanBtn)  rescanBtn.style.display = 'none';
-      }
-      return; // erledigt
-    }
-
-    // …hier ggf. andere WS-Nachrichten verarbeiten …
-     console.log('[WS] msg:', d);
-  };
-
-  Socket.onclose = (e) => {
-    console.log('[WS] closed:', e.code, e.reason || '');
-    // sanfter Reconnect mit kleinem Delay
-    if (!wsReconnectTimer) {
-      wsReconnectTimer = setTimeout(() => {
-        wsReconnectTimer = null;
-        initWebSocket();
-      }, 800);
-    }
-  };
-
-  Socket.onerror = (e) => {
-    console.log('[WS] error:', e);
-    // Fehler -> Verbindung schließen, onclose triggert Reconnect
-    try { Socket.close(); } catch {}
-  };
-
-  // sauber schließen, wenn Seite verlassen wird
   window.onbeforeunload = () => {
-    try { if (Socket) Socket.close(); } catch {}
+    //Socket.send(JSON.stringify({ action: 'unsubscribeUpdates', page: 'network' }));
+    Socket.close();
   };
 }
 
-// One-Shot Anfrage senden (bei Bedarf auch manuell aufrufbar)
-function requestNetworkInfo() {
-  if (Socket && Socket.readyState === WebSocket.OPEN) {
-    Socket.send(JSON.stringify({ action: 'requestNetworkInfo' }));
-  } else {
-    // falls noch im Aufbau: kurz später erneut versuchen
-    setTimeout(requestNetworkInfo, 250);
-  }
+/* ------------------------------------------------------------------
+   Fetch helpers – return Promises
+------------------------------------------------------------------ */
+async function fetchEthSettings() {
+  const r  = await fetch('/get_EthNetwork_info');
+  const d  = await r.json();
+  console.log('[ETH] info:', d);
+  setEthernetInfo(d);
+  return d;
+}
+
+async function fetchWifiSettings() {
+  const r  = await fetch('/get_WifiNetwork_info');
+  const d  = await r.json();
+  console.log('[WiFi] info:', d);
+  currentSSID = d.wifi_ssid;
+  setWifiInfo(d);
+  return d;
 }
 
 /* ------------------------------------------------------------------
    Sequential initialisation flow
 ------------------------------------------------------------------ */
 async function initialiseNetworkPage() {
-  // Keine HTTP-GETs mehr auf /get_* – die Daten kommen per WS One-Shot
   try {
-    // Optional: UI kurz „leer“/Loading setzen
-    setEthernetInfo({});   // leert die Felder
-    setWifiInfo({});       // leert die Felder
-    hideWifiScanResults(); // bis Antwort da ist
-  } catch (err) {
+    await fetchEthSettings();                    // 1️⃣ Ethernet
+    //const wifi = await fetchWifiSettings();      // 2️⃣ Wi‑Fi!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+  //  if (wifi.wifi_enable) {                     // 3️⃣ optional Scan
+  //    startWifiScan();
+  //  } else {
+  //    hideWifiScanResults();
+  //  }
+  
+  
+ // if (wifi.wifi_enable) { !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+ //   // Scan NICHT automatisch starten – nur UI zeigen und Button aktivieren
+ //   showWifiScanResults();
+ //   document.getElementById('wifi_rescan_btn').style.display = 'inline-block';
+ //   document.getElementById('wifi_scan_message').style.display = 'none';
+ //   document.getElementById('wifi_scan_results').innerHTML = '';
+ // } else {
+ //   hideWifiScanResults();
+ // }
+} catch (err) {
     console.error('[INIT] failed:', err);
   }
 }
@@ -164,18 +133,6 @@ function setEthernetInfo(data) {
   const wifiEnabled = data.wifi_enable;
   document.getElementById('wifi_enable').checked = wifiEnabled;
   toggleWifiInputFields(wifiEnabled);
-
-  console.log('[ETH]', {
-    mac:  document.getElementById('eth_mac-address').value,
-    ip:   document.getElementById('eth_ip-address').value,
-    mask: document.getElementById('eth_subnet-mask').value,
-    gw:   document.getElementById('eth_gateway').value,
-    dns1: document.getElementById('eth_dns1').value,
-    dns2: document.getElementById('eth_dns2').value,
-    dhcp: document.getElementById('eth_dhcp-toggle').checked
-  });
-
-
 }
 
 function setWifiInfo(data) {
@@ -183,80 +140,34 @@ function setWifiInfo(data) {
   document.getElementById('wifi_enable').checked = wifiEnabled;
   toggleWifiInputFields(wifiEnabled);
 
-  // SSID immer vorbefüllen, wenn geliefert
-  if (typeof data.wifi_ssid === 'string') {
-    document.getElementById('wifi_ssid').value = data.wifi_ssid;
-    // Merk dir die aktuelle SSID für Dropdown-Markierung
-    currentSSID = data.wifi_ssid;
-    // ensure the select shows the current SSID even without a scan
-    const sel = document.getElementById('wifi_ssid');
-    if (sel) {
-      let found = false;
-      for (const opt of sel.options) {
-        if (opt.value === currentSSID) { found = true; break; }
-      }
-      if (!found && currentSSID) {
-        // insert a preselected option at top
-        const opt = new Option(currentSSID + ' (Current)', currentSSID, true, true);
-        sel.add(opt, 0);
-      }
-      sel.value = currentSSID || '';
-    }
-  }
-
-  // Passwort NUR setzen, wenn explizit geliefert (nicht auf '' leeren!)
-  if (typeof data.wifi_pwd === 'string') {
-    document.getElementById('wifi_password').value = data.wifi_pwd;
-  }
-
-  document.getElementById('wifi_connected').innerText       = data.wifi_connected ? 'Connected' : 'Disconnected';
-  document.getElementById('wifi_ssid_selected').innerText   = data.wifi_ssid || '';
-  document.getElementById('wifi_mac-address').value         = data.wifi_mac || '';
-  document.getElementById('wifi_ip-address').value          = data.wifi_ip || '';
-  document.getElementById('wifi_subnet-mask').value         = data.wifi_netmask || '';
-  document.getElementById('wifi_gateway').value             = data.wifi_gateway || '';
-  document.getElementById('wifi_dns1').value                = data.wifi_dns1 || '';
-  document.getElementById('wifi_dns2').value                = data.wifi_dns2 || '';
+  document.getElementById('wifi_ssid').value            = data.wifi_ssid || '';
+  document.getElementById('wifi_password').value        = data.wifi_pwd || '';
+  document.getElementById('wifi_connected').innerText   = data.wifi_connected ? 'Connected' : 'Disconnected';
+  document.getElementById('wifi_ssid_selected').innerText = data.wifi_ssid || '';
+  document.getElementById('wifi_mac-address').value     = data.wifi_mac || '';
+  document.getElementById('wifi_ip-address').value      = data.wifi_ip || '';
+  document.getElementById('wifi_subnet-mask').value     = data.wifi_netmask || '';
+  document.getElementById('wifi_gateway').value         = data.wifi_gateway || '';
+  document.getElementById('wifi_dns1').value            = data.wifi_dns1 || '';
+  document.getElementById('wifi_dns2').value            = data.wifi_dns2 || '';
 
   const wifiDhcpEnabled = data.wifi_static;
   document.getElementById('wifi_dhcp-toggle').checked = wifiDhcpEnabled;
   toggleWiFiInputFieldsForDHCP(!wifiDhcpEnabled);
-
-  // --- Signalqualität & RSSI nur anzeigen, wenn verbunden und gültig ---
-  const elSignal  = document.getElementById('wifi_signal');
-  const elRssi    = document.getElementById('wifi_rssi');
-  const connected = !!data.wifi_connected;
-  const hasRssi   = typeof data.wifi_rssi === 'number' && data.wifi_rssi !== -127;
-
-  if (connected && hasRssi) {
-    const text = (typeof data.wifi_quality === 'number')
+  // --- Add WiFi signal info display ---
+  if (data.wifi_rssi !== undefined) {
+    const signalText = (data.wifi_quality !== undefined)
       ? `${getSignalQuality(data.wifi_rssi)} (${data.wifi_quality}%)`
       : getSignalQuality(data.wifi_rssi);
-    if (elSignal) elSignal.textContent = text;
-    if (elRssi)   elRssi.textContent   = `${data.wifi_rssi} dBm`;
-  } else {
-    if (elSignal) elSignal.textContent = '';
-    if (elRssi)   elRssi.textContent   = '';
+
+    // Set text in existing or new placeholders
+    const elSignal = document.getElementById('wifi_signal');
+    const elRssi   = document.getElementById('wifi_rssi');
+
+    if (elSignal) elSignal.innerText = signalText;
+    if (elRssi)   elRssi.innerText   = `${data.wifi_rssi} dBm`;
   }
-
-  console.log('[WIFI]', {
-    enabled:  document.getElementById('wifi_enable').checked,
-    ssid:     document.getElementById('wifi_ssid').value,
-    pwd:      document.getElementById('wifi_password').value,
-    state:    document.getElementById('wifi_connected').innerText,
-    mac:      document.getElementById('wifi_mac-address').value,
-    ip:       document.getElementById('wifi_ip-address').value,
-    mask:     document.getElementById('wifi_subnet-mask').value,
-    gw:       document.getElementById('wifi_gateway').value,
-    dns1:     document.getElementById('wifi_dns1').value,
-    dns2:     document.getElementById('wifi_dns2').value,
-    dhcp:     document.getElementById('wifi_dhcp-toggle').checked,
-    signal:   (document.getElementById('wifi_signal')||{}).textContent,
-    rssi:     (document.getElementById('wifi_rssi')||{}).textContent
-  });
-
 }
-
 
 function populateWifiNetworks(data) {
   const sel = document.getElementById('wifi_ssid');
