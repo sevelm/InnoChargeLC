@@ -74,9 +74,9 @@ static float* const SDM_SLOT[] = {
 };
 
 /* ---------- Dummy-Hooks bleiben unverändert ----------------*/
-uint16_t mbRegChargeCurrent=0, mbRegChargePower=1;
-void set_charging_current_mb(float,int){}
-void set_charging_power_mb(float,int){}
+//uint16_t mbRegChargeCurrent=0, mbRegChargePower=1;
+//void set_charging_current_mb(float,int){}
+//void set_charging_power_mb(float,int){}
 
 /* ---------- Callback – reagiert auf Schreibzugriffe --------*/
 uint16_t cbCtrl(TRegister* reg, uint16_t val)

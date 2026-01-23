@@ -504,14 +504,6 @@ void handleWifiScanRequest(AsyncWebServerRequest *request) {
     request->send(200, "application/json", response);
 }
 
-
-
-
-
-
-
-
-
 void A_Task_Web(void *pvParameter) {
     // Setup code
     server.serveStatic("/", SPIFFS, "/")

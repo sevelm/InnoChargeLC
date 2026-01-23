@@ -215,6 +215,8 @@ void set_charging_current(float current){
     * @return void
 */
 void set_charging_power(float power){
+    // Store to global first (visible to other tasks/ISRs)
+    g_setChargingPower_kW = power;
     if (power == 0) {
         set_control_pilot_100();  // 12V DC ohne PWM → Status B (WAIT)
     } else {
@@ -241,6 +243,7 @@ float get_current_from_duty(float duty) {
 
 */
 void turn_on_cp_relay(){
+    set_charging_current(16);
     digitalWrite(cp_relay_pin, HIGH);
     cp_relay_status = true;
 }
@@ -251,9 +254,11 @@ void turn_on_cp_relay(){
     * @return void
 
 */
-void turn_off_cp_relay(){
-    digitalWrite(cp_relay_pin, LOW);
-    cp_relay_status = false;
+void turn_off_cp_relay()
+{
+    set_control_pilot_100();
+    digitalWrite(cp_relay_pin, LOW); 
+    cp_relay_status = false; 
 }
 
 /**
@@ -378,33 +383,6 @@ float get_high_voltage() {
     sample_cp_window(&hv, nullptr);
     return hv;
 }
-
-
-
-
-
-
-/**
-    * @brief Get the low voltage
-    * 
-    * This function gets the low voltage
-    * @param void
-    * @return float low_voltage
-
-float get_low_voltage(){
-    float low_voltage=0;
-    // taskENTER_CRITICAL(&cp_adc_spinlock);
-    sync_cp_edge(FALLING_EDGE);
-    ets_delay_us(20);
-    low_voltage= (adc1_get_raw(cp_measure_channel)+adc1_get_raw(cp_measure_channel)+adc1_get_raw(cp_measure_channel))/3;
-    // taskEXIT_CRITICAL(&cp_adc_spinlock);
-    low_voltage= low_voltage*cp_scaling_factor_a+cp_scaling_factor_b;
-    // ESP_LOGI(CP_LOG, "Low Voltage: %f", low_voltage);
-    if(low_voltage<0){
-        low_voltage = low_voltage*1.5;
-    }
-    return low_voltage;
-}*/
 
 float get_low_voltage() {
     float lv = 0.0f;

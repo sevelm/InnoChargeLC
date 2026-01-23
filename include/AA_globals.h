@@ -56,9 +56,11 @@ typedef struct {
     charging_state_t state;         // eigentlicher CP-State
     bool vehicleConnected;          // Fahrzeug verbunden
     bool chargingActive;            // Ladevorgang aktiv
+    bool threePhaseActive;          // Ladevorgang mit 400VAC
 } charging_status_t;
 
 
+extern volatile float g_setChargingPower_kW;
 
 extern charging_status_t currentCpState;
 const char* cpStateToName(charging_state_t state);

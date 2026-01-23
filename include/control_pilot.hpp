@@ -5,6 +5,7 @@ void set_charging_current(float current);
 void set_charging_power(float power);
 void turn_on_cp_relay(void);
 void turn_off_cp_relay(void);
+void turn_off_cp_relay_now(void);
 void set_control_pilot_100(void);
 void set_control_pilot_0(void);
 float get_high_voltage(void);

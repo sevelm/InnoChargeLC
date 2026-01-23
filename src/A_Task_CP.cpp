@@ -80,9 +80,14 @@ volatile uint32_t lastStateChangeTimeState = 0;
 volatile uint32_t lastStateChangeTimeDuty = 0;
 volatile charging_status_t currentCpStateDelay;
 
-//----- Timer für Haltespannung der Relais
+//############### Timer für Haltespannung der Relais
 static TickType_t relayL1N_on_time = 0;
 static TickType_t relayL2L3_on_time = 0;
+static TickType_t relayL1N_off_time = (TickType_t)-1;
+static TickType_t relayL2L3_off_time = (TickType_t)-1;
+volatile float g_setChargingPower_kW = 0.0f;
+
+static const char* TAG = "Task_CP";
 
 /**************************************************************************
  *  Aktualisierte State‑Funktion mit integriertem RCM‑Latch & CP‑Schnüffeln
@@ -207,6 +212,9 @@ const char *cpStateToName(charging_state_t state){
 }
 
 
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
 void A_Task_CP(void *pvParameter){
 //////////////////////////////////////////////////// Setup ///////////////////////////////////////////////////
 //////////////////////////////////////////////////// Setup ///////////////////////////////////////////////////
@@ -251,13 +259,88 @@ while (1) {
             lastStateChangeTimeDuty = now;
         }
 
-      //  if (vCurrentCpState == StateC_Charge || vCurrentCpState == StateD_VentCharge) {
-      //      turn_relay_on();
-      //  } else {
-      //      turn_relay_off();
-      //  }
 
-        // Entweder weiterhin state-basiert:
+
+        // --- L1+N ON logic ---
+        if (vCurrentCpState.state == StateC_Charge || vCurrentCpState.state == StateD_VentCharge) {
+            if (relayL1N_on_time == 0) {
+                turn_relay_pwm_L1N(100.0f);                 // Anziehen
+                relayL1N_on_time = now;
+            } else if (now - relayL1N_on_time > pdMS_TO_TICKS(2000)) {
+                turn_relay_pwm_L1N(42.0f);                  // Haltestrom //42
+            }
+        } 
+        // --- L1+N OFF logic ---
+        if ( !(vCurrentCpState.state == StateC_Charge || vCurrentCpState.state == StateD_VentCharge)
+            || (relayL1N_off_time != (TickType_t)-1) )
+        {
+            // E/F -> immediate OFF (always)
+            if (vCurrentCpState.state == StateE_Error || vCurrentCpState.state == StateF_Fault) {
+                turn_relay_pwm_L1N(0.0f);
+                relayL1N_on_time  = 0;
+                relayL1N_off_time = (TickType_t)-1;
+            } else {
+                if (relayL1N_off_time == (TickType_t)-1) {
+                    if (relayL1N_on_time != 0) {                 // <-- key line
+                        relayL1N_off_time = now;                 // start timer
+                    } 
+                }
+                if (relayL1N_off_time != (TickType_t)-1) {
+                    if ((now - relayL1N_off_time) < pdMS_TO_TICKS(500)) {
+                        turn_relay_pwm_L1N(42.0f);               // self-hold during delay
+                    } else {
+                        turn_relay_pwm_L1N(0.0f);                // after delay -> OFF
+                        relayL1N_on_time  = 0;
+                        relayL1N_off_time = (TickType_t)-1;
+                    }
+                }
+            }
+        }
+
+
+
+        // --- L2+L3 ON logic ---
+        if (vCurrentCpState.state == StateC_Charge || vCurrentCpState.state == StateD_VentCharge) {
+            if (relayL2L3_on_time == 0) {
+                turn_relay_pwm_L2L3(100.0f);                 // Anziehen
+                relayL2L3_on_time = now;
+            } else if (now - relayL2L3_on_time > pdMS_TO_TICKS(2000)) {
+                turn_relay_pwm_L2L3(42.0f);                  // Haltestrom //42
+            }
+        } 
+        // --- L2+L3 OFF logic ---
+        if ( !(vCurrentCpState.state == StateC_Charge || vCurrentCpState.state == StateD_VentCharge)
+            || (relayL2L3_off_time != (TickType_t)-1) )
+        {
+            // E/F -> immediate OFF (always)
+            if (vCurrentCpState.state == StateE_Error || vCurrentCpState.state == StateF_Fault) {
+                turn_relay_pwm_L2L3(0.0f);
+                relayL2L3_on_time  = 0;
+                relayL2L3_off_time = (TickType_t)-1;
+            } else {
+                if (relayL2L3_off_time == (TickType_t)-1) {
+                    if (relayL2L3_on_time != 0) {                 // <-- key line
+                        relayL2L3_off_time = now;                 // start timer
+                    } 
+                }
+                if (relayL2L3_off_time != (TickType_t)-1) {
+                    if ((now - relayL2L3_off_time) < pdMS_TO_TICKS(500)) {
+                        turn_relay_pwm_L2L3(42.0f);               // self-hold during delay
+                    } else {
+                        turn_relay_pwm_L2L3(0.0f);                // after delay -> OFF
+                        relayL2L3_on_time  = 0;
+                        relayL2L3_off_time = (TickType_t)-1;
+                    }
+                }
+            }
+        }
+
+
+
+
+
+/*
+        // --- L1+N ON logic ---
         if (vCurrentCpState.state == StateC_Charge || vCurrentCpState.state == StateD_VentCharge) {
             // --- L1+N ---
             if (relayL1N_on_time == 0) {
@@ -266,7 +349,28 @@ while (1) {
             } else if (now - relayL1N_on_time > pdMS_TO_TICKS(2000)) {
                 turn_relay_pwm_L1N(42.0f);                  // Haltestrom //42
             }
+        } 
+        // --- L1+N OFF logic ---
+        if (!(vCurrentCpState.state == StateC_Charge || vCurrentCpState.state == StateD_VentCharge)) {
 
+            if (vCurrentCpState.state == StateE_Error || vCurrentCpState.state == StateF_Fault) {
+                turn_relay_pwm_L1N(0.0f);                      // sofort AUS
+                relayL1N_on_time = 0;
+                relayL1N_off_time = (TickType_t)-1;
+            } else {
+                if (relayL1N_off_time == (TickType_t)-1) {
+                    relayL1N_off_time = now;                   // Timer starten
+                } else if (now - relayL1N_off_time > pdMS_TO_TICKS(2000)) {
+                    turn_relay_pwm_L1N(0.0f);                  // nach 500ms AUS
+                    relayL1N_on_time = 0;
+                    relayL1N_off_time = (TickType_t)-1;
+                }
+            }
+        }
+
+
+
+        if (vCurrentCpState.state == StateC_Charge || vCurrentCpState.state == StateD_VentCharge) {
             // --- L2+L3 ---
             if (relayL2L3_on_time == 0) {
                 turn_relay_pwm_L2L3(100.0f);                // Anziehen
@@ -274,13 +378,30 @@ while (1) {
             } else if (now - relayL2L3_on_time > pdMS_TO_TICKS(2000)) {
                 turn_relay_pwm_L2L3(42.0f);                 // Haltestrom  //42
             }
-
-        } else {
-            turn_relay_pwm_L1N(0.0f);                       // Relais aus
-            turn_relay_pwm_L2L3(0.0f);
-            relayL1N_on_time = 0;
-            relayL2L3_on_time = 0;
+        } 
+        // --- L2+L3 OFF logic ---
+        if (!(vCurrentCpState.state == StateC_Charge || vCurrentCpState.state == StateD_VentCharge)) {
+            // Immediate OFF for E/F
+            if (vCurrentCpState.state == StateE_Error || vCurrentCpState.state == StateF_Fault) {
+                turn_relay_pwm_L2L3(0.0f);
+                relayL2L3_on_time = 0;
+                relayL2L3_off_time = 0;
+            }
+            // Delayed OFF for all other non-charge states
+            else {
+                if (relayL2L3_off_time == 0) {
+                    relayL2L3_off_time = now;                // start OFF timer
+                } else if (now - relayL2L3_off_time > pdMS_TO_TICKS(2000)) {
+                    turn_relay_pwm_L1N(0.0f);
+                    relayL2L3_on_time = 0;
+                    relayL2L3_off_time = 0;
+                }
+            }
         }
+
+*/
+
+
 
 
         // Ebenfalls feldweise kopieren (falls currentCpState nicht-volatile ist, trotzdem ok):
