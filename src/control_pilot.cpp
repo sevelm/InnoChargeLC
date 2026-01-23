@@ -100,6 +100,21 @@ int16_t get_cp_state_int() {
 
 
 
+void set_control_pilot_stop_B(void)
+{
+    // 1) Stop PWM generation
+    ledcWrite(cp_control_channel, 0);
+    ledcDetachPin(cp_gen_pin);          // <-- important: disable LEDC on that pin
+
+    // 2) Ensure the output transistor is OFF (Hi-Z / HIGH depending on your driver)
+    pinMode(cp_gen_pin, INPUT);         // Hi-Z (often best)
+    // alternatively:
+    // pinMode(cp_control_pin, OUTPUT);
+    // digitalWrite(cp_control_pin, HIGH);
+}
+
+
+
 /**
     * @brief Set the control pilot duty cycle
     * 
@@ -108,12 +123,14 @@ int16_t get_cp_state_int() {
     * @return void
 */
 void set_control_pilot_duty(float duty){
+    ledcAttachPin(cp_gen_pin, cp_control_channel);   // re-attach PWM
     setCpDuty = duty;
     int i_duty = 4095 * duty / 100;
     ledcWrite(cp_control_channel, i_duty);
 }
 
 void set_control_pilot_duty_Error(float duty){
+    ledcAttachPin(cp_gen_pin, cp_control_channel);   // re-attach PWM
     int i_duty = 4095 * duty / 100;
     ledcWrite(cp_control_channel, i_duty);
 }
@@ -200,7 +217,7 @@ float get_duty_from_power(float power_in_tenth_kw) {
 */
 void set_charging_current(float current){
     if (current == 0) {
-        set_control_pilot_100();  // 12V DC ohne PWM → Status B (WAIT)
+        set_control_pilot_100();  // Status B (WAIT)
     } else {
         float duty = get_duty_from_current(current);
         set_control_pilot_duty(duty);
@@ -218,7 +235,7 @@ void set_charging_power(float power){
     // Store to global first (visible to other tasks/ISRs)
     g_setChargingPower_kW = power;
     if (power == 0) {
-        set_control_pilot_100();  // 12V DC ohne PWM → Status B (WAIT)
+        set_control_pilot_stop_B();  // 0V DC ohne PWM → Status B (WAIT)
     } else {
         float duty = get_duty_from_power(power);
         set_control_pilot_duty(duty);
