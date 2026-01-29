@@ -217,15 +217,14 @@ void set_charging_current(float current){
     * @return void
 */
 void set_charging_power(float power){
-    // Store to global first (visible to other tasks/ISRs)
 
-    if ((power > 0.0f) && (power < 42.0f) && stateRelayL1N && stateRelayL2L3) {
+    if ((power > 0.0f) && (power < 42.0f) && ((stateRelayL1N && stateRelayL2L3) || (!stateRelayL1N && !stateRelayL2L3))) {
         switchToL1N = true;
         switchToL2L3 = false;
         g_setChargingPower_kW = power;
         set_control_pilot_100();  // Status B (WAIT)
     }
-    if ((power > 0.0f) && (power >= 36.0f) && stateRelayL1N && !stateRelayL2L3) {
+    if ((power > 0.0f) && (power >= 36.0f) && ((stateRelayL1N && !stateRelayL2L3) || (!stateRelayL1N && !stateRelayL2L3))) {
         switchToL2L3 = true;
         switchToL1N = false;
         g_setChargingPower_kW = power;
@@ -236,12 +235,13 @@ void set_charging_power(float power){
     if (switchToL1N || switchToL2L3) {
         return;
     }
-    
+
     // Limit by 1,1kW
     if (power > 0.0f && power < 11.0f) {
         return;
     }
-
+    
+    // Store to global first (visible to other tasks/ISRs)
     g_setChargingPower_kW = power;
 
     if (power == 0) {
