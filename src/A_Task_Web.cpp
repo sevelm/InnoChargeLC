@@ -427,6 +427,7 @@ ESP_LOGI(WEB_TAG,
       doc["cpState"]             = cpStateToName(currentCpState.state);
       doc["cpVoltage"]           = round(highVoltage * 10) / 10.0;
       doc["espTemp"]             = round(readEspTemperatureC() * 10) / 10.0;
+      doc["phaseMode"] = currentCpState.threePhaseActive ? "Three-phase" : "Single-phase";
       doc["targetChargeCurrent"] = (int)round(get_current_from_duty(getCpDuty));
       doc["targetChargePower"]   = round(get_power_from_duty(getCpDuty)) / 10.0;
       doc["cpRelayState"]        = get_cp_relays_status();

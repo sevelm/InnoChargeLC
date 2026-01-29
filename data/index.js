@@ -71,6 +71,9 @@ function processCommand(event) {
   if (obj.espTemp !== undefined && document.getElementById('espTemp') !== null) {
     document.getElementById('espTemp').innerHTML = obj.espTemp;
   }
+  if (obj.phaseMode !== undefined && document.getElementById('phaseMode') !== null) {
+    document.getElementById('phaseMode').innerHTML = obj.phaseMode;
+  }
   if (obj.targetChargeCurrent !== undefined && document.getElementById('targetChargeCurrent') !== null) {
     document.getElementById('targetChargeCurrent').innerHTML = obj.targetChargeCurrent;
   }

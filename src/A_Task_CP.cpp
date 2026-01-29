@@ -86,6 +86,12 @@ static TickType_t relayL2L3_on_time = 0;
 static TickType_t relayL1N_off_time = (TickType_t)-1;
 static TickType_t relayL2L3_off_time = (TickType_t)-1;
 volatile float g_setChargingPower_kW = 0.0f;
+volatile bool threePhaseActive = false;
+volatile bool stateRelayL1N = false;
+volatile bool stateRelayL2L3 = false;
+volatile bool switchToL1N = false;
+volatile bool switchToL2L3 = false;
+
 
 static const char* TAG = "Task_CP";
 
@@ -174,14 +180,19 @@ charging_status_t actualCpState(float highVoltage, float /*lowVoltage*/)
 
     /* --- PWM-Sonderfälle --- */
     int duty = round(get_control_pilot_duty());
-    if (duty == 100) { res.state = StateCustom_DutyCycle_100; res.chargingActive = false; }
-    else if (duty == 0) { res.state = StateCustom_DutyCycle_0; res.chargingActive = false; }
+    if (duty == 100 && !res.chargingActive) { res.state = StateCustom_DutyCycle_100; } //res.chargingActive = false; }
+    else if (duty == 0 && !res.chargingActive) { res.state = StateCustom_DutyCycle_0; } //res.chargingActive = false; }
 
     if (abs(hvInt - vA) <= off) { res.state = StateA_NotConnected; res.vehicleConnected = false; res.chargingActive = false; }
 
     /* --- CP-Relais OFF --- */
     if (get_cp_relays_status() != 1) {res.state = StateCustom_CpRelayOff; res.vehicleConnected = false; res.chargingActive = false; }
 
+    /**********************************************************************
+     *  1 Phasen oder 3 Phasen Ladung
+     **********************************************************************/
+    res.threePhaseActive = threePhaseActive;
+    
     return res;
 }
 
@@ -221,7 +232,9 @@ void A_Task_CP(void *pvParameter){
 //////////////////////////////////////////////////// Setup ///////////////////////////////////////////////////
 //////////////////////////////////////////////////// Setup ///////////////////////////////////////////////////
     init_control_pilot();
-    set_charging_current(16);
+    //set_charging_current(16);
+    set_charging_power(110);
+    threePhaseActive = true;
     turn_on_cp_relay();
     vTaskDelay(pdMS_TO_TICKS(5000));
 
@@ -239,7 +252,7 @@ while (1) {
         currentCpStateDelay.state            = tmp.state;
         currentCpStateDelay.vehicleConnected = tmp.vehicleConnected;
         currentCpStateDelay.chargingActive   = tmp.chargingActive;
-
+        currentCpStateDelay.threePhaseActive = tmp.threePhaseActive;
         TickType_t now = xTaskGetTickCount();
 
         /* State-Debounce 500 ms */
@@ -250,6 +263,7 @@ while (1) {
             vCurrentCpState.state            = currentCpStateDelay.state;    // Wechsel übernehmen
             vCurrentCpState.vehicleConnected = currentCpStateDelay.vehicleConnected;
             vCurrentCpState.chargingActive   = currentCpStateDelay.chargingActive;
+            vCurrentCpState.threePhaseActive = currentCpStateDelay.threePhaseActive;
             lastStateChangeTimeDuty = now;                                    // Duty erst 500 ms später
         }
 
@@ -258,6 +272,20 @@ while (1) {
             getCpDuty = get_control_pilot_duty();
             lastStateChangeTimeDuty = now;
         }
+
+
+        if (!stateRelayL1N && !stateRelayL2L3 && (switchToL1N || switchToL2L3)) {
+            if (switchToL1N) {
+                threePhaseActive = false;
+            } else if (switchToL2L3) {
+                threePhaseActive = true;
+            }
+            float duty = get_duty_from_power(g_setChargingPower_kW);
+            set_control_pilot_duty(duty);  
+            switchToL1N = false;
+            switchToL2L3 = false;
+        }
+
 
 
 
@@ -300,7 +328,7 @@ while (1) {
 
 
         // --- L2+L3 ON logic ---
-        if (vCurrentCpState.state == StateC_Charge || vCurrentCpState.state == StateD_VentCharge) {
+        if (threePhaseActive && (vCurrentCpState.state == StateC_Charge || vCurrentCpState.state == StateD_VentCharge)) {
             if (relayL2L3_on_time == 0) {
                 turn_relay_pwm_L2L3(100.0f);                 // Anziehen
                 relayL2L3_on_time = now;
@@ -336,70 +364,13 @@ while (1) {
         }
 
 
+// --- Stop charging when power drops below 4kW (only if currently charging) ---
+//if (vCurrentCpState.chargingActive && (g_setChargingPower_kW < 40.0f)) {
+//    set_control_pilot_100();      // your current "stop" action
+//}
 
 
 
-/*
-        // --- L1+N ON logic ---
-        if (vCurrentCpState.state == StateC_Charge || vCurrentCpState.state == StateD_VentCharge) {
-            // --- L1+N ---
-            if (relayL1N_on_time == 0) {
-                turn_relay_pwm_L1N(100.0f);                 // Anziehen
-                relayL1N_on_time = now;
-            } else if (now - relayL1N_on_time > pdMS_TO_TICKS(2000)) {
-                turn_relay_pwm_L1N(42.0f);                  // Haltestrom //42
-            }
-        } 
-        // --- L1+N OFF logic ---
-        if (!(vCurrentCpState.state == StateC_Charge || vCurrentCpState.state == StateD_VentCharge)) {
-
-            if (vCurrentCpState.state == StateE_Error || vCurrentCpState.state == StateF_Fault) {
-                turn_relay_pwm_L1N(0.0f);                      // sofort AUS
-                relayL1N_on_time = 0;
-                relayL1N_off_time = (TickType_t)-1;
-            } else {
-                if (relayL1N_off_time == (TickType_t)-1) {
-                    relayL1N_off_time = now;                   // Timer starten
-                } else if (now - relayL1N_off_time > pdMS_TO_TICKS(2000)) {
-                    turn_relay_pwm_L1N(0.0f);                  // nach 500ms AUS
-                    relayL1N_on_time = 0;
-                    relayL1N_off_time = (TickType_t)-1;
-                }
-            }
-        }
-
-
-
-        if (vCurrentCpState.state == StateC_Charge || vCurrentCpState.state == StateD_VentCharge) {
-            // --- L2+L3 ---
-            if (relayL2L3_on_time == 0) {
-                turn_relay_pwm_L2L3(100.0f);                // Anziehen
-                relayL2L3_on_time = now;
-            } else if (now - relayL2L3_on_time > pdMS_TO_TICKS(2000)) {
-                turn_relay_pwm_L2L3(42.0f);                 // Haltestrom  //42
-            }
-        } 
-        // --- L2+L3 OFF logic ---
-        if (!(vCurrentCpState.state == StateC_Charge || vCurrentCpState.state == StateD_VentCharge)) {
-            // Immediate OFF for E/F
-            if (vCurrentCpState.state == StateE_Error || vCurrentCpState.state == StateF_Fault) {
-                turn_relay_pwm_L2L3(0.0f);
-                relayL2L3_on_time = 0;
-                relayL2L3_off_time = 0;
-            }
-            // Delayed OFF for all other non-charge states
-            else {
-                if (relayL2L3_off_time == 0) {
-                    relayL2L3_off_time = now;                // start OFF timer
-                } else if (now - relayL2L3_off_time > pdMS_TO_TICKS(2000)) {
-                    turn_relay_pwm_L1N(0.0f);
-                    relayL2L3_on_time = 0;
-                    relayL2L3_off_time = 0;
-                }
-            }
-        }
-
-*/
 
 
 
@@ -408,6 +379,7 @@ while (1) {
         currentCpState.state            = vCurrentCpState.state;
         currentCpState.vehicleConnected = vCurrentCpState.vehicleConnected;
         currentCpState.chargingActive   = vCurrentCpState.chargingActive;
+        currentCpState.threePhaseActive = vCurrentCpState.threePhaseActive;
 
         vTaskDelay(5 / portTICK_PERIOD_MS); // Adjusted delay
 }

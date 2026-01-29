@@ -294,6 +294,7 @@ void A_Task_MB(void*)
         /* ---------- CP-State nach TCP ------------------------- */
         mbTCP.Hreg(IO_TCP_BASE +  0, vCurrentCpState.vehicleConnected);
         mbTCP.Hreg(IO_TCP_BASE +  1, vCurrentCpState.chargingActive);
+        mbTCP.Hreg(IO_TCP_BASE +  2, vCurrentCpState.threePhaseActive);
         mbTCP.Hreg(IO_TCP_BASE + 10, get_cp_state_int());
         mbTCP.Hreg(IO_TCP_BASE + 11, digitalRead(BTN_DIN) == LOW);
 

@@ -98,23 +98,6 @@ int16_t get_cp_state_int() {
 }
 
 
-
-
-void set_control_pilot_stop_B(void)
-{
-    // 1) Stop PWM generation
-    ledcWrite(cp_control_channel, 0);
-    ledcDetachPin(cp_gen_pin);          // <-- important: disable LEDC on that pin
-
-    // 2) Ensure the output transistor is OFF (Hi-Z / HIGH depending on your driver)
-    pinMode(cp_gen_pin, INPUT);         // Hi-Z (often best)
-    // alternatively:
-    // pinMode(cp_control_pin, OUTPUT);
-    // digitalWrite(cp_control_pin, HIGH);
-}
-
-
-
 /**
     * @brief Set the control pilot duty cycle
     * 
@@ -176,7 +159,9 @@ float get_power_from_duty(float duty_cycle) {
 //ESP_LOGI(CP_LOG, "Duty Cycle: %f", duty_cycle);
     if (duty_cycle <= 0) return 0.0;                        // Duty cycle <= 0% -> 0 power
     float power_kw = 0.0;
-    if (duty_cycle < -1) {                                 //########################################## STATUS vom 230V schütz abfragen!!!!!!!!!!!!!!!!!!!!!!!!
+    //if (duty_cycle < -1) {                                 //########################################## STATUS vom 230V schütz abfragen!!!!!!!!!!!!!!!!!!!!!!!!
+    if (!threePhaseActive) {
+
         power_kw = (duty_cycle * 0.6) * 230 / 1000;  
   //  ESP_LOGI(CP_LOG, "230 ");       // Reverse of (W / 230) / 0.6
     } else {                                                // For duty cycle > 26.7%
@@ -185,7 +170,6 @@ float get_power_from_duty(float duty_cycle) {
     }
   //  ESP_LOGI(CP_LOG, "Aktuel Power %f", power_kw * 10);       // Reverse of (W / 230) / 0.6
     return power_kw * 10;                                   // Convert kW to 1/10 kW
-
 }
 
 
@@ -201,7 +185,8 @@ float get_power_from_duty(float duty_cycle) {
 float get_duty_from_power(float power_in_tenth_kw) {
     if (power_in_tenth_kw <= 0) return 0.0;             // Negative or zero power -> 0% duty cycle
     float power_kw = power_in_tenth_kw / 10.0;          // Convert 1/10 kW to kW
-    if (power_kw <= 4.1) {                              // For power <= 4.1 kW   
+    //if (power_kw <= 4.1) {                              // For power <= 4.1 kW   
+    if (!threePhaseActive) {   
         return (power_kw * 1000 / 230) / 0.6;           // Use (W / 230) / 0.6
     } else {                                            // For power > 4.2 kW
         return (power_kw * 1000 / 692) / 0.6;           // Use (W / 692) / 0.6
@@ -233,9 +218,34 @@ void set_charging_current(float current){
 */
 void set_charging_power(float power){
     // Store to global first (visible to other tasks/ISRs)
+
+    if ((power > 0.0f) && (power < 42.0f) && stateRelayL1N && stateRelayL2L3) {
+        switchToL1N = true;
+        switchToL2L3 = false;
+        g_setChargingPower_kW = power;
+        set_control_pilot_100();  // Status B (WAIT)
+    }
+    if ((power > 0.0f) && (power >= 36.0f) && stateRelayL1N && !stateRelayL2L3) {
+        switchToL2L3 = true;
+        switchToL1N = false;
+        g_setChargingPower_kW = power;
+        set_control_pilot_100();  // Status B (WAIT)
+    }
+
+    // -------- STOP further processing when switching is requested --------
+    if (switchToL1N || switchToL2L3) {
+        return;
+    }
+    
+    // Limit by 1,1kW
+    if (power > 0.0f && power < 11.0f) {
+        return;
+    }
+
     g_setChargingPower_kW = power;
+
     if (power == 0) {
-        set_control_pilot_stop_B();  // 0V DC ohne PWM → Status B (WAIT)
+        set_control_pilot_100();  // Status B (WAIT)
     } else {
         float duty = get_duty_from_power(power);
         set_control_pilot_duty(duty);
@@ -411,22 +421,24 @@ float get_low_voltage() {
 
 // Control AC-Relay
 
-void turn_relay_on() {
-    digitalWrite(RELAY_PIN_L1_N, HIGH);
-    digitalWrite(RELAY_PIN_L2_L3, HIGH);
-}
+//void turn_relay_on() {
+//    digitalWrite(RELAY_PIN_L1_N, HIGH);
+//    digitalWrite(RELAY_PIN_L2_L3, HIGH);
+//}
 
-void turn_relay_off() {
-    digitalWrite(RELAY_PIN_L1_N, LOW);
-    digitalWrite(RELAY_PIN_L2_L3, LOW);
-}
+//void turn_relay_off() {
+//    digitalWrite(RELAY_PIN_L1_N, LOW);
+//    digitalWrite(RELAY_PIN_L2_L3, LOW);
+//}
 
 void turn_relay_pwm_L1N(float duty) {
+    stateRelayL1N = (duty > 0.1f);   // alles >0% gilt als EIN
     int i_duty = 4095 * duty / 100.0f;
     ledcWrite(RELAY_CH_L1_N, i_duty);
 }
 
 void turn_relay_pwm_L2L3(float duty) {
+    stateRelayL2L3 = (duty > 0.1f);   // alles >0% gilt als EIN
     int i_duty = 4095 * duty / 100.0f;
     ledcWrite(RELAY_CH_L2_L3, i_duty);
 }

@@ -59,8 +59,17 @@ typedef struct {
     bool threePhaseActive;          // Ladevorgang mit 400VAC
 } charging_status_t;
 
-
+// Schalten von 230VAC zu 400VAC
 extern volatile float g_setChargingPower_kW;
+extern volatile bool threePhaseActive;
+extern volatile bool stateRelayL1N;
+extern volatile bool stateRelayL2L3;
+extern volatile bool switchToL1N;
+extern volatile bool switchToL2L3;
+
+
+
+
 
 extern charging_status_t currentCpState;
 const char* cpStateToName(charging_state_t state);
