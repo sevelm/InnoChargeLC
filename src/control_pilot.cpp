@@ -141,46 +141,40 @@ float get_control_pilot_duty(){
 float get_duty_from_current(float current) {
     if (current < 0) return 0.0;                    // Negative values -> 0A
     if (current < 5 && current > 0) current = 5;    // Below 5A -> use 5A
-    if (current > 22) current = 22;                 // Above 22A -> use 22A
+    if (current > 32) current = 32;                 // Above 22A -> use 22A
     // Calculate duty cycle based on current
     return (current <= 51) ? current / 0.6 : current / 2.5 + 64;
 }
 
-/**  ########################################## STATUS vom 230V schütz abfragen!!!!!!!!!!!!!!!!!!!!!!!!
- * @brief Get the power in 1/10 kW from the duty cycle
- * 
- * This function calculates the power (in 1/10 kW) based on the duty cycle.
- * The formula depends on the duty cycle range.
- * 
- * @param float duty_cycle Duty cycle as a percentage
- * @return float power_in_tenth_kw Power in 1/10 kW (e.g., 42 = 4.2 kW)
+/**  
+     * @brief Get the power in 1/10 kW from the duty cycle
+     * 
+     * This function calculates the power (in 1/10 kW) based on the duty cycle.
+     * The formula depends on the duty cycle range.
+     * 
+     * @param float duty_cycle Duty cycle as a percentage
+     * @return float power_in_tenth_kw Power in 1/10 kW (e.g., 42 = 4.2 kW)
  */
 float get_power_from_duty(float duty_cycle) { 
-//ESP_LOGI(CP_LOG, "Duty Cycle: %f", duty_cycle);
     if (duty_cycle <= 0) return 0.0;                        // Duty cycle <= 0% -> 0 power
     float power_kw = 0.0;
-    //if (duty_cycle < -1) {                                 //########################################## STATUS vom 230V schütz abfragen!!!!!!!!!!!!!!!!!!!!!!!!
     if (!threePhaseActive) {
-
         power_kw = (duty_cycle * 0.6) * 230 / 1000;  
-  //  ESP_LOGI(CP_LOG, "230 ");       // Reverse of (W / 230) / 0.6
     } else {                                                // For duty cycle > 26.7%
         power_kw = (duty_cycle * 0.6) * 692 / 1000;         // Reverse of (W / 692) / 0.6
-  //  ESP_LOGI(CP_LOG, "400 ");       // Reverse of (W / 230) / 0.6
     }
-  //  ESP_LOGI(CP_LOG, "Aktuel Power %f", power_kw * 10);       // Reverse of (W / 230) / 0.6
     return power_kw * 10;                                   // Convert kW to 1/10 kW
 }
 
 
 /**
- * @brief Get the duty cycle from the power input
- * 
- * This function calculates the duty cycle based on the power input.
- * The formula depends on the input range.
- * 
- * @param float power_in_tenth_kw Input power in 1/10 kW (e.g., 4.2 kW = 42)
- * @return float duty_cycle Duty cycle as a percentage
+     * @brief Get the duty cycle from the power input
+     * 
+     * This function calculates the duty cycle based on the power input.
+     * The formula depends on the input range.
+     * 
+     * @param float power_in_tenth_kw Input power in 1/10 kW (e.g., 4.2 kW = 42)
+     * @return float duty_cycle Duty cycle as a percentage
  */
 float get_duty_from_power(float power_in_tenth_kw) {
     if (power_in_tenth_kw <= 0) return 0.0;             // Negative or zero power -> 0% duty cycle
@@ -238,9 +232,9 @@ void set_charging_power(float power){
 
     // Limit by 1,1kW
     if (power > 0.0f && power < 11.0f) {
-        return;
+        power = 11.0f;
     }
-    
+
     // Store to global first (visible to other tasks/ISRs)
     g_setChargingPower_kW = power;
 
@@ -281,12 +275,30 @@ void turn_on_cp_relay(){
     * @return void
 
 */
-void turn_off_cp_relay()
-{
-    set_control_pilot_100();
-    digitalWrite(cp_relay_pin, LOW); 
-    cp_relay_status = false; 
+void turn_off_cp_relay(void) {
+    set_control_pilot_100(); // sofort pausieren
+    // one-shot timer, created once and reused
+    static esp_timer_handle_t t = NULL;
+    if (t == NULL) {
+        const esp_timer_create_args_t args = {
+            .callback = [](void* arg) {
+                (void)arg;
+                digitalWrite(cp_relay_pin, LOW);
+                cp_relay_status = false;
+            },
+            .arg = NULL,
+            .dispatch_method = ESP_TIMER_TASK,
+            .name = "cpOff"
+        };
+        esp_timer_create(&args, &t);
+    }
+    // (re)start 1s delay; repeated calls restart the delay
+    esp_timer_stop(t);
+    esp_timer_start_once(t, 1000000); // 1,000,000 µs = 1 s
 }
+
+
+
 
 /**
     * @brief Set the control pilot to standby (100%)

@@ -67,10 +67,6 @@ extern volatile bool stateRelayL2L3;
 extern volatile bool switchToL1N;
 extern volatile bool switchToL2L3;
 
-
-
-
-
 extern charging_status_t currentCpState;
 const char* cpStateToName(charging_state_t state);
 

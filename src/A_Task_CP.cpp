@@ -85,6 +85,8 @@ static TickType_t relayL1N_on_time = 0;
 static TickType_t relayL2L3_on_time = 0;
 static TickType_t relayL1N_off_time = (TickType_t)-1;
 static TickType_t relayL2L3_off_time = (TickType_t)-1;
+static TickType_t phaseSwitchDelay = 0;
+
 volatile float g_setChargingPower_kW = 0.0f;
 volatile bool threePhaseActive = false;
 volatile bool stateRelayL1N = false;
@@ -274,6 +276,41 @@ while (1) {
         }
 
 
+
+
+        // Require condition to be true continuously for 2 seconds
+        const bool cond = (!stateRelayL1N && !stateRelayL2L3 && (switchToL1N || switchToL2L3));
+
+        if (cond) {
+            if (phaseSwitchDelay == 0) {
+                phaseSwitchDelay = now;  // start timing
+            }
+
+            if ((now - phaseSwitchDelay) >= pdMS_TO_TICKS(2000)) {
+                // 2s stable -> resume CP
+                if (switchToL1N) {
+                    threePhaseActive = false;
+                } else if (switchToL2L3) {
+                    threePhaseActive = true;
+                }
+
+                float duty = get_duty_from_power(g_setChargingPower_kW);
+                set_control_pilot_duty(duty);
+
+                switchToL1N = false;
+                switchToL2L3 = false;
+                phaseSwitchDelay = 0; // reset for next time
+            }
+        } else {
+            phaseSwitchDelay = 0; // condition broke -> reset timer
+        }
+
+
+
+
+
+
+/*
         if (!stateRelayL1N && !stateRelayL2L3 && (switchToL1N || switchToL2L3)) {
             if (switchToL1N) {
                 threePhaseActive = false;
@@ -285,7 +322,7 @@ while (1) {
             switchToL1N = false;
             switchToL2L3 = false;
         }
-
+*/
 
 
 

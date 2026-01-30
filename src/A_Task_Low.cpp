@@ -50,13 +50,13 @@ void A_Task_Low(void *pvParameter){
       
      //   ESP_LOGI(CP_LOGI, "+++++++ IO9 Status: %s", inputState ? "HIGH" : "LOW");
 
-        ESP_LOGI(CP_LOGI,
-         "ChargePower: %.2f kW | switchToL1N: %s | switchToL2L3: %s | stateL1N: %s | stateL2L3: %s",
-         g_setChargingPower_kW,
-         switchToL1N ? "true" : "false",
-         switchToL2L3 ? "true" : "false",
-         stateRelayL1N ? "true" : "false",
-         stateRelayL2L3 ? "true" : "false");
+     //   ESP_LOGI(CP_LOGI,
+     //    "ChargePower: %.2f kW | switchToL1N: %s | switchToL2L3: %s | stateL1N: %s | stateL2L3: %s",
+     //    g_setChargingPower_kW,
+     //    switchToL1N ? "true" : "false",
+     //    switchToL2L3 ? "true" : "false",
+     //    stateRelayL1N ? "true" : "false",
+     //    stateRelayL2L3 ? "true" : "false");
 
 
 
