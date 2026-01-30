@@ -384,7 +384,7 @@ float get_high_voltage(){
     high_voltage= high_voltage*cp_scaling_factor_a+cp_scaling_factor_b;
     return high_voltage;
 }
-*/
+
 // Erfasst innerhalb ~1ms eine ganze PWM-Periode und liefert High/Low stabil
 static inline void sample_cp_window(float* out_high, float* out_low) {
     const int period_us = 1000;     // 1kHz PWM
@@ -414,6 +414,45 @@ static inline void sample_cp_window(float* out_high, float* out_low) {
         *out_low = lv;
     }
 }
+*/
+
+
+static inline void sample_cp_window(float* out_high, float* out_low) {
+    const int period_us = 1000;     // 1kHz PWM
+    const int N = 32;               // 32 reicht meistens völlig
+    const int step_us = period_us / N;
+
+    int max_raw = INT32_MIN;
+    int min_raw = INT32_MAX;
+
+    for (int i = 0; i < N; ++i) {
+        int r;
+
+        taskENTER_CRITICAL(&cp_adc_spinlock);
+        r = adc1_get_raw(cp_measure_channel);
+        taskEXIT_CRITICAL(&cp_adc_spinlock);
+
+        if (r > max_raw) max_raw = r;
+        if (r < min_raw) min_raw = r;
+
+        ets_delay_us(step_us);
+    }
+
+    const float a = cp_scaling_factor_a, b = cp_scaling_factor_b;
+    if (out_high) *out_high = max_raw * a + b;
+
+    if (out_low) {
+        float lv = min_raw * a + b;
+        if (lv < 0) lv *= 1.5f;
+        *out_low = lv;
+    }
+}
+
+
+
+
+
+
 
 // ------- Drop-in Replacements -------
 

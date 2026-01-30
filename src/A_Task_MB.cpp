@@ -300,7 +300,9 @@ void A_Task_MB(void*)
 
         /* ---------- Sleep / Scheduler-Yield ------------------- */
         mbTCP.task();
-        vTaskDelay(30 / portTICK_PERIOD_MS); // Adjusted delay
+        //vTaskDelay(30 / portTICK_PERIOD_MS); // Adjusted delay
+
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
 
