@@ -216,13 +216,13 @@ void set_charging_power(float power){
         switchToL1N = true;
         switchToL2L3 = false;
         g_setChargingPower_kW = power;
-        set_control_pilot_100();  // Status B (WAIT)
+        if (stateRelayL1N || stateRelayL2L3) set_control_pilot_100();  // Status B (WAIT)
     }
     if ((power > 0.0f) && (power >= 36.0f) && ((stateRelayL1N && !stateRelayL2L3) || (!stateRelayL1N && !stateRelayL2L3))) {
         switchToL2L3 = true;
         switchToL1N = false;
         g_setChargingPower_kW = power;
-        set_control_pilot_100();  // Status B (WAIT)
+        if (stateRelayL1N || stateRelayL2L3) set_control_pilot_100();  // Status B (WAIT)
     }
 
     // -------- STOP further processing when switching is requested --------
