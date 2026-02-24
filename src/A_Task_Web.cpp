@@ -99,7 +99,10 @@ WebSocketsServer webSocket = WebSocketsServer(81);
 void webSocketEvent(byte num, WStype_t type, uint8_t * payload, size_t length) {
     switch (type) {
         case WStype_DISCONNECTED:
-            subscribedClients.erase(num);
+            if (xSemaphoreTake(g_wsSubsMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+                subscribedClients.erase(num);
+                xSemaphoreGive(g_wsSubsMutex);
+            }
             ESP_LOGI(WEB_TAG, "Client %s disconnected", String(num).c_str());
             break;
         case WStype_CONNECTED:
@@ -137,10 +140,16 @@ void webSocketEvent(byte num, WStype_t type, uint8_t * payload, size_t length) {
 
                     if (strcmp(action, "subscribeUpdates") == 0) {
                         const char* page = doc["page"];
-                        subscribedClients[num] = std::string(page);
+                        if (xSemaphoreTake(g_wsSubsMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+                            subscribedClients[num] = std::string(page);
+                            xSemaphoreGive(g_wsSubsMutex);
+                        }
                   //      ESP_LOGI(WEB_TAG, "Client %u subscribed to updates", num);
                     } else if (strcmp(action, "unsubscribeUpdates") == 0) {
-                        subscribedClients.erase(num);
+                        if (xSemaphoreTake(g_wsSubsMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+                            subscribedClients.erase(num);
+                            xSemaphoreGive(g_wsSubsMutex);
+                        }
                   //      ESP_LOGI(WEB_TAG, "Client %u unsubscribed from updates", num);
                     } else if (strcmp(action, "setCpRelayState") == 0 && doc["state"].is<bool>()) {
                         bool state = doc["state"].as<bool>();

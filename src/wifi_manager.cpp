@@ -4,6 +4,7 @@
 #include <freertos/task.h>
 #include <esp_wifi.h>
 #include <esp_mac.h>
+#include <esp_timer.h>
 
 #include "wifi_manager.hpp"
 #include "AA_globals.h"
@@ -14,6 +15,11 @@ const char *WIFI_TAG = "WIFI MANAGER : ";
 int retry_interval = 1000;
 int max_retry = 0;
 int retry_count = 0;
+static esp_timer_handle_t wifi_retry_timer = nullptr;
+
+static void wifi_retry_cb(void *) {
+    esp_wifi_connect();
+}
 
 wifi_sta_state_t current_wifi_sta_state = {
     .connected = false,
@@ -193,8 +199,12 @@ static void wifi_sta_event_handler(void *arg, esp_event_base_t event_base, int32
         {
             retry_count++;
             ESP_LOGI(WIFI_TAG, "Retrying in %d ms", retry_interval);
-            vTaskDelay(retry_interval / portTICK_PERIOD_MS);
-            esp_wifi_connect();
+            if (wifi_retry_timer) {
+                esp_timer_stop(wifi_retry_timer);
+                esp_timer_start_once(wifi_retry_timer, (uint64_t)retry_interval * 1000ULL);
+            } else {
+                esp_wifi_connect();
+            }
         }
     }
     else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP)
@@ -217,6 +227,16 @@ static void wifi_sta_event_handler(void *arg, esp_event_base_t event_base, int32
 // Start WiFi and create network interface
 void wifi_init_sta(wifi_sta_start_config_t *config) {
     ESP_LOGI(WIFI_TAG, "Initializing WiFi station");
+
+    if (!wifi_retry_timer) {
+        const esp_timer_create_args_t targs = {
+            .callback = &wifi_retry_cb,
+            .arg = nullptr,
+            .dispatch_method = ESP_TIMER_TASK,
+            .name = "wifi_retry"
+        };
+        ESP_ERROR_CHECK(esp_timer_create(&targs, &wifi_retry_timer));
+    }
 
     // Create the network interface only if it does not already exist
     esp_netif_t* netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
@@ -334,6 +354,10 @@ void wifi_init_sta(wifi_sta_start_config_t *config) {
 // Stop WiFi and release network interface
 void wifi_stop_sta() {
     ESP_LOGI(WIFI_TAG, "Stopping wifi station");
+
+    if (wifi_retry_timer) {
+        esp_timer_stop(wifi_retry_timer);
+    }
 
     // Stop WiFi
     esp_err_t err = esp_wifi_stop();

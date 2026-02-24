@@ -258,8 +258,14 @@ while (1) {
         TickType_t now = xTaskGetTickCount();
 
         /* State-Debounce 500 ms */
-        if (vCurrentCpState.state == currentCpStateDelay.state) {
-            lastStateChangeTimeState = now;                       // gleich → Timer neu
+        const bool sameCpStatus =
+            (vCurrentCpState.state            == currentCpStateDelay.state) &&
+            (vCurrentCpState.vehicleConnected == currentCpStateDelay.vehicleConnected) &&
+            (vCurrentCpState.chargingActive   == currentCpStateDelay.chargingActive) &&
+            (vCurrentCpState.threePhaseActive == currentCpStateDelay.threePhaseActive);
+
+        if (sameCpStatus) {
+            lastStateChangeTimeState = now;                       // gleich -> Timer neu
         } else if (now - lastStateChangeTimeState >= pdMS_TO_TICKS(500)) {
             // feldweise kopieren wegen volatile
             vCurrentCpState.state            = currentCpStateDelay.state;    // Wechsel übernehmen
