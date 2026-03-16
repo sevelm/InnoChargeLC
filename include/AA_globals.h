@@ -6,6 +6,7 @@
 #include <wifi_manager.hpp>
 #include <Preferences.h>
 #include <esp_wifi.h> 
+#include "freertos/FreeRTOS.h"
 
 
 extern Preferences preferences;
@@ -66,6 +67,10 @@ extern volatile bool stateRelayL1N;
 extern volatile bool stateRelayL2L3;
 extern volatile bool switchToL1N;
 extern volatile bool switchToL2L3;
+extern volatile uint16_t delayedPhaseSwitchingSeconds;
+extern volatile bool phaseSwitchAllowed;
+extern volatile uint16_t phaseSwitchDelayRemainingSeconds;
+extern volatile TickType_t lastSuccessfulPhaseSwitch;
 
 extern charging_status_t currentCpState;
 const char* cpStateToName(charging_state_t state);
@@ -82,6 +87,7 @@ extern float setCpDuty;
 extern NeoPixelBus<NeoGrbFeature, Neo800KbpsMethod> strip;
 extern wifi_sta_start_config_t wifi_sta_config;
 extern int16_t mbTcpRegRead09;          //LED-Status-Steuern
+extern volatile int ledDummyState;
 
 // Dipswitch 2 (rechts) 
 constexpr gpio_num_t RESCUE_PIN = GPIO_NUM_2;   

@@ -28,6 +28,7 @@ const char *CP_LOGI = "Task_Low: ";
 //////////////////////////////////////////////////// Setup ///////////////////////////////////////////////////
 void A_Task_Low(void *pvParameter){
  char eth_ip[16];
+ static int dummyCounter = 0;
 
 
     pinMode(INPUT_PIN, INPUT_PULLUP);
@@ -44,21 +45,37 @@ void A_Task_Low(void *pvParameter){
         get_wifi_ip(eth_ip);
         ESP_LOGI(CP_LOGI, "WIFI IP: %s", eth_ip);
 
+
+/* Für Messe Animation 
+        ESP_LOGI(CP_LOGI, "DummyCounter: %d", dummyCounter);
+            dummyCounter++;
+        if (dummyCounter >= 27) {   // 40 * 3 Sekunden = 2 Minuten
+            dummyCounter = 0;
+            ledDummyState++;
+
+            if (ledDummyState > 8) {
+                ledDummyState = 1;
+            }
+        }
+*/
+
+
+
+
         bool inputState = digitalRead(INPUT_PIN);  
 
         // Status ausgeben
       
      //   ESP_LOGI(CP_LOGI, "+++++++ IO9 Status: %s", inputState ? "HIGH" : "LOW");
 
-     //   ESP_LOGI(CP_LOGI,
-     //    "ChargePower: %.2f kW | switchToL1N: %s | switchToL2L3: %s | stateL1N: %s | stateL2L3: %s",
-     //    g_setChargingPower_kW,
-     //    switchToL1N ? "true" : "false",
-     //    switchToL2L3 ? "true" : "false",
-     //    stateRelayL1N ? "true" : "false",
-     //    stateRelayL2L3 ? "true" : "false");
-
-
+        ESP_LOGI(CP_LOGI,
+         "ChargePower: %.2f kW | switchToL1N: %s | switchToL2L3: %s | stateL1N: %s | stateL2L3: %s | phaseSwitchAllowed: %s",
+         g_setChargingPower_kW,
+         switchToL1N ? "true" : "false",
+         switchToL2L3 ? "true" : "false",
+         stateRelayL1N ? "true" : "false",
+         stateRelayL2L3 ? "true" : "false",
+         phaseSwitchAllowed ? "true" : "false");
 
 
 
@@ -100,7 +117,10 @@ void A_Task_Low(void *pvParameter){
      //   ESP_LOGI(CP_LOGI, "RFID Error: %d", rfid.error);
      //   ESP_LOGI(CP_LOGI, "SDM Error: %d", sdm.error);
 
+      
+
         vTaskDelay(3000/portTICK_PERIOD_MS); // verzögere den Task um sekunden
 
     }
 }
+

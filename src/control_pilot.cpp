@@ -40,6 +40,9 @@
 bool cp_relay_status = false; 
 static portMUX_TYPE cp_adc_spinlock = portMUX_INITIALIZER_UNLOCKED;
 
+static constexpr float PHASE_SWITCH_TO_1P_DEFAULT = 37.0f;   // 3.7 kW
+static constexpr float PHASE_SWITCH_TO_3P_DEFAULT = 42.0f;   // 4.2 kW
+
 const char *CP_LOG = "Control Pilot: ";
 /**
     * @brief Initialize the control pilot
@@ -211,20 +214,21 @@ void set_charging_current(float current){
     * @return void
 */
 void set_charging_power(float power){
-
-    if ((power > 0.0f) && (power < 42.0f) && ((stateRelayL1N && stateRelayL2L3) || (!stateRelayL1N && !stateRelayL2L3))) {
-        switchToL1N = true;
-        switchToL2L3 = false;
-        g_setChargingPower_kW = power;
-        if (stateRelayL1N || stateRelayL2L3) set_control_pilot_100();  // Status B (WAIT)
+    if (phaseSwitchAllowed) {
+        if ((power > 0.0f) && (power < PHASE_SWITCH_TO_1P_DEFAULT) && ((stateRelayL1N && stateRelayL2L3) || (!stateRelayL1N && !stateRelayL2L3))) {
+            switchToL1N = true;
+            switchToL2L3 = false;
+            g_setChargingPower_kW = power;
+            if (stateRelayL1N || stateRelayL2L3) set_control_pilot_100();  // Status B (WAIT)
+        }
+        if ((power > 0.0f) && (power >= PHASE_SWITCH_TO_3P_DEFAULT) && ((stateRelayL1N && !stateRelayL2L3) || (!stateRelayL1N && !stateRelayL2L3))) {
+            switchToL2L3 = true;
+            switchToL1N = false;
+            g_setChargingPower_kW = power;
+            if (stateRelayL1N || stateRelayL2L3) set_control_pilot_100();  // Status B (WAIT)
+        }
     }
-    if ((power > 0.0f) && (power >= 36.0f) && ((stateRelayL1N && !stateRelayL2L3) || (!stateRelayL1N && !stateRelayL2L3))) {
-        switchToL2L3 = true;
-        switchToL1N = false;
-        g_setChargingPower_kW = power;
-        if (stateRelayL1N || stateRelayL2L3) set_control_pilot_100();  // Status B (WAIT)
-    }
-
+    
     // -------- STOP further processing when switching is requested --------
     if (switchToL1N || switchToL2L3) {
         return;
@@ -241,9 +245,20 @@ void set_charging_power(float power){
     if (power == 0) {
         set_control_pilot_100();  // Status B (WAIT)
     } else {
+        // Active 3-phase charging must not drop below 6 A (~4.2 kW).
+        if (stateRelayL1N && stateRelayL2L3 && power > 0.0f && power < 42.0f) {
+            power = 42.0f;
+        }
+        // Active 1-phase charging must not exceed 16 A (~3.7 kW).
+        if (stateRelayL1N && !stateRelayL2L3 && power > 37.0f) {
+            power = 37.0f;
+        }
         float duty = get_duty_from_power(power);
         set_control_pilot_duty(duty);
     }
+
+         ESP_LOGI(CP_LOG, "Set unten: %f", power);
+
 }
 
 /** 

@@ -38,6 +38,7 @@ Preferences preferences;
 NeoPixelBus<NeoGrbFeature, Neo800KbpsMethod> strip(8, 10); // Set to Pin 10
 int cpState;
 float highVoltage, getCpDuty, setCpDuty;
+volatile int ledDummyState = 1;
 
 charging_status_t currentCpState{ StateA_NotConnected, false, false };
 
@@ -186,5 +187,6 @@ void loop() {
     // release_lock();
     // vTaskDelay(5000 / portTICK_PERIOD_MS);
 }
+
 
 

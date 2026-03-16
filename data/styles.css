@@ -193,6 +193,27 @@ table .slider:before {
     width: 16px;
 }
 
+.delayed-phase-switching-cell {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+}
+
+.delayed-phase-switching-cell input[type="number"] {
+    width: 110px;
+    min-width: 110px;
+    flex: 0 0 110px;
+}
+
+.phase-switch-delay-status {
+    display: inline-block;
+    margin-left: 4px;
+    font-weight: bold;
+    color: #1c9b47;
+    white-space: nowrap;
+}
+
 /* New CSS rules for WiFi scan results */
 .wifi-flex-container {
   display: flex;

@@ -59,6 +59,10 @@ function processCommand(event) {
       document.getElementById('toggleCpRelay').checked = obj.cpRelayState;
       inputsInitialized = true; // Set the flag to true after initializing
     }
+    if (obj.delayedPhaseSwitchingSeconds !== undefined && document.getElementById('setDelayedPhaseSwitchingSeconds') !== null) {
+      document.getElementById('setDelayedPhaseSwitchingSeconds').value = obj.delayedPhaseSwitchingSeconds;
+      inputsInitialized = true;
+    }
   }
 
   // Update if the element exists on the page
@@ -79,6 +83,18 @@ function processCommand(event) {
   }
   if (obj.targetChargePower !== undefined && document.getElementById('targetChargePower') !== null) {
     document.getElementById('targetChargePower').innerHTML = obj.targetChargePower;
+  }
+  if (obj.delayedPhaseSwitchingSeconds !== undefined && document.getElementById('setDelayedPhaseSwitchingSeconds') !== null) {
+    const field = document.getElementById('setDelayedPhaseSwitchingSeconds');
+    if (document.activeElement !== field) {
+      field.value = obj.delayedPhaseSwitchingSeconds;
+    }
+  }
+  if (obj.phaseSwitchDelayRemainingSeconds !== undefined && document.getElementById('phaseSwitchDelayStatus') !== null) {
+    const remaining = obj.phaseSwitchDelayRemainingSeconds;
+    const status = document.getElementById('phaseSwitchDelayStatus');
+    status.textContent = remaining + ' s';
+    status.style.color = remaining > 0 ? '#c62828' : '#1c9b47';
   }
 
   // Update cpRelayState if the element exists on the page
@@ -107,6 +123,11 @@ document.addEventListener('DOMContentLoaded', function() {
       set_charge_power();
     }
   });
+  document.getElementById('setDelayedPhaseSwitchingSeconds')?.addEventListener('keydown', function(event) {
+    if (event.key === 'Enter') {
+      set_delayed_phase_switching_seconds();
+    }
+  });
 
   // Set up event listeners for buttons
   document.getElementById('toggleCpRelay')?.addEventListener('change', function(event) {
@@ -126,6 +147,22 @@ function toggle_cp_relay() {
   };
   Socket.send(JSON.stringify(data));
   console.log('Sending CP-Relay values to server:', data);
+}
+
+function set_delayed_phase_switching_seconds() {
+  var secondsValue = parseInt(document.getElementById('setDelayedPhaseSwitchingSeconds').value, 10);
+
+  if (isNaN(secondsValue) || secondsValue < 0 || secondsValue > 3600) {
+    alert('Delayed 1P/3P Switching must be between 0 and 3600 seconds.');
+    return;
+  }
+
+  const data = {
+    action: 'setDelayedPhaseSwitchingSeconds',
+    seconds: secondsValue
+  };
+  Socket.send(JSON.stringify(data));
+  console.log('Sending delayed 1P/3P switching seconds to server:', data);
 }
 
 // Function to set the charging current

@@ -68,6 +68,14 @@
                 <span class="slider"></span>
               </label>
             </td>
+          </tr>
+          <tr>
+            <td><label for="setDelayedPhaseSwitchingSeconds">Delayed 1P/3P Switching (s):</label></td>
+            <td class="delayed-phase-switching-cell">
+              <input type="number" id="setDelayedPhaseSwitchingSeconds" name="setDelayedPhaseSwitchingSeconds" min="0" step="1">
+              <span id="phaseSwitchDelayStatus" class="phase-switch-delay-status">0 s</span>
+            </td>
+          </tr>
           <tr>
             <td><label for="state">Charge Current (A):</label></td>
             <td>
@@ -79,7 +87,6 @@
             <td>
               <input type="number" id="setChargePower" name="setChargePower">
             </td>
-          </tr>
           </tr>
         </table>
       </div>

@@ -52,21 +52,21 @@ void stateA () {
   strip.Show();   // Send the updated pixel colors to the hardware.
 }
 
-//################################### /* ---------- 0-255 → RGB (HSV-Hue) ---------- */
-/* ---------- Modbus-Farbwert 1 … 255 → RGB (Hue-Kreis) ---------- *
+//################################### /* ---------- 0-255 ? RGB (HSV-Hue) ---------- */
+/* ---------- Modbus-Farbwert 1 � 255 ? RGB (Hue-Kreis) ---------- *
  *    1   = Rot         (Start des Farbrads)                       *
- *   43  ≈ Gelb        (Rot → Grün Übergang)                       *
- *   86   = Grün        (120 ° Hue)                                *
- *  128  ≈ Cyan        (Grün → Blau Mitte)                         *
- *  171   = Blau        (240 ° Hue)                                *
- *  213  ≈ Magenta     (Blau → Rot Übergang)                       *
- *  254  ≈ Rot         (Ende des Farbrads)                         *
- *  255   = Weiß        (Sonderfall, reine Vollfarbe)              */
+ *   43  � Gelb        (Rot ? Gr�n �bergang)                       *
+ *   86   = Gr�n        (120 � Hue)                                *
+ *  128  � Cyan        (Gr�n ? Blau Mitte)                         *
+ *  171   = Blau        (240 � Hue)                                *
+ *  213  � Magenta     (Blau ? Rot �bergang)                       *
+ *  254  � Rot         (Ende des Farbrads)                         *
+ *  255   = Wei�        (Sonderfall, reine Vollfarbe)              */
 void mbColor(uint8_t val)          // 1-255 aus Modbus
 {
     initStateB = 0;
     initStateC = 0;
-    /* ---------- Sonderfall 255 → Weiß ------------------- */
+    /* ---------- Sonderfall 255 ? Wei� ------------------- */
     if (val == 255) {
         RgbColor white(255, 255, 255);
         for (uint8_t i = 0; i < 8; ++i)
@@ -74,22 +74,22 @@ void mbColor(uint8_t val)          // 1-255 aus Modbus
         strip.Show();
         return;                         // fertig
     }
-    /* ---------- 1-254 → Hue-Farbrad ---------------------- */
+    /* ---------- 1-254 ? Hue-Farbrad ---------------------- */
     uint8_t pos = (val - 1) % 254;      // 0-253
     uint8_t r, g, b;
 
-    if (pos < 85) {                     // Rot → Grün
+    if (pos < 85) {                     // Rot ? Gr�n
         r = 255 - pos * 3;
         g = pos * 3;
         b = 0;
     }
-    else if (pos < 170) {               // Grün → Blau
+    else if (pos < 170) {               // Gr�n ? Blau
         pos -= 85;
         r = 0;
         g = 255 - pos * 3;
         b = pos * 3;
     }
-    else {                              // Blau → Rot
+    else {                              // Blau ? Rot
         pos -= 170;
         r = pos * 3;
         g = 0;
@@ -255,14 +255,14 @@ void stateE () {
 
 void stateF()
 {
-    static bool        on   = false;                // merken ob An/​Aus
-    static TickType_t  next = 0;                    // nächster Umschalt‑Tick
+    static bool        on   = false;                // merken ob An/?Aus
+    static TickType_t  next = 0;                    // n�chster Umschalt-Tick
     const  TickType_t  interval = pdMS_TO_TICKS(250);
 
     TickType_t now = xTaskGetTickCount();
     if (now >= next) {                              // Zeit zum Umschalten?
         next = now + interval;
-        on   = !on;                                 // An ↔ Aus toggeln
+        on   = !on;                                 // An ? Aus toggeln
 
         RgbColor col = on ? RgbColor(255, 0, 0)     // Rot
                           : RgbColor(0,   0, 0);    // Aus
@@ -304,7 +304,7 @@ void statePwmOff () {
 
 
 
-//################################### true ⇔ DIP „ON“ -> Rescue-Mode
+//################################### true ? DIP �ON� -> Rescue-Mode
 void rescueLedBlink()
 {
     static bool   ledOn  = false;
@@ -330,11 +330,11 @@ void simpleColorChange() {
 
   if (counter1[10] >= 5) {
     counter1[10] = 0;
-    hue = (hue + 1) % 256; // Ändere den Farbwert für den nächsten Zyklus
+    hue = (hue + 1) % 256; // �ndere den Farbwert f�r den n�chsten Zyklus
   }
 
   for (int i = 0; i < 8; i++) {
-    color = HslColor(hue / 255.0, 1.0, 0.5); // Sättigung und Helligkeit auf 50%
+    color = HslColor(hue / 255.0, 1.0, 0.5); // S�ttigung und Helligkeit auf 50%
   
   //  strip.SetPixelColor(0, HslColor(hue / 255.0, 1.0, 0.5););
     
@@ -348,14 +348,14 @@ void simpleColorChange() {
 }
 
 void knightRiderEffect() {
-  static int8_t direction = 1; // Richtung: 1 für vorwärts, -1 für rückwärts
+  static int8_t direction = 1; // Richtung: 1 f�r vorw�rts, -1 f�r r�ckw�rts
   static int8_t currentPixel = 0;
   static uint8_t counter = 0;
   const uint8_t cycleDuration = 30; // Dauer eines Zyklus in Anzahl der Schritte
 
-  counter1[10]++;
-  if (counter1[10] >= cycleDuration) {
-    counter1[10] = 0;
+  counter++;
+  if (counter >= cycleDuration) {
+    counter = 0;
 
     // Alle LEDs ausschalten
     for (int i = 0; i < 8; i++) {
@@ -366,22 +366,22 @@ void knightRiderEffect() {
     strip.SetPixelColor(currentPixel, RgbColor(255, 255, 255));
     strip.Show();
 
-    // Nächstes Pixel ermitteln
+    // N�chstes Pixel ermitteln
     currentPixel += direction;
 
     // Richtung umkehren, wenn das Ende des Streifens erreicht ist
     if (currentPixel == 8 || currentPixel == -1) {
       direction = -direction;
-      currentPixel += 2 * direction; // Nächste Position für den neuen Zyklus vorbereiten
+      currentPixel += 2 * direction; // N�chste Position f�r den neuen Zyklus vorbereiten
     }
   }
 }
 
 void waveEffect() {
-  static int8_t direction = 1; // Richtung: 1 für vorwärts, -1 für rückwärts
+  static int8_t direction = 1; // Richtung: 1 f�r vorw�rts, -1 f�r r�ckw�rts
   static int8_t currentWavePos = 0;
   static uint8_t counter = 0;
-  const uint8_t cycleDuration = 5; // Dauer eines Zyklus in Anzahl der Schritte
+  const uint8_t cycleDuration = 15; // Dauer eines Zyklus in Anzahl der Schritte
 
   counter++;
   if (counter >= cycleDuration) {
@@ -392,32 +392,32 @@ void waveEffect() {
       strip.SetPixelColor(i, RgbColor(0, 0, 0)); // Ausschalten
     }
 
-    // LEDs für die Welle einschalten
-    int waveLength = 3; // Anzahl der gleichzeitig leuchtenden LEDs für die Welle
+    // LEDs f�r die Welle einschalten
+    int waveLength = 3; // Anzahl der gleichzeitig leuchtenden LEDs f�r die Welle
     int waveStart = currentWavePos;
     for (int i = 0; i < waveLength; i++) {
       int pixelIndex = waveStart + i * direction;
       if (pixelIndex >= 0 && pixelIndex < 8) {
-        int brightness = 255 - abs(i - waveLength / 2) * 50; // Stärke der Welle abhängig von der Position
+        int brightness = 255 - abs(i - waveLength / 2) * 50; // St�rke der Welle abh�ngig von der Position
         strip.SetPixelColor(pixelIndex, RgbColor(brightness, brightness, brightness));
       }
     }
     strip.Show();
 
-    // Nächste Position für die Welle ermitteln
+    // N�chste Position f�r die Welle ermitteln
     currentWavePos += direction;
 
     // Richtung umkehren, wenn das Ende des Streifens erreicht ist
     if (currentWavePos == 8 || currentWavePos == -waveLength) {
       direction = -direction;
-      currentWavePos += 2 * direction; // Nächste Position für den neuen Zyklus vorbereiten
+      currentWavePos += 2 * direction; // N�chste Position f�r den neuen Zyklus vorbereiten
     }
   }
 }
 
 void orangeWaveEffect2() {
   int init;
-  static int8_t direction = 1; // Richtung: 1 für vorwärts, -1 für rückwärts
+  static int8_t direction = 1; // Richtung: 1 f�r vorw�rts, -1 f�r r�ckw�rts
   static int8_t currentWavePos = 0;
   static uint8_t counter = 0;
   const uint8_t cycleDuration = 30; // Dauer eines Zyklus in Anzahl der Schritte
@@ -435,8 +435,8 @@ void orangeWaveEffect2() {
   if (counter >= cycleDuration) {
     counter = 0;
 
-    // LEDs für die Welle ausschalten
-    int waveLength = 3; // Anzahl der gleichzeitig leuchtenden LEDs für die Welle
+    // LEDs f�r die Welle ausschalten
+    int waveLength = 3; // Anzahl der gleichzeitig leuchtenden LEDs f�r die Welle
     for (int i = 0; i < waveLength; i++) {
       int pixelIndex = currentWavePos + i * direction;
       if (pixelIndex >= 0 && pixelIndex < 8) {
@@ -444,20 +444,20 @@ void orangeWaveEffect2() {
       }
     }
 
-    // Nächste Position für die Welle ermitteln
+    // N�chste Position f�r die Welle ermitteln
     currentWavePos += direction;
 
     // Richtung umkehren, wenn das Ende des Streifens erreicht ist
     if (currentWavePos == 8 || currentWavePos == -waveLength) {
       direction = -direction;
-      currentWavePos += 2 * direction; // Nächste Position für den neuen Zyklus vorbereiten
+      currentWavePos += 2 * direction; // N�chste Position f�r den neuen Zyklus vorbereiten
     }
 
-    // LEDs für die Welle einschalten
+    // LEDs f�r die Welle einschalten
     for (int i = 0; i < waveLength; i++) {
       int pixelIndex = currentWavePos + i * direction;
       if (pixelIndex >= 0 && pixelIndex < 8) {
-        int brightness = 255 - abs(i - waveLength / 2) * 50; // Stärke der Welle abhängig von der Position
+        int brightness = 255 - abs(i - waveLength / 2) * 50; // St�rke der Welle abh�ngig von der Position
         strip.SetPixelColor(pixelIndex, RgbColor(brightness, brightness, brightness));
       }
     }
@@ -476,19 +476,19 @@ void callLedEffect()
         return;
     prevMillisLED = xTaskGetTickCount();
 
-    /* ---------- Notfall‑Blinken                     ----------------- */
+    /* ---------- Notfall-Blinken                     ----------------- */
     if (rescueMode) {                
         rescueLedBlink();
-        return;                               // alles Weitere überspringen
+        return;                               // alles Weitere �berspringen
     }
 
     /* ---------- Modbus-Override (1-255 = Farbwert) ----------------- */
-    if (mbTcpRegRead09 > 0) {                 // 0  ⇒ kein Override
+    if (mbTcpRegRead09 > 0) {                 // 0  ? kein Override
         mbColor(static_cast<uint8_t>(mbTcpRegRead09));
-        return;                               // alles Weitere überspringen
+        return;                               // alles Weitere �berspringen
     }
 
-    /* ---------- Normaler CP-Status-Animator ------------------------ */
+/* ---------- Normaler CP-Status-Animator ------------------------ */
     switch (currentCpState.state) {
         case StateA_NotConnected:       stateA();            break;
         case StateB_Connected:          stateB();            break;
@@ -497,9 +497,26 @@ void callLedEffect()
         case StateE_Error:              stateE();            break;
         case StateF_Fault:              stateF();            break;
         case StateCustom_CpRelayOff:    stateSwOff();        break;
-        case StateCustom_InvalidValue:  mbColor(9);         break;
+        case StateCustom_InvalidValue:  mbColor(9);          break;
         case StateCustom_DutyCycle_100: orangeWaveEffect2(); break;
         case StateCustom_DutyCycle_0:   orangeWaveEffect2(); break;
-        /* kein default – alle States abgedeckt */
     }
 }
+
+
+
+
+    /* ---------- Dummy-Animator für Messe ------------------------------------ 
+    switch (ledDummyState) {
+        case 1: waveEffect();             break;
+        case 2: stateB();             break;
+        case 3: stateC();             break;
+        case 4: waveEffect();             break;
+        case 5: stateC();             break;
+        case 6: stateSwOff();         break;
+        case 7: orangeWaveEffect2();  break;
+        case 8: orangeWaveEffect2();  break;
+        default: stateA();            break;
+    }
+}
+    --------------------------------------------------------------- */

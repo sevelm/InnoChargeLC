@@ -154,6 +154,12 @@ void webSocketEvent(byte num, WStype_t type, uint8_t * payload, size_t length) {
                     } else if (strcmp(action, "setCpRelayState") == 0 && doc["state"].is<bool>()) {
                         bool state = doc["state"].as<bool>();
                         state ? turn_on_cp_relay() : turn_off_cp_relay();
+                    } else if (strcmp(action, "setDelayedPhaseSwitchingSeconds") == 0 && doc["seconds"].is<int>()) {
+                        int seconds = doc["seconds"].as<int>();
+                        if (seconds < 0) seconds = 0;
+                        if (seconds > 3600) seconds = 3600;
+                        delayedPhaseSwitchingSeconds = (uint16_t)seconds;
+                        preferences.putUShort("delayed1p3pS", delayedPhaseSwitchingSeconds);
                     } else if (strcmp(action, "setChargeParameters") == 0 && doc.containsKey("current")) {
                         int current = doc["current"].as<int>();
                         set_charging_current(current);
@@ -440,6 +446,8 @@ ESP_LOGI(WEB_TAG,
       doc["targetChargeCurrent"] = (int)round(get_current_from_duty(getCpDuty));
       doc["targetChargePower"]   = round(get_power_from_duty(getCpDuty)) / 10.0;
       doc["cpRelayState"]        = get_cp_relays_status();
+      doc["delayedPhaseSwitchingSeconds"] = delayedPhaseSwitchingSeconds;
+      doc["phaseSwitchDelayRemainingSeconds"] = phaseSwitchDelayRemainingSeconds;
       jsonIndex.reserve(256);
       serializeJson(doc, jsonIndex);
     }

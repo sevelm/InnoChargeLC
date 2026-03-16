@@ -86,6 +86,8 @@ static TickType_t relayL2L3_on_time = 0;
 static TickType_t relayL1N_off_time = (TickType_t)-1;
 static TickType_t relayL2L3_off_time = (TickType_t)-1;
 static TickType_t phaseSwitchDelay = 0;
+static TickType_t phaseSwitchPendingSince = 0;
+static TickType_t phaseSwitchStateBSince = 0;
 
 volatile float g_setChargingPower_kW = 0.0f;
 volatile bool threePhaseActive = false;
@@ -93,6 +95,10 @@ volatile bool stateRelayL1N = false;
 volatile bool stateRelayL2L3 = false;
 volatile bool switchToL1N = false;
 volatile bool switchToL2L3 = false;
+volatile uint16_t delayedPhaseSwitchingSeconds = 0;
+volatile bool phaseSwitchAllowed = true;
+volatile uint16_t phaseSwitchDelayRemainingSeconds = 0;
+volatile TickType_t lastSuccessfulPhaseSwitch = 0;
 
 
 static const char* TAG = "Task_CP";
@@ -233,6 +239,8 @@ void A_Task_CP(void *pvParameter){
 //////////////////////////////////////////////////// Setup ///////////////////////////////////////////////////
 //////////////////////////////////////////////////// Setup ///////////////////////////////////////////////////
 //////////////////////////////////////////////////// Setup ///////////////////////////////////////////////////
+    delayedPhaseSwitchingSeconds = preferences.getUShort("delayed1p3pS", 0);
+    phaseSwitchAllowed = true;
     init_control_pilot();
     //set_charging_current(16);
     set_charging_power(110);
@@ -256,6 +264,8 @@ while (1) {
         currentCpStateDelay.chargingActive   = tmp.chargingActive;
         currentCpStateDelay.threePhaseActive = tmp.threePhaseActive;
         TickType_t now = xTaskGetTickCount();
+
+      
 
         /* State-Debounce 500 ms */
         const bool sameCpStatus =
@@ -281,11 +291,72 @@ while (1) {
             lastStateChangeTimeDuty = now;
         }
 
+    /**********************************************************************
+     *  Begin Umschaltlogik 1-phasig <-> 3-phasig mit Verzögerungszeit
+     **********************************************************************/
 
+        // Reset der Umschaltbereitschaft bei Wechsel zu A oder B, Start Timer bei Wechsel zu B
+        if (vCurrentCpState.state == StateA_NotConnected) {
+            lastSuccessfulPhaseSwitch = 0;
+            phaseSwitchAllowed = true;
+            phaseSwitchDelayRemainingSeconds = 0;
+            phaseSwitchStateBSince = 0;
+        } else if (vCurrentCpState.state == StateB_Connected) {
+            if (phaseSwitchStateBSince == 0) {
+                phaseSwitchStateBSince = now;
+            }
+
+            if ((now - phaseSwitchStateBSince) >= pdMS_TO_TICKS(15000)) {
+                lastSuccessfulPhaseSwitch = 0;
+                phaseSwitchAllowed = true;
+                phaseSwitchDelayRemainingSeconds = 0;
+            }
+        } else {
+            phaseSwitchStateBSince = 0;
+        }
+
+
+        // Berechnung der Verzögerung für Umschaltung 1-phasig <-> 3-phasig
+        if (delayedPhaseSwitchingSeconds == 0 || lastSuccessfulPhaseSwitch == 0) {
+            phaseSwitchAllowed = true;
+            phaseSwitchDelayRemainingSeconds = 0;
+        } else {
+            TickType_t switchDelayTicks = pdMS_TO_TICKS((uint32_t)delayedPhaseSwitchingSeconds * 1000UL);
+            TickType_t elapsedSinceLastSwitch = now - lastSuccessfulPhaseSwitch;
+            phaseSwitchAllowed = (elapsedSinceLastSwitch >= switchDelayTicks);
+            if (phaseSwitchAllowed) {
+                phaseSwitchDelayRemainingSeconds = 0;
+            } else {
+                TickType_t remainingTicks = switchDelayTicks - elapsedSinceLastSwitch;
+                TickType_t oneSecondTicks = pdMS_TO_TICKS(1000);
+                phaseSwitchDelayRemainingSeconds = (uint16_t)((remainingTicks + oneSecondTicks - 1) / oneSecondTicks);
+            }
+        }
+
+    /**********************************************************************
+     *  Ende Umschaltlogik 1-phasig <-> 3-phasig Verzögerungszeit
+     **********************************************************************/
 
 
         // Require condition to be true continuously for 2 seconds
         const bool cond = (!stateRelayL1N && !stateRelayL2L3 && (switchToL1N || switchToL2L3));
+
+        // Reset switchToL1N and switchToL2L3 if condition is not met for 5 seconds
+        if ((switchToL1N || switchToL2L3) && !cond) {
+            if (phaseSwitchPendingSince == 0) {
+                phaseSwitchPendingSince = now;
+            }
+
+            if ((now - phaseSwitchPendingSince) >= pdMS_TO_TICKS(5000)) {
+                switchToL1N = false;
+                switchToL2L3 = false;
+                phaseSwitchPendingSince = 0;
+            }
+        } else {
+            phaseSwitchPendingSince = 0;
+        }
+
+
 
         if (cond) {
             if (phaseSwitchDelay == 0) {
@@ -296,8 +367,10 @@ while (1) {
                 // 2s stable -> resume CP
                 if (switchToL1N) {
                     threePhaseActive = false;
+                    lastSuccessfulPhaseSwitch = now;
                 } else if (switchToL2L3) {
                     threePhaseActive = true;
+                    lastSuccessfulPhaseSwitch = now;
                 }
 
                 float duty = get_duty_from_power(g_setChargingPower_kW);
@@ -310,6 +383,11 @@ while (1) {
         } else {
             phaseSwitchDelay = 0; // condition broke -> reset timer
         }
+            
+            
+            
+            //phaseSwitchPendingSince = 0;
+        
 
 
 
