@@ -23,6 +23,11 @@
 #include "A_Task_CP.hpp"
 #include "A_Task_MB.hpp"
 #include "wifi_manager.hpp"
+#include "rfid_db.hpp"
+#include "time_service.hpp"
+#include "charge_session_log.hpp"
+#include "session_mailer.hpp"
+#include "dynamic_power_limit.hpp"
 
 #include "esp_wifi.h" 
 #include "AA_globals.h"
@@ -50,7 +55,7 @@ wifi_sta_start_config_t wifi_sta_config = {
 };
 
 // Dipswitch 2 (rechts) IP-Fallback 10.10.10.10
-bool rescueMode = false;          
+bool rescueMode = false;
 
 //////////////////////////////////////////////////// Setup ///////////////////////////////////////////////////
 //////////////////////////////////////////////////// Setup ///////////////////////////////////////////////////
@@ -75,12 +80,26 @@ void setup() {
     }
     ESP_ERROR_CHECK(ret);
 
+    // ######################### Default values for fresh NVS
+    if (!preferences.isKey("wallboxName")) preferences.putString("wallboxName", "InnoCharge");
+    if (!preferences.isKey("mailServer")) preferences.putString("mailServer", "");
+    if (!preferences.isKey("mailUser")) preferences.putString("mailUser", "");
+    if (!preferences.isKey("mailPass")) preferences.putString("mailPass", "");
+    if (!preferences.isKey("mailFrom")) preferences.putString("mailFrom", "");
+    if (!preferences.isKey("mailTo")) preferences.putString("mailTo", "");
+    if (!preferences.isKey("mailSubject")) preferences.putString("mailSubject", "InnoCharge charge sessions");
+    if (!preferences.isKey("dpl0cfg")) preferences.putString("dpl0cfg", "");
+    if (!preferences.isKey("dpl1cfg")) preferences.putString("dpl1cfg", "");
+    if (!preferences.isKey("dpl2cfg")) preferences.putString("dpl2cfg", "");
+    if (!preferences.isKey("rfidUsers")) preferences.putString("rfidUsers", "");
+
     // ######################### Initialize TCP/IP Stack and Default Event Loop
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
-    pinMode(RESCUE_PIN, INPUT_PULLUP);
-    rescueMode = (digitalRead(RESCUE_PIN) == LOW);   // DIP „ON“?
+    pinMode(DIP_SWITCH_1, INPUT_PULLUP);
+    pinMode(DIP_SWITCH_2, INPUT_PULLUP);
+    rescueMode = (digitalRead(DIP_SWITCH_2) == LOW);   // DIP 2 ON?
     if (rescueMode) {
         ethernet_start_config_t rescueCfg = {
             .ip_addr = {10, 10, 10, 10},
@@ -124,6 +143,12 @@ void setup() {
             total ? (used * 100.0 / total) : 0.0);
 
 
+    rfid_db_begin();
+    time_service_begin();
+    charge_session_log_begin();
+    session_mailer_begin();
+    dynamic_power_limit_begin();
+
     // connect to wifi
     char ssid[32] = {0}; 
     char pwd[64] = {0}; 
@@ -134,7 +159,9 @@ void setup() {
 
     // Schalter zum aktivieren und deaktivieren
     wifiEnabled = preferences.getBool("wifiEnable", false);
-    if (wifiEnabled) {
+    if (rescueMode) {
+        wifi_start_rescue_ap();
+    } else if (wifiEnabled) {
         wifi_init_sta(&wifi_sta_config);
     } else {
         preferences.putBool("wifiStatic", false);
@@ -142,7 +169,26 @@ void setup() {
     // RFID or Energymeter Enable
     sdm.enable  = preferences.getBool("emEnable",  false);
     sdm.invSign = preferences.getBool("emSignEnable", false);
+    sdm.type    = (energy_meter_type_t)preferences.getUChar("emType", EnergyMeter_EastronSdm630);
+    sdm.modbusId = preferences.getUChar("emMbId", 1);
+    if (sdm.modbusId < 1 || sdm.modbusId > 247) sdm.modbusId = 1;
     rfid.enable = preferences.getBool("rfidEnable", false);
+    rfid.modbusId = preferences.getUChar("rfidMbId", 2);
+    if (rfid.modbusId < 1 || rfid.modbusId > 247) rfid.modbusId = 2;
+    rfid.buzzer = preferences.getBool("rfidBuzzer", false);
+    rfid.led = preferences.getUChar("rfidLed", 0);
+    if (rfid.led > 2) rfid.led = 0;
+    rfidAuth.required = preferences.getBool("rfidAuthReq", false);
+    rfidAuth.authorized = false;
+    chargeAuthSession.authorized = false;
+    chargeAuthSession.vehicleWasConnected = false;
+    chargeAuthSession.authorizationGrantedMillis = 0;
+    chargeAuthSession.lastChargeActiveMillis = 0;
+    chargeAuthSession.authorizationGrantedTime = 0;
+    chargeAuthSession.lastChargeActiveTime = 0;
+    chargeAuthSession.idTag = "";
+    chargeAuthSession.userName = "";
+    chargeAuthSession.maxChargeMinutes = 0;
 
 // ######################### Create Task and Start
 

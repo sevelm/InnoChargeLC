@@ -22,7 +22,6 @@ void statePwmOff();
 void simpleColorChange();
 void knightRiderEffect();
 void waveEffect();
-void orangeWaveEffect2();
 void callLedEffect();
 void mbColor();
 void rescueLedBlink();

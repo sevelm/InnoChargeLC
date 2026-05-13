@@ -65,12 +65,14 @@ State:   Pilot Voltage:  EV Resistance:  Description:       Analog theoretic: (i
 #include <stdbool.h>
 #include <stdint.h>
 #include <math.h>
+#include <time.h>
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "Arduino.h"
 
 #include "control_pilot.hpp"
+#include "charge_session_log.hpp"
 #include "AA_globals.h"
 #include "ledEffect.hpp"
 #include "A_Task_CP.hpp"
@@ -102,6 +104,60 @@ volatile TickType_t lastSuccessfulPhaseSwitch = 0;
 
 
 static const char* TAG = "Task_CP";
+static constexpr uint32_t CHARGE_AUTH_SESSION_IDLE_TIMEOUT_MS = 30000UL;
+
+static void clearChargeAuthSession()
+{
+    chargeAuthSession.authorized = false;
+    chargeAuthSession.vehicleWasConnected = false;
+    chargeAuthSession.authorizationGrantedMillis = 0;
+    chargeAuthSession.lastChargeActiveMillis = 0;
+    chargeAuthSession.authorizationGrantedTime = 0;
+    chargeAuthSession.lastChargeActiveTime = 0;
+    chargeAuthSession.idTag = "";
+    chargeAuthSession.userName = "";
+    chargeAuthSession.maxChargeMinutes = 0;
+    apply_charging_authorization();
+}
+
+static void updateChargeAuthSessionFromCpState(charging_state_t state)
+{
+    if (!chargeAuthSession.authorized) {
+        return;
+    }
+
+    const uint32_t nowMillis = millis();
+
+    if (state == StateB_Connected ||
+        state == StateC_Charge ||
+        state == StateD_VentCharge) {
+        chargeAuthSession.vehicleWasConnected = true;
+    }
+
+    if (state == StateC_Charge || state == StateD_VentCharge) {
+        chargeAuthSession.lastChargeActiveMillis = nowMillis;
+        chargeAuthSession.lastChargeActiveTime = time(nullptr);
+    }
+
+    if (state == StateA_NotConnected && chargeAuthSession.vehicleWasConnected) {
+        clearChargeAuthSession();
+        return;
+    }
+
+    if (chargeAuthSession.maxChargeMinutes > 0 &&
+        chargeAuthSession.authorizationGrantedMillis > 0 &&
+        nowMillis - chargeAuthSession.authorizationGrantedMillis >= (uint32_t)chargeAuthSession.maxChargeMinutes * 60000UL) {
+        charge_session_log_set_stop_reason("TimeLimit");
+        clearChargeAuthSession();
+        return;
+    }
+
+    if (!chargeAuthSession.vehicleWasConnected &&
+        chargeAuthSession.authorizationGrantedMillis > 0 &&
+        nowMillis - chargeAuthSession.authorizationGrantedMillis > CHARGE_AUTH_SESSION_IDLE_TIMEOUT_MS) {
+        clearChargeAuthSession();
+    }
+}
 
 /**************************************************************************
  *  Aktualisierte State‑Funktion mit integriertem RCM‑Latch & CP‑Schnüffeln
@@ -243,7 +299,7 @@ void A_Task_CP(void *pvParameter){
     phaseSwitchAllowed = true;
     init_control_pilot();
     //set_charging_current(16);
-    set_charging_power(110);
+    set_charging_power((digitalRead(DIP_SWITCH_1) == LOW) ? 220 : 110);
     threePhaseActive = true;
     turn_on_cp_relay();
     vTaskDelay(pdMS_TO_TICKS(5000));
@@ -410,8 +466,20 @@ while (1) {
 
 
 
+        charging_status_t actuatorCpState;
+        actuatorCpState.state = vCurrentCpState.state;
+        actuatorCpState.vehicleConnected = vCurrentCpState.vehicleConnected;
+        actuatorCpState.chargingActive = vCurrentCpState.chargingActive;
+        actuatorCpState.threePhaseActive = vCurrentCpState.threePhaseActive;
+
+        if (!charging_authorization_allows_charging() &&
+            (actuatorCpState.state == StateC_Charge || actuatorCpState.state == StateD_VentCharge)) {
+            actuatorCpState.state = StateB_Connected;
+            actuatorCpState.chargingActive = false;
+        }
+
         // --- L1+N ON logic ---
-        if (vCurrentCpState.state == StateC_Charge || vCurrentCpState.state == StateD_VentCharge) {
+        if (actuatorCpState.state == StateC_Charge || actuatorCpState.state == StateD_VentCharge) {
             if (relayL1N_on_time == 0) {
                 turn_relay_pwm_L1N(100.0f);                 // Anziehen
                 relayL1N_on_time = now;
@@ -420,7 +488,7 @@ while (1) {
             }
         } 
         // --- L1+N OFF logic ---
-        if ( !(vCurrentCpState.state == StateC_Charge || vCurrentCpState.state == StateD_VentCharge)
+        if ( !(actuatorCpState.state == StateC_Charge || actuatorCpState.state == StateD_VentCharge)
             || (relayL1N_off_time != (TickType_t)-1) )
         {
             // E/F -> immediate OFF (always)
@@ -449,7 +517,7 @@ while (1) {
 
 
         // --- L2+L3 ON logic ---
-        if (threePhaseActive && (vCurrentCpState.state == StateC_Charge || vCurrentCpState.state == StateD_VentCharge)) {
+        if (threePhaseActive && (actuatorCpState.state == StateC_Charge || actuatorCpState.state == StateD_VentCharge)) {
             if (relayL2L3_on_time == 0) {
                 turn_relay_pwm_L2L3(100.0f);                 // Anziehen
                 relayL2L3_on_time = now;
@@ -458,7 +526,7 @@ while (1) {
             }
         } 
         // --- L2+L3 OFF logic ---
-        if ( !(vCurrentCpState.state == StateC_Charge || vCurrentCpState.state == StateD_VentCharge)
+        if ( !(actuatorCpState.state == StateC_Charge || actuatorCpState.state == StateD_VentCharge)
             || (relayL2L3_off_time != (TickType_t)-1) )
         {
             // E/F -> immediate OFF (always)
@@ -501,6 +569,8 @@ while (1) {
         currentCpState.vehicleConnected = vCurrentCpState.vehicleConnected;
         currentCpState.chargingActive   = vCurrentCpState.chargingActive;
         currentCpState.threePhaseActive = vCurrentCpState.threePhaseActive;
+        updateChargeAuthSessionFromCpState(vCurrentCpState.state);
+        charge_session_log_update(vCurrentCpState.state);
 
         vTaskDelay(5 / portTICK_PERIOD_MS); // Adjusted delay
 }

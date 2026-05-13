@@ -170,13 +170,33 @@ table td {
     vertical-align: middle;
 }
 
-table input[type="text"], table input[type="number"] {
+table input[type="text"], table input[type="number"], table select {
     width: 100%;
     padding: 8px;
     border: 1px solid #ccc;
     border-radius: 4px;
     font-size: 14px;
     color: #333;
+    box-sizing: border-box;
+    height: 34px;
+}
+
+.modbus-address-control {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.modbus-address-control input[type="number"] {
+    width: 150px;
+    flex: 0 0 150px;
+}
+
+button.modbus-save-button {
+    height: 34px;
+    padding: 0 14px;
+    font-size: 14px;
+    line-height: 34px;
 }
 
 table .switch {
@@ -274,6 +294,233 @@ table td label, table td span {
     color: #333;
 }
 
+.rfid-table {
+    width: 100%;
+    border-collapse: collapse;
+    border: 1px solid #b8c1c7;
+}
+
+.rfid-table th,
+.rfid-table td {
+    border: 1px solid #cfd8dc;
+    padding: 9px 10px;
+    text-align: left;
+}
+
+.rfid-table th {
+    background-color: #eef2f4;
+    color: #263238;
+    font-weight: bold;
+}
+
+.rfid-table tbody tr:nth-child(even) {
+    background-color: #f8fafb;
+}
+
+.rfid-status-box {
+    display: block;
+    min-width: 430px;
+    max-width: 520px;
+    margin: 8px 0 14px 0;
+    padding: 12px 16px;
+    border: 1px solid #cfd8dc;
+    background-color: #f8fafb;
+}
+
+.rfid-status-box h3 {
+    margin: 0 0 8px 0;
+    font-size: 16px;
+    color: #607d8b;
+}
+
+.rfid-status-box table td {
+    padding: 8px 10px;
+}
+
+.session-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.session-actions button {
+    padding: 9px 14px;
+}
+
+.session-import-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: 28px;
+}
+
+.session-filters {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+
+.session-filters input,
+.session-filters select {
+    height: 34px;
+    padding: 6px 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+.session-filters button {
+    padding: 9px 14px;
+}
+
+.session-paging {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 10px 0 12px 0;
+}
+
+.session-paging button {
+    padding: 9px 14px;
+}
+
+.session-paging button:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
+#sessionPageInfo {
+    min-width: 90px;
+    font-weight: bold;
+    color: #263238;
+}
+
+.device-status-text {
+    font-size: 14px;
+    color: #333;
+    font-weight: bold;
+}
+
+.dip-switch-hint {
+    margin-left: 24px;
+    font-size: 12px;
+    font-style: italic;
+    color: #607d8b;
+}
+
+.control-subheading {
+    margin: 22px 0 10px 0;
+    font-size: 18px;
+    color: #777;
+}
+
+.section-title-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+.section-title-row h2 {
+    margin: 0;
+}
+
+button.small-help-button {
+    padding: 7px 12px;
+    font-size: 13px;
+    background-color: #607d8b;
+}
+
+button.small-help-button:hover {
+    background-color: #546e7a;
+}
+
+.dynamic-power-limit-help {
+    max-width: 900px;
+    margin: 8px 0 14px 0;
+    padding: 12px 14px;
+    border: 1px solid #cfd8dc;
+    background-color: #f8fafb;
+    color: #333;
+    font-size: 14px;
+}
+
+.dynamic-power-limit-help p {
+    margin: 0 0 8px 0;
+}
+
+.dynamic-power-limit-help table {
+    width: 100%;
+    margin-bottom: 10px;
+}
+
+.dynamic-power-limit-help td {
+    padding: 4px 8px;
+    font-size: 14px;
+    vertical-align: top;
+}
+
+.dynamic-power-limit-help td:first-child {
+    width: 70px;
+    color: #263238;
+}
+
+.dynamic-power-limit-examples {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.dynamic-power-limit-examples code {
+    display: block;
+    margin-top: 4px;
+    padding: 7px 8px;
+    border: 1px solid #d9e1e5;
+    background-color: #fff;
+    color: #263238;
+    font-size: 13px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.dynamic-power-limit-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.dynamic-power-limit-table th,
+.dynamic-power-limit-table td {
+    padding: 8px 10px;
+    text-align: left;
+    vertical-align: middle;
+}
+
+.dynamic-power-limit-table th {
+    color: #263238;
+    font-weight: bold;
+}
+
+.dynamic-power-limit-table input[type="text"] {
+    width: 100%;
+    max-width: 650px;
+}
+
+.dynamic-power-limit-status {
+    font-size: 14px;
+    font-weight: bold;
+    color: #333;
+    white-space: nowrap;
+}
+
+
+.sortable-header {
+    cursor: pointer;
+    user-select: none;
+}
+
 .popup-overlay {
     position: fixed;
     top: 0;
@@ -369,3 +616,27 @@ table td label, table td span {
 .status.ready  { color:#008000; }   /* grün  */
 .status.error  { color:#c00000; }   /* rot   */
 .status.off    { color:#808080; }   /* grau  */
+
+.compact-time-settings {
+    padding: 14px 20px;
+}
+
+.compact-time-settings h2 {
+    margin-top: 0;
+    margin-bottom: 8px;
+    font-size: 18px;
+}
+
+button.compact-button {
+    padding: 7px 12px;
+    font-size: 13px;
+}
+
+button.secondary-button {
+    margin-left: 6px;
+    background-color: #607d8b;
+}
+
+button.secondary-button:hover {
+    background-color: #546e7a;
+}

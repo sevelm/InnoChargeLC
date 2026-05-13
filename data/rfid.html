@@ -1,30 +1,137 @@
-<!-- START interfaces.html--> 
-
 <!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8">
   <title>InnoCharge RFID</title>
   <link rel="stylesheet" type="text/css" href="styles.css">
-  <!-- scripts.js is included at the end of the body -->
 </head>
 <body>
-  <div class="sidebar" id="navbar">
-    <!-- Navigation is loaded here -->
-  </div>
-  
+  <div class="sidebar" id="navbar"></div>
+
   <div class="main-content">
     <h1>RFID</h1>
-  
+
     <div class="container">
-      <h2>coming soon....</h2>
+      <h2>RFID-Reader</h2>
+      <div class="rfid-status-box">
+        <h3>Current Tag Status</h3>
+        <table>
+          <tr>
+            <td>Current tag:</td>
+            <td><span id="rfidTag" style="font-size: 16px; color: #333; font-weight: bold;"></span></td>
+          </tr>
+          <tr>
+            <td>Last tag:</td>
+            <td><span id="lastRfidTag" style="font-size: 16px; color: #333; font-weight: bold;"></span></td>
+          </tr>
+          <tr>
+            <td>Authorization:</td>
+            <td><span id="rfidAuthStatus" class="status">-</span></td>
+          </tr>
+        </table>
+      </div>
+      <div class="rfid-status-box">
+        <h3>Charge Authorization Session</h3>
+        <table>
+	        <tr>
+	          <td>RFID required:</td>
+	          <td>
+	            <label class="switch">
+	              <input type="checkbox" id="rfidAuthRequired">
+	              <span class="slider"></span>
+	            </label>
+	          </td>
+	        </tr>
+	        <tr>
+	          <td>Session authorized:</td>
+	          <td><span id="chargeSessionAuthorized" class="status">-</span></td>
+	        </tr>
+	        <tr>
+	          <td>Session tag:</td>
+	          <td><span id="chargeSessionIdTag" style="font-size: 16px; color: #333; font-weight: bold;"></span></td>
+	        </tr>
+	        <tr>
+	          <td>Session user:</td>
+	          <td><span id="chargeSessionUserName" style="font-size: 16px; color: #333; font-weight: bold;"></span></td>
+	        </tr>
+	        <tr>
+	          <td>Vehicle connected:</td>
+	          <td><span id="chargeSessionVehicleWasConnected" class="status">-</span></td>
+	        </tr>
+	        <!--
+	        <tr>
+	          <td>Authorized millis:</td>
+	          <td><span id="chargeSessionAuthorizationMillis" style="font-size: 16px; color: #333; font-weight: bold;"></span></td>
+	        </tr>
+	        <tr>
+	          <td>Last charge active millis:</td>
+	          <td><span id="chargeSessionLastChargeMillis" style="font-size: 16px; color: #333; font-weight: bold;"></span></td>
+	        </tr>
+	        -->
+	        <tr>
+	          <td>Authorized time:</td>
+	          <td><span id="chargeSessionAuthorizationTime" style="font-size: 16px; color: #333; font-weight: bold;"></span></td>
+	        </tr>
+	        <!--
+	        <tr>
+	          <td>Last charge active time:</td>
+	          <td><span id="chargeSessionLastChargeTime" style="font-size: 16px; color: #333; font-weight: bold;"></span></td>
+	        </tr>
+	        -->
+	      </table>
+      </div>
+	    </div>
+
+    <div class="container">
+      <h2>RFID User</h2>
       <table>
- 
+        <tr>
+          <td><label for="idTag">ID Tag:</label></td>
+          <td><input type="text" id="idTag" placeholder="A1B2C3D4"></td>
+          <td><button id="useLastTag">Use last tag</button></td>
+        </tr>
+        <tr>
+          <td><label for="userName">Name:</label></td>
+          <td><input type="text" id="userName" placeholder="Max"></td>
+        </tr>
+        <tr>
+          <td><label for="userEnabled">Enabled:</label></td>
+          <td><input type="checkbox" id="userEnabled" checked style="accent-color:#6ca0dc; transform:scale(1.3); cursor:pointer;"></td>
+        </tr>
+        <tr>
+          <td><label for="maxChargeMinutes">Max. charge time (min):</label></td>
+          <td><input type="number" id="maxChargeMinutes" min="0" max="65535" step="1" placeholder="0"></td>
+        </tr>
+        <tr>
+          <td><label for="userNote">Note:</label></td>
+          <td><input type="text" id="userNote" placeholder="Firmenauto"></td>
+        </tr>
+        <tr>
+          <td></td>
+          <td><button id="saveRfidUser">Save</button></td>
+        </tr>
       </table>
     </div>
-    
-  <!-- Including common.js and interfaces.js at the end of the body -->
+
+    <div class="container">
+      <h2>RFID Database</h2>
+      <table class="rfid-table">
+        <thead>
+          <tr>
+            <th>ID Tag</th>
+            <th>Name</th>
+            <th>Enabled</th>
+            <th>Max. charge time</th>
+            <th>Note</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="rfidUsers"></tbody>
+      </table>
+    </div>
+  </div>
+
   <script src="common.js"></script>
-  <script src="interfaces.js"></script>
+  <script src="rfid.js"></script>
 </body>
 </html>

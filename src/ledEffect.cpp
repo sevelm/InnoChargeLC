@@ -7,6 +7,40 @@
 
 unsigned long prevMillisLED       = 0;    // we use the "millis()" command for time reference and this will output an unsigned long
 
+enum rfid_led_state_t {
+  RfidLed_None,
+  RfidLed_Waiting,
+  RfidLed_Authorized,
+  RfidLed_Denied,
+};
+
+static bool isEmptyRfidTagForLed(const String& idTag)
+{
+  return idTag.length() == 0 || idTag == F("00:00:00:00:00:00:00");
+}
+
+static rfid_led_state_t currentRfidLedState()
+{
+ 
+  if (!rfidAuth.required) return RfidLed_None;
+  if (!isEmptyRfidTagForLed(rfid.uidStr) && !chargeAuthSession.authorized) return RfidLed_Denied;
+  if (chargeAuthSession.authorized) return RfidLed_Authorized;
+  return RfidLed_Waiting;
+
+ 
+ 
+  // if (!rfidAuth.required) return RfidLed_None;
+ // if (chargeAuthSession.authorized) return RfidLed_Authorized;
+ // if (!isEmptyRfidTagForLed(rfid.uidStr) && !chargeAuthSession.authorized) return RfidLed_Denied;
+ // if (isEmptyRfidTagForLed(rfid.uidStr)) return RfidLed_Waiting;
+  //return rfidAuth.authorized ? RfidLed_Authorized : RfidLed_Denied;
+  
+  
+  //return rfidAuth.authorized ? RfidLed_Authorized : RfidLed_Denied;
+}
+//chargeAuthSession.authorized
+
+
 ///////////////// LED Funktionen
 
 int counter1[10];
@@ -52,6 +86,10 @@ void stateA () {
   strip.Show();   // Send the updated pixel colors to the hardware.
 }
 
+
+
+
+
 //################################### /* ---------- 0-255 ? RGB (HSV-Hue) ---------- */
 /* ---------- Modbus-Farbwert 1 � 255 ? RGB (Hue-Kreis) ---------- *
  *    1   = Rot         (Start des Farbrads)                       *
@@ -62,7 +100,7 @@ void stateA () {
  *  213  � Magenta     (Blau ? Rot �bergang)                       *
  *  254  � Rot         (Ende des Farbrads)                         *
  *  255   = Wei�        (Sonderfall, reine Vollfarbe)              */
-void mbColor(uint8_t val)          // 1-255 aus Modbus
+ void mbColor(uint8_t val)          // 1-255 aus Modbus
 {
     initStateB = 0;
     initStateC = 0;
@@ -415,54 +453,42 @@ void waveEffect() {
   }
 }
 
-void orangeWaveEffect2() {
-  int init;
-  static int8_t direction = 1; // Richtung: 1 f�r vorw�rts, -1 f�r r�ckw�rts
-  static int8_t currentWavePos = 0;
+static void waitingWaveEffect(RgbColor baseColor, RgbColor waveColor) {
+  static int8_t direction = 1;
+  static int8_t currentWaveCenter = -1;
   static uint8_t counter = 0;
-  const uint8_t cycleDuration = 30; // Dauer eines Zyklus in Anzahl der Schritte
+  const uint8_t cycleDuration = 30;
 
-  if (init == 0) {
-    for (int i = 0; i < 8; i++) {
-        strip.SetPixelColor(i, RgbColor(255, 195, 0)); // Ausschalten
-      }
-      init = 1;
-    }
+  counter++;
+  if (counter < cycleDuration) {
+    return;
+  }
+  counter = 0;
 
+  for (int i = 0; i < 8; i++) {
+    strip.SetPixelColor(i, baseColor);
+  }
 
-  
-   counter++; 
-  if (counter >= cycleDuration) {
-    counter = 0;
-
-    // LEDs f�r die Welle ausschalten
-    int waveLength = 3; // Anzahl der gleichzeitig leuchtenden LEDs f�r die Welle
-    for (int i = 0; i < waveLength; i++) {
-      int pixelIndex = currentWavePos + i * direction;
+  if (currentWaveCenter >= 0 && currentWaveCenter < 8) {
+    for (int offset = -1; offset <= 1; offset++) {
+      int pixelIndex = currentWaveCenter + offset;
       if (pixelIndex >= 0 && pixelIndex < 8) {
-        strip.SetPixelColor(pixelIndex, RgbColor(255, 195, 0)); // Ausschalten
+        strip.SetPixelColor(pixelIndex, waveColor);
       }
     }
+  }
 
-    // N�chste Position f�r die Welle ermitteln
-    currentWavePos += direction;
+  strip.Show();
 
-    // Richtung umkehren, wenn das Ende des Streifens erreicht ist
-    if (currentWavePos == 8 || currentWavePos == -waveLength) {
-      direction = -direction;
-      currentWavePos += 2 * direction; // N�chste Position f�r den neuen Zyklus vorbereiten
-    }
-
-    // LEDs f�r die Welle einschalten
-    for (int i = 0; i < waveLength; i++) {
-      int pixelIndex = currentWavePos + i * direction;
-      if (pixelIndex >= 0 && pixelIndex < 8) {
-        int brightness = 255 - abs(i - waveLength / 2) * 50; // St�rke der Welle abh�ngig von der Position
-        strip.SetPixelColor(pixelIndex, RgbColor(brightness, brightness, brightness));
-      }
-    }
-
-    strip.Show();
+  currentWaveCenter += direction;
+  if (currentWaveCenter > 8) {
+    direction = -1;
+    currentWaveCenter = 7;
+  } else if (currentWaveCenter < -1) {
+    direction = 1;
+    currentWaveCenter = 0;
+  } else if (currentWaveCenter == 8 || currentWaveCenter == -1) {
+    direction = -direction;
   }
 }
 
@@ -490,16 +516,40 @@ void callLedEffect()
 
 /* ---------- Normaler CP-Status-Animator ------------------------ */
     switch (currentCpState.state) {
-        case StateA_NotConnected:       stateA();            break;
-        case StateB_Connected:          stateB();            break;
+        case StateA_NotConnected:
+            switch (currentRfidLedState()) {
+              case RfidLed_None:       stateA();               break;
+              case RfidLed_Waiting:    stateA();               break;
+              case RfidLed_Authorized: waitingWaveEffect(RgbColor(0, 0, 255), RgbColor(0, 255, 0)); break; // Blau mit gruener Welle
+              case RfidLed_Denied:     waitingWaveEffect(RgbColor(0, 0, 255), RgbColor(255, 0, 0)); break; // Blau mit roter Welle
+              default:                 stateA();               break;
+          }
+        break;
+        case StateB_Connected:
+          switch (currentRfidLedState()) {
+              case RfidLed_None:       stateB();              break;
+              case RfidLed_Waiting:    waitingWaveEffect(RgbColor(255, 195, 0), RgbColor(255, 255, 255)); break; // Orange mit weisser Welle
+              case RfidLed_Authorized: waitingWaveEffect(RgbColor(255, 195, 0), RgbColor(0, 255, 0)); break; // Orange mit gruener Welle
+              case RfidLed_Denied:     waitingWaveEffect(RgbColor(255, 195, 0), RgbColor(255, 0, 0)); break; // Orange mit roter Welle
+              default:                 stateB();              break;
+          }
+        break;
         case StateC_Charge:             stateC();            break;
         case StateD_VentCharge:         stateC();            break;
         case StateE_Error:              stateE();            break;
         case StateF_Fault:              stateF();            break;
         case StateCustom_CpRelayOff:    stateSwOff();        break;
         case StateCustom_InvalidValue:  mbColor(9);          break;
-        case StateCustom_DutyCycle_100: orangeWaveEffect2(); break;
-        case StateCustom_DutyCycle_0:   orangeWaveEffect2(); break;
+        case StateCustom_DutyCycle_100:
+          switch (currentRfidLedState()) {
+            //  case RfidLed_None:       stateB();              break;
+           //   case RfidLed_Waiting:    waitingWaveEffect(RgbColor(255, 195, 0), RgbColor(255, 255, 255)); break; // Orange mit weisser Welle
+              case RfidLed_Authorized: waitingWaveEffect(RgbColor(255, 195, 0), RgbColor(0, 255, 0)); break; // Orange mit gruener Welle
+              case RfidLed_Denied:     waitingWaveEffect(RgbColor(255, 195, 0), RgbColor(255, 0, 0)); break; // Orange mit roter Welle
+              default:                 waitingWaveEffect(RgbColor(255, 195, 0), RgbColor(255, 255, 255)); break; //Orange mit Weißer Welle
+          }
+        break;          
+        case StateCustom_DutyCycle_0:   waitingWaveEffect(RgbColor(255, 195, 0), RgbColor(255, 255, 255)); break; //Orange mit Weißer Welle
     }
 }
 

@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>InnoCharge Sessions</title>
+  <link rel="stylesheet" type="text/css" href="styles.css">
+</head>
+<body>
+  <div class="sidebar" id="navbar"></div>
+
+  <div class="main-content">
+    <h1>Sessions</h1>
+
+    <div class="container">
+      <h2>Charge Sessions</h2>
+      <div class="session-actions">
+        <button type="button" id="exportSessions">Export JSON</button>
+        <button type="button" id="exportSessionsCsv">Export CSV</button>
+        <button type="button" id="exportSessionsPdf">Export PDF</button>
+        <div class="session-import-actions">
+          <input type="file" id="importSessionsFile" accept=".json,application/json">
+          <button type="button" id="importSessions">Import JSON</button>
+        </div>
+      </div>
+      <div class="session-filters">
+        <input type="text" id="sessionFilterText" placeholder="Filter text">
+        <select id="sessionFilterStatus">
+          <option value="all">All</option>
+          <option value="closed">Closed</option>
+          <option value="active">Active</option>
+        </select>
+        <input type="date" id="sessionFilterFrom">
+        <input type="date" id="sessionFilterTo">
+        <button type="button" id="clearSessionFilters">Clear</button>
+      </div>
+      <div class="session-paging">
+        <button type="button" id="sessionPrevPage">Previous</button>
+        <span id="sessionPageInfo">0-0 of 0</span>
+        <button type="button" id="sessionNextPage">Next</button>
+      </div>
+      <table class="rfid-table">
+        <thead>
+          <tr>
+            <th data-sort="transactionId">Transaction</th>
+            <th data-sort="status">Status</th>
+            <th data-sort="idTag">ID Tag</th>
+            <th data-sort="userName">User</th>
+            <th data-sort="startTimeEpoch">Start</th>
+            <th data-sort="stopTimeEpoch">Stop</th>
+            <th data-sort="durationSeconds">Duration</th>
+            <th data-sort="energyWh">Energy</th>
+            <th data-sort="stopReason">Stop reason</th>
+          </tr>
+        </thead>
+        <tbody id="chargeSessions"></tbody>
+      </table>
+    </div>
+
+	    <div class="container">
+	      <h2>Mailer</h2>
+	      <table>
+        <tr>
+          <td><strong><label for="mailEnable">Enable:</label></strong></td>
+          <td>
+            <label class="switch">
+              <input type="checkbox" id="mailEnable">
+              <span class="slider"></span>
+            </label>
+          </td>
+        </tr>
+	        <tr>
+	          <td><label for="mailServer">SMTP server:</label></td>
+          <td><input type="text" id="mailServer" placeholder="smtp.example.com"></td>
+        </tr>
+        <tr>
+          <td><label for="mailPort">SMTP port:</label></td>
+          <td><input type="number" id="mailPort" min="1" max="65535" step="1" placeholder="465"></td>
+        </tr>
+        <tr>
+          <td><label for="mailSsl">SSL:</label></td>
+          <td><input type="checkbox" id="mailSsl" checked style="accent-color:#6ca0dc; transform:scale(1.3); cursor:pointer;"></td>
+        </tr>
+        <tr>
+          <td><label for="mailUsername">Username:</label></td>
+          <td><input type="text" id="mailUsername"></td>
+        </tr>
+        <tr>
+          <td><label for="mailPassword">Password:</label></td>
+          <td><input type="password" id="mailPassword" placeholder="unchanged if empty"></td>
+        </tr>
+        <tr>
+          <td><label for="mailFrom">From:</label></td>
+          <td><input type="text" id="mailFrom" placeholder="innocharge@example.com"></td>
+        </tr>
+        <tr>
+          <td><label for="mailTo">To:</label></td>
+          <td><input type="text" id="mailTo" placeholder="mail@example.com"></td>
+        </tr>
+        <tr>
+          <td><label for="mailSubject">Subject:</label></td>
+          <td><input type="text" id="mailSubject"></td>
+        </tr>
+        <tr>
+          <td><label for="mailMode">Automatic send:</label></td>
+          <td>
+            <select id="mailMode">
+              <option value="0">Off</option>
+              <option value="1">After each charge session</option>
+              <option value="2">Daily</option>
+              <option value="3">Weekly</option>
+              <option value="4">Monthly</option>
+            </select>
+          </td>
+        </tr>
+        <tr>
+          <td>Status:</td>
+          <td><span id="mailStatus" style="font-size: 16px; color: #333; font-weight: bold;"></span></td>
+        </tr>
+        <tr>
+          <td></td>
+          <td class="session-actions">
+            <button type="button" id="saveMailerSettings">Save</button>
+            <button type="button" id="sendSessionReport">Send report now</button>
+          </td>
+        </tr>
+      </table>
+    </div>
+  </div>
+
+  <script src="common.js"></script>
+  <script src="sessions.js"></script>
+</body>
+</html>

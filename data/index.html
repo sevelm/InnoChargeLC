@@ -13,14 +13,20 @@
     <!-- Navigation is loaded here -->
   </div>
   
-  <div class="main-content">
-    <h1>Home</h1>
-  
-    <div class="container">
-      <h2>Current Status</h2>
-      <table>
-        <tr>
-          <td><label for="state">CP Status:</label></td>
+	  <div class="main-content">
+	    <h1>Home</h1>
+	  
+	    <div class="container">
+	      <h2>Current Status</h2>
+	      <table>
+	        <tr>
+	          <td><label for="wallboxName">Wallbox:</label></td>
+	          <td>
+	            <span id="wallboxName" style="font-size: 18px; color: #333; font-weight: bold;"></span>
+	          </td>
+	        </tr>
+	        <tr>
+	          <td><label for="state">CP Status:</label></td>
           <td>
             <span id="cpState" style="font-size: 16px; color: #333; font-weight: bold;"></span>
           </td>
@@ -88,6 +94,111 @@
               <input type="number" id="setChargePower" name="setChargePower">
             </td>
           </tr>
+        </table>
+      </div>
+
+      <div class="container">
+        <div class="section-title-row">
+          <h2>Dynamic Power Regulation</h2>
+          <button type="button" id="dynamicPowerLimitHelpButton" class="small-help-button">Help</button>
+        </div>
+        <div id="dynamicPowerLimitHelp" class="dynamic-power-limit-help" hidden>
+          <p>
+            Use one config line per external Modbus TCP value. The value is read and shown in the Status column.
+          </p>
+          <table>
+            <tr>
+              <td><strong>ip</strong></td>
+              <td>IP address of the external device.</td>
+            </tr>
+            <tr>
+              <td><strong>port</strong></td>
+              <td>Modbus TCP port, normally 502.</td>
+            </tr>
+            <tr>
+              <td><strong>fc</strong></td>
+              <td>Function code: 3 = Holding Registers, 4 = Input Registers.</td>
+            </tr>
+            <tr>
+              <td><strong>reg</strong></td>
+              <td>Start register to read.</td>
+            </tr>
+            <tr>
+              <td><strong>type</strong></td>
+              <td>Data type: float, u16, s16, u32 or s32.</td>
+            </tr>
+            <tr>
+              <td><strong>scale</strong></td>
+              <td>Multiplier for the read value. Example: W to kW = 0.001.</td>
+            </tr>
+            <tr>
+              <td><strong>mode</strong></td>
+              <td>Planned regulation mode. max_kw will limit this charger to the remaining power.</td>
+            </tr>
+            <tr>
+              <td><strong>limit</strong></td>
+              <td>Planned total power limit in kW for max_kw mode.</td>
+            </tr>
+            <tr>
+              <td><strong>min</strong></td>
+              <td>Planned minimum charging power in kW. Below this value charging can be paused.</td>
+            </tr>
+          </table>
+          <div class="dynamic-power-limit-examples">
+            <div>
+              <strong>Read total power from another InnoCharge:</strong>
+              <code>ip=192.168.0.211;port=502;fc=3;reg=1018;type=float;scale=0.001;mode=max_kw;limit=22;min=10</code>
+            </div>
+            <div>
+              <strong>Read unsigned 16-bit power value in W:</strong>
+              <code>ip=192.168.0.92;port=502;fc=3;reg=0;type=u16;scale=0.001;mode=max_kw;limit=22;min=10</code>
+            </div>
+            <div>
+              <strong>InnoCharge power registers:</strong>
+              <code>L1=1012, L2=1014, L3=1016, Total=1018, Import kWh=1020, Export kWh=1022</code>
+            </div>
+          </div>
+        </div>
+        <table class="dynamic-power-limit-table">
+          <thead>
+            <tr>
+              <th>Enable</th>
+              <th>Config</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>
+                <label class="switch">
+                  <input type="checkbox" id="dynamicPowerLimitEnable0">
+                  <span class="slider"></span>
+                </label>
+              </td>
+              <td><input type="text" id="dynamicPowerLimitConfig0" placeholder="ip=192.168.0.32;port=502;fc=3;reg=1000;type=float;scale=1;mode=max_kw"></td>
+              <td><span id="dynamicPowerLimitStatus0" class="dynamic-power-limit-status"></span></td>
+            </tr>
+            <tr>
+              <td>
+                <label class="switch">
+                  <input type="checkbox" id="dynamicPowerLimitEnable1">
+                  <span class="slider"></span>
+                </label>
+              </td>
+              <td><input type="text" id="dynamicPowerLimitConfig1" placeholder="ip=192.168.0.32;port=502;fc=3;reg=1000;type=float;scale=1;mode=max_kw"></td>
+              <td><span id="dynamicPowerLimitStatus1" class="dynamic-power-limit-status"></span></td>
+            </tr>
+            <tr>
+              <td>
+                <label class="switch">
+                  <input type="checkbox" id="dynamicPowerLimitEnable2">
+                  <span class="slider"></span>
+                </label>
+              </td>
+              <td><input type="text" id="dynamicPowerLimitConfig2" placeholder="ip=192.168.0.32;port=502;fc=3;reg=1000;type=float;scale=1;mode=max_kw"></td>
+              <td><span id="dynamicPowerLimitStatus2" class="dynamic-power-limit-status"></span></td>
+            </tr>
+          </tbody>
         </table>
       </div>
 

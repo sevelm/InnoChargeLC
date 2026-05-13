@@ -44,6 +44,22 @@ static constexpr float PHASE_SWITCH_TO_1P_DEFAULT = 37.0f;   // 3.7 kW
 static constexpr float PHASE_SWITCH_TO_3P_DEFAULT = 42.0f;   // 4.2 kW
 
 const char *CP_LOG = "Control Pilot: ";
+
+bool charging_authorization_allows_charging()
+{
+    return !rfidAuth.required || chargeAuthSession.authorized;
+}
+
+void apply_charging_authorization()
+{
+    if (!charging_authorization_allows_charging() || g_setChargingPower_kW <= 0.0f) {
+        set_control_pilot_100();  // Status B (WAIT)
+        return;
+    }
+
+    set_charging_power(g_setChargingPower_kW);
+}
+
 /**
     * @brief Initialize the control pilot
     * 
@@ -144,7 +160,9 @@ float get_control_pilot_duty(){
 float get_duty_from_current(float current) {
     if (current < 0) return 0.0;                    // Negative values -> 0A
     if (current < 5 && current > 0) current = 5;    // Below 5A -> use 5A
-    if (current > 32) current = 32;                 // Above 22A -> use 22A
+    if (current > ((digitalRead(DIP_SWITCH_1) == LOW) ? 32.0f : 16.0f)) {
+        current = (digitalRead(DIP_SWITCH_1) == LOW) ? 32.0f : 16.0f;
+    }
     // Calculate duty cycle based on current
     return (current <= 51) ? current / 0.6 : current / 2.5 + 64;
 }
@@ -181,6 +199,9 @@ float get_power_from_duty(float duty_cycle) {
  */
 float get_duty_from_power(float power_in_tenth_kw) {
     if (power_in_tenth_kw <= 0) return 0.0;             // Negative or zero power -> 0% duty cycle
+    if (threePhaseActive && power_in_tenth_kw > ((digitalRead(DIP_SWITCH_1) == LOW) ? 220.0f : 110.0f)) {
+        power_in_tenth_kw = (digitalRead(DIP_SWITCH_1) == LOW) ? 220.0f : 110.0f;
+    }
     float power_kw = power_in_tenth_kw / 10.0;          // Convert 1/10 kW to kW
     //if (power_kw <= 4.1) {                              // For power <= 4.1 kW   
     if (!threePhaseActive) {   
@@ -198,7 +219,7 @@ float get_duty_from_power(float power_in_tenth_kw) {
     * @return void
 */
 void set_charging_current(float current){
-    if (current == 0) {
+    if (current == 0 || !charging_authorization_allows_charging()) {
         set_control_pilot_100();  // Status B (WAIT)
     } else {
         float duty = get_duty_from_current(current);
@@ -214,6 +235,19 @@ void set_charging_current(float current){
     * @return void
 */
 void set_charging_power(float power){
+    // Limit by 1,4kW
+    if (power > 0.0f && power < 14.0f) {
+        power = 14.0f;
+    }
+
+    // Store requested power even when RFID authorization currently blocks PWM.
+    g_setChargingPower_kW = power;
+
+    if (power == 0 || !charging_authorization_allows_charging()) {
+        set_control_pilot_100();  // Status B (WAIT)
+        return;
+    }
+
     if (phaseSwitchAllowed) {
         if ((power > 0.0f) && (power < PHASE_SWITCH_TO_1P_DEFAULT) && ((stateRelayL1N && stateRelayL2L3) || (!stateRelayL1N && !stateRelayL2L3))) {
             switchToL1N = true;
@@ -234,28 +268,16 @@ void set_charging_power(float power){
         return;
     }
 
-    // Limit by 1,1kW
-    if (power > 0.0f && power < 11.0f) {
-        power = 11.0f;
+    // Active 3-phase charging must not drop below 6 A (~4.2 kW).
+    if (stateRelayL1N && stateRelayL2L3 && power > 0.0f && power < 42.0f) {
+        power = 42.0f;
     }
-
-    // Store to global first (visible to other tasks/ISRs)
-    g_setChargingPower_kW = power;
-
-    if (power == 0) {
-        set_control_pilot_100();  // Status B (WAIT)
-    } else {
-        // Active 3-phase charging must not drop below 6 A (~4.2 kW).
-        if (stateRelayL1N && stateRelayL2L3 && power > 0.0f && power < 42.0f) {
-            power = 42.0f;
-        }
-        // Active 1-phase charging must not exceed 16 A (~3.7 kW).
-        if (stateRelayL1N && !stateRelayL2L3 && power > 37.0f) {
-            power = 37.0f;
-        }
-        float duty = get_duty_from_power(power);
-        set_control_pilot_duty(duty);
+    // Active 1-phase charging must not exceed 16 A (~3.7 kW).
+    if (stateRelayL1N && !stateRelayL2L3 && power > 37.0f) {
+        power = 37.0f;
     }
+    float duty = get_duty_from_power(power);
+    set_control_pilot_duty(duty);
 
          ESP_LOGI(CP_LOG, "Set unten: %f", power);
 

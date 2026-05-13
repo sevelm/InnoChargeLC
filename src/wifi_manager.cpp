@@ -8,6 +8,7 @@
 
 #include "wifi_manager.hpp"
 #include "AA_globals.h"
+#include "time_service.hpp"
 
 
 const char *WIFI_TAG = "WIFI MANAGER : ";
@@ -221,6 +222,7 @@ static void wifi_sta_event_handler(void *arg, esp_event_base_t event_base, int32
         memcpy(current_wifi_sta_state.dns1, &dns_info.ip.u_addr.ip4, 4);
         esp_netif_get_dns_info(esp_netif_get_handle_from_ifkey("WIFI_STA_DEF"), ESP_NETIF_DNS_BACKUP, &dns_info);
         memcpy(current_wifi_sta_state.dns2, &dns_info.ip.u_addr.ip4, 4);
+        time_service_request_sync();
     }
 }
 
@@ -344,6 +346,39 @@ void wifi_init_sta(wifi_sta_start_config_t *config) {
 
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
+    ESP_ERROR_CHECK(esp_wifi_start());
+}
+
+void wifi_start_rescue_ap()
+{
+    ESP_LOGI(WIFI_TAG, "Starting rescue WiFi AP");
+
+    if (!esp_netif_get_handle_from_ifkey("WIFI_AP_DEF")) {
+        esp_netif_t* apNetif = esp_netif_create_default_wifi_ap();
+        esp_netif_ip_info_t ip_info;
+        IP4_ADDR(&ip_info.ip, 10, 10, 10, 11);
+        IP4_ADDR(&ip_info.gw, 10, 10, 10, 11);
+        IP4_ADDR(&ip_info.netmask, 255, 255, 255, 0);
+        ESP_ERROR_CHECK(esp_netif_dhcps_stop(apNetif));
+        ESP_ERROR_CHECK(esp_netif_set_ip_info(apNetif, &ip_info));
+        ESP_ERROR_CHECK(esp_netif_dhcps_start(apNetif));
+    }
+
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    esp_err_t err = esp_wifi_init(&cfg);
+    if (err != ESP_OK && err != ESP_ERR_WIFI_INIT_STATE) {
+        ESP_ERROR_CHECK(err);
+    }
+
+    wifi_config_t ap_config = {};
+    strcpy((char*)ap_config.ap.ssid, "InnoCharge");
+    ap_config.ap.ssid_len = strlen("InnoCharge");
+    ap_config.ap.channel = 1;
+    ap_config.ap.max_connection = 4;
+    ap_config.ap.authmode = WIFI_AUTH_OPEN;
+
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap_config));
     ESP_ERROR_CHECK(esp_wifi_start());
 }
 

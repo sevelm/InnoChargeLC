@@ -5,6 +5,7 @@
 
 let currentSSID = '';
 let Socket;           // WebSocket instance
+let rescueModeActive = false;
 let scanInProgress = false;   // verhindert Parallel‑Scans
 
 /* ------------------------------------------------------------------
@@ -36,6 +37,7 @@ function initWebSocket() {
 
     // Netzwerkpaket erkannt? → UI füllen
     if (d.eth_mac || d.eth_ip || d.wifi_ssid || d.wifi_ip) {
+      rescueModeActive = d.rescueMode === true;
       if (typeof setEthernetInfo === 'function') setEthernetInfo(d);
       if (typeof setWifiInfo === 'function') setWifiInfo(d);
 
@@ -325,6 +327,16 @@ function getSignalQuality(rssi) {
   return 'Weak';
 }
 
+function showNetworkSavePopup() {
+  const text = document.getElementById('confirmation-popup-text');
+  if (text) {
+    text.textContent = rescueModeActive
+      ? 'The system will restart. Turn DIP Switch 2 OFF before rebooting, otherwise rescue mode will start again. Do you want to proceed?'
+      : 'The system will restart. Do you want to proceed?';
+  }
+  document.getElementById('confirmation-popup').style.display = 'flex';
+}
+
   // Function to save Ethernet network settings
   function saveETHNetworkSettings() {
     var msg = {
@@ -399,8 +411,8 @@ document.addEventListener('DOMContentLoaded', () => {
   initialiseNetworkPage();
 
   let lastBtn = null;
-  document.getElementById('eth_btn_save').onclick  = () => { lastBtn = 'eth';  document.getElementById('confirmation-popup').style.display = 'flex'; };
-  document.getElementById('wifi_btn_save').onclick = () => { lastBtn = 'wifi'; document.getElementById('confirmation-popup').style.display = 'flex'; };
+  document.getElementById('eth_btn_save').onclick  = () => { lastBtn = 'eth';  showNetworkSavePopup(); };
+  document.getElementById('wifi_btn_save').onclick = () => { lastBtn = 'wifi'; showNetworkSavePopup(); };
 
   document.getElementById('popup-yes').onclick = () => {
     document.getElementById('confirmation-popup').style.display = 'none';

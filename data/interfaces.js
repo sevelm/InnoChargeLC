@@ -2,6 +2,7 @@
 
 // Initialize WebSocket variable
 var Socket;
+var pendingModbusAddressSave = null;
 // Flag to check if input fields have been initialized
 var inputsInitialized = false;
 
@@ -47,12 +48,27 @@ function processCommand(event) {
 
   // Initialize only once
   if (!inputsInitialized) {
-    if (obj.energyMeterState !== undefined && document.getElementById('toggleEnergyMeter') !== null) {
-      document.getElementById('toggleEnergyMeter').checked = obj.energyMeterState;
-    }
-    if (obj.rfidState !== undefined && document.getElementById('toggleRfid') !== null) {
-      document.getElementById('toggleRfid').checked = obj.rfidState
-    }
+	    if (obj.energyMeterState !== undefined && document.getElementById('toggleEnergyMeter') !== null) {
+	      document.getElementById('toggleEnergyMeter').checked = obj.energyMeterState;
+	    }
+	    if (obj.energyMeterType !== undefined && document.getElementById('energyMeterType') !== null) {
+	      document.getElementById('energyMeterType').value = String(obj.energyMeterType);
+	    }
+	    if (obj.energyMeterModbusId !== undefined && document.getElementById('energyMeterModbusId') !== null) {
+	      document.getElementById('energyMeterModbusId').value = obj.energyMeterModbusId;
+	    }
+	    if (obj.rfidState !== undefined && document.getElementById('toggleRfid') !== null) {
+	      document.getElementById('toggleRfid').checked = obj.rfidState
+	    }
+	    if (obj.rfidModbusId !== undefined && document.getElementById('rfidModbusId') !== null) {
+	      document.getElementById('rfidModbusId').value = obj.rfidModbusId;
+	    }
+	    if (obj.rfidBuzzer !== undefined && document.getElementById('toggleRfidBuzzer') !== null) {
+	      document.getElementById('toggleRfidBuzzer').checked = obj.rfidBuzzer;
+	    }
+	    if (obj.rfidLed !== undefined && document.getElementById('rfidLed') !== null) {
+	      document.getElementById('rfidLed').value = String(obj.rfidLed);
+	    }
     if (obj.energySignState !== undefined && document.getElementById('invertEnergySign') !== null) {
       document.getElementById('invertEnergySign').checked = obj.energySignState
     }
@@ -153,15 +169,41 @@ document.addEventListener('DOMContentLoaded', function() {
   initWebSocket();
 
   // Set up event listeners for buttons
-  document.getElementById('toggleEnergyMeter')?.addEventListener('change', function(event) {
-    toggle_EnergyMeter();
-  });
-  document.getElementById('toggleRfid')?.addEventListener('change', function(event) {
-    toggle_Rfid();
-  });
-  document.getElementById('invertEnergySign')?.addEventListener('change', function(event) {
-    toggle_invertEnergySign();
-  });
+	  document.getElementById('toggleEnergyMeter')?.addEventListener('change', function(event) {
+	    toggle_EnergyMeter();
+	  });
+	  document.getElementById('energyMeterType')?.addEventListener('change', function(event) {
+	    set_EnergyMeterType();
+	  });
+			  document.getElementById('saveEnergyMeterModbusId')?.addEventListener('click', function(event) {
+			    request_ModbusAddressSave('energyMeterModbusId', 'setEnergyMeterModbusId');
+			  });
+		  document.getElementById('toggleRfid')?.addEventListener('change', function(event) {
+		    toggle_Rfid();
+		  });
+		  document.getElementById('toggleRfidBuzzer')?.addEventListener('change', function(event) {
+		    toggle_RfidBuzzer();
+		  });
+		  document.getElementById('rfidLed')?.addEventListener('change', function(event) {
+		    set_RfidLed();
+		  });
+			  document.getElementById('saveRfidModbusId')?.addEventListener('click', function(event) {
+			    request_ModbusAddressSave('rfidModbusId', 'setRfidModbusId');
+			  });
+	  document.getElementById('popup-yes')?.addEventListener('click', function(event) {
+	    document.getElementById('confirmation-popup').style.display = 'none';
+	    if (pendingModbusAddressSave !== null) {
+	      set_ModbusAddress(pendingModbusAddressSave.elementId, pendingModbusAddressSave.action);
+	      pendingModbusAddressSave = null;
+	    }
+	  });
+	  document.getElementById('popup-no')?.addEventListener('click', function(event) {
+	    document.getElementById('confirmation-popup').style.display = 'none';
+	    pendingModbusAddressSave = null;
+	  });
+	  document.getElementById('invertEnergySign')?.addEventListener('change', function(event) {
+	    toggle_invertEnergySign();
+	  });
 
 
 });
@@ -177,6 +219,41 @@ function toggle_EnergyMeter() {
   console.log('Sending toggleEnergyMeter values to server:', data);
 }
 
+// Function to handle selecting the energy meter type
+function set_EnergyMeterType() {
+  const type = parseInt(document.getElementById('energyMeterType').value, 10);
+  const data = {
+    action: 'setEnergyMeterType',
+    type: type
+  };
+  Socket.send(JSON.stringify(data));
+  console.log('Sending energyMeterType values to server:', data);
+}
+
+function request_ModbusAddressSave(elementId, action) {
+  const value = parseInt(document.getElementById(elementId).value, 10);
+  if (isNaN(value) || value < 1 || value > 247) {
+    alert('Modbus address must be between 1 and 247.');
+    return;
+  }
+  pendingModbusAddressSave = { elementId: elementId, action: action };
+  document.getElementById('confirmation-popup').style.display = 'flex';
+}
+
+function set_ModbusAddress(elementId, action) {
+  const value = parseInt(document.getElementById(elementId).value, 10);
+  if (isNaN(value) || value < 1 || value > 247) {
+    alert('Modbus address must be between 1 and 247.');
+    return;
+  }
+  const data = {
+    action: action,
+    address: value
+  };
+  Socket.send(JSON.stringify(data));
+  console.log('Sending Modbus address values to server:', data);
+}
+
 // Function to handle toggling of OFF and ON
 function toggle_Rfid() {
   const isChecked = document.getElementById('toggleRfid').checked;
@@ -186,6 +263,26 @@ function toggle_Rfid() {
   };
   Socket.send(JSON.stringify(data));
   console.log('Sending toggleRfid values to server:', data);
+}
+
+function toggle_RfidBuzzer() {
+  const isChecked = document.getElementById('toggleRfidBuzzer').checked;
+  const data = {
+    action: 'setRfidBuzzer',
+    state: isChecked
+  };
+  Socket.send(JSON.stringify(data));
+  console.log('Sending toggleRfidBuzzer values to server:', data);
+}
+
+function set_RfidLed() {
+  const value = parseInt(document.getElementById('rfidLed').value, 10);
+  const data = {
+    action: 'setRfidLed',
+    value: value
+  };
+  Socket.send(JSON.stringify(data));
+  console.log('Sending rfidLed values to server:', data);
 }
 
 // Function to handle toggling of OFF and ON

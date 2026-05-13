@@ -12,23 +12,50 @@
   <div class="sidebar" id="navbar">
     <!-- Navigation is loaded here -->
   </div>
+
+  <!-- Popup Modal -->
+  <div id="confirmation-popup" class="popup-overlay" style="display: none;">
+    <div class="popup-content">
+      <p>Save Modbus address?</p>
+      <button id="popup-yes">YES</button>
+      <button id="popup-no">NO</button>
+    </div>
+  </div>
   
   <div class="main-content">
     <h1>Interfaces</h1>
   
     <div class="container">
-      <h2>Energy-Meter</h2>
-      <table>
-        <tr>
-        <td><label for="state">Enable:</label></td>
-        <td>
-          <label class="switch">
-            <input type="checkbox" id="toggleEnergyMeter">
-            <span class="slider"></span>
-          </label></td>
-        </tr>
-        <tr>
-          <td>State:</td>
+		      <h2>Energy-Meter</h2>
+		      <table>
+			        <tr>
+			        <td><label for="toggleEnergyMeter"><strong>Enable:</strong></label></td>
+	        <td>
+	          <label class="switch">
+	            <input type="checkbox" id="toggleEnergyMeter">
+	            <span class="slider"></span>
+	          </label></td>
+	        </tr>
+		        <tr>
+		          <td><label for="energyMeterType">Type:</label></td>
+	          <td>
+	            <select id="energyMeterType">
+	              <option value="0">Eastron SDM630</option>
+	              <option value="1">YT-DTS353F-2</option>
+	            </select>
+	          </td>
+		        </tr>
+		        <tr>
+			          <td><label for="energyMeterModbusId">Modbus address:</label></td>
+			          <td>
+			            <div class="modbus-address-control">
+			              <input type="number" id="energyMeterModbusId" min="1" max="247" step="1">
+			              <button id="saveEnergyMeterModbusId" class="modbus-save-button" type="button">Save</button>
+			            </div>
+			          </td>
+			        </tr>
+	        <tr>
+	          <td>State:</td>
           <td><span id="energyMeterStatus" class="status">–</span></td>
         </tr>
         <tr>
@@ -110,20 +137,48 @@
         </tr>  
       </table>
     </div>
-    <div class="container">
-        <h2>RFID-Reader</h2>
-        <table>
-          <tr>
-            <td><label for="state">Enable:</label></td>
-            <td>
-              <label class="switch">
-                <input type="checkbox" id="toggleRfid">
-                <span class="slider"></span>
-              </label>
-            </td>
-          </tr>
-          <tr>
-            <td>State:</td>
+	    <div class="container">
+	        <h2>RFID-Reader</h2>
+	        <table>
+			          <tr>
+			            <td><label for="toggleRfid"><strong>Enable:</strong></label></td>
+		            <td>
+		              <label class="switch">
+		                <input type="checkbox" id="toggleRfid">
+		                <span class="slider"></span>
+		              </label>
+		            </td>
+		          </tr>
+			          <tr>
+				            <td><label for="rfidModbusId">Modbus address:</label></td>
+			            <td>
+			              <div class="modbus-address-control">
+			                <input type="number" id="rfidModbusId" min="1" max="247" step="1">
+			                <button id="saveRfidModbusId" class="modbus-save-button" type="button">Save</button>
+			              </div>
+			            </td>
+			          </tr>
+		          <tr>
+		            <td><label for="toggleRfidBuzzer">Buzzer:</label></td>
+	            <td>
+	              <label class="switch">
+	                <input type="checkbox" id="toggleRfidBuzzer">
+	                <span class="slider"></span>
+	              </label>
+	            </td>
+	          </tr>
+	          <tr>
+	            <td><label for="rfidLed">LED:</label></td>
+	            <td>
+	              <select id="rfidLed">
+	                <option value="0">Off</option>
+	                <option value="1">Green</option>
+	                <option value="2">Red</option>
+	              </select>
+	            </td>
+	          </tr>
+	          <tr>
+	            <td>State:</td>
             <td><span id="rfidStatus" class="status">–</span></td>
           </tr>
           <tr>

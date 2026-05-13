@@ -105,6 +105,41 @@
       </tr>
     </table>
   </div>
+
+  <div class="container compact-time-settings">
+    <h2>Time</h2>
+    <table>
+      <tr>
+        <td><label for="localTime">Current:</label></td>
+        <td><span id="localTime" style="font-size: 16px; color: #333; font-weight: bold;"></span></td>
+      </tr>
+    </table>
+  </div>
+
+	  <div class="container compact-time-settings">
+	    <h2>Device</h2>
+	    <table>
+	      <tr>
+	        <td><label for="wallboxName">Wallbox Name:</label></td>
+	        <td><input type="text" id="wallboxName" maxlength="32"></td>
+	      </tr>
+	      <tr>
+	        <td>DIP Switch 2:</td>
+	        <td>
+	          <span id="dipSwitch2" class="device-status-text"></span>
+	          <span class="dip-switch-hint">Rescue network mode at boot</span>
+	        </td>
+	      </tr>
+	      <tr>
+	        <td>DIP Switch 1:</td>
+	        <td>
+	          <span id="dipSwitch1" class="device-status-text"></span>
+	          <span class="dip-switch-hint">Charge limit: OFF = 11 kW, ON = 22 kW</span>
+	        </td>
+	      </tr>
+	    </table>
+	    <button id="rebootDevice" class="compact-button secondary-button">Reboot</button>
+	  </div>
 </div>
 
   <!-- Scripts -->

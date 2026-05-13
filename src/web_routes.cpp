@@ -9,9 +9,10 @@ void registerWebRoutes(AsyncWebServer& server) {
     // Route definitions for all pages
     const char* routes[] = {
         "/network.html",
-        "/interfaces.html",
-        "/rfid.html",
-        "/system.html",
+	        "/interfaces.html",
+	        "/rfid.html",
+	        "/sessions.html",
+	        "/system.html",
         "/reserve1.html",
         "/reserve2.html",
         "/reserve3.html",
@@ -30,10 +31,11 @@ void registerWebRoutes(AsyncWebServer& server) {
         "/favicon.ico",
         "/innocharge.png",
         "/interface.png",
-        "/rfid.png",
-        "/computer.png",
-        "/dashboard.png",
-        "/settings.png"
+	        "/rfid.png",
+	        "/computer.png",
+	        "/dashboard.png",
+	        "/session.png",
+	        "/settings.png"
     };
 
     const char* imageTypes[] = {

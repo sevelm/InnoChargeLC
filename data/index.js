@@ -4,6 +4,7 @@
 var Socket;
 // Flag to check if input fields have been initialized
 var inputsInitialized = false;
+var dynamicPowerLimitInitialized = false;
 
 
 // Function to initialize the WebSocket connection
@@ -65,9 +66,12 @@ function processCommand(event) {
     }
   }
 
-  // Update if the element exists on the page
-  if (obj.cpState !== undefined && document.getElementById('cpState') !== null) {
-    document.getElementById('cpState').innerHTML = obj.cpState;
+	  // Update if the element exists on the page
+	  if (obj.wallboxName !== undefined && document.getElementById('wallboxName') !== null) {
+	    document.getElementById('wallboxName').textContent = obj.wallboxName || 'InnoCharge';
+	  }
+	  if (obj.cpState !== undefined && document.getElementById('cpState') !== null) {
+	    document.getElementById('cpState').innerHTML = obj.cpState;
   }
   if (obj.cpVoltage !== undefined && document.getElementById('cpVoltage') !== null) {
     document.getElementById('cpVoltage').innerHTML = obj.cpVoltage;
@@ -95,6 +99,9 @@ function processCommand(event) {
     const status = document.getElementById('phaseSwitchDelayStatus');
     status.textContent = remaining + ' s';
     status.style.color = remaining > 0 ? '#c62828' : '#1c9b47';
+  }
+  if (Array.isArray(obj.dynamicPowerLimit)) {
+    renderDynamicPowerLimit(obj.dynamicPowerLimit);
   }
 
   // Update cpRelayState if the element exists on the page
@@ -134,6 +141,21 @@ document.addEventListener('DOMContentLoaded', function() {
     toggle_cp_relay();
   });
 
+  for (let i = 0; i < 3; i++) {
+    document.getElementById('dynamicPowerLimitEnable' + i)?.addEventListener('change', () => saveDynamicPowerLimitRow(i));
+    document.getElementById('dynamicPowerLimitConfig' + i)?.addEventListener('change', () => saveDynamicPowerLimitRow(i));
+    document.getElementById('dynamicPowerLimitConfig' + i)?.addEventListener('keydown', function(event) {
+      if (event.key === 'Enter') saveDynamicPowerLimitRow(i);
+    });
+  }
+
+  document.getElementById('dynamicPowerLimitHelpButton')?.addEventListener('click', function() {
+    const help = document.getElementById('dynamicPowerLimitHelp');
+    if (!help) return;
+    help.hidden = !help.hidden;
+    this.textContent = help.hidden ? 'Help' : 'Hide help';
+  });
+
   document.getElementById('BTN_GO_TO_SETTINGS')?.addEventListener('click', go_to_settings);
   document.getElementById('BTN_SET_RELAY')?.addEventListener('click', toggle_cp_relay);
 });
@@ -163,6 +185,34 @@ function set_delayed_phase_switching_seconds() {
   };
   Socket.send(JSON.stringify(data));
   console.log('Sending delayed 1P/3P switching seconds to server:', data);
+}
+
+function renderDynamicPowerLimit(rows) {
+  for (const row of rows) {
+    const i = Number(row.index);
+    const enable = document.getElementById('dynamicPowerLimitEnable' + i);
+    const config = document.getElementById('dynamicPowerLimitConfig' + i);
+    const status = document.getElementById('dynamicPowerLimitStatus' + i);
+    if (!enable || !config || !status) continue;
+
+    if (!dynamicPowerLimitInitialized && document.activeElement !== config) {
+      enable.checked = row.enabled === true;
+      config.value = row.config || '';
+    }
+    status.textContent = row.status || '';
+    status.style.color = row.status === 'Disabled' ? '#607d8b' : '#333';
+  }
+  dynamicPowerLimitInitialized = true;
+}
+
+function saveDynamicPowerLimitRow(index) {
+  if (!Socket || Socket.readyState !== 1) return;
+  Socket.send(JSON.stringify({
+    action: 'saveDynamicPowerLimitRow',
+    index: index,
+    enabled: document.getElementById('dynamicPowerLimitEnable' + index).checked,
+    config: document.getElementById('dynamicPowerLimitConfig' + index).value
+  }));
 }
 
 // Function to set the charging current

@@ -22,9 +22,15 @@
 #include "control_pilot.hpp"
 #include "ethernet_manager.hpp"
 #include "wifi_manager.hpp"
+#include "rfid_db.hpp"
+#include "time_service.hpp"
+#include "charge_session_log.hpp"
+#include "session_mailer.hpp"
+#include "dynamic_power_limit.hpp"
 #include "esp_wifi.h"
 
 #include "esp_timer.h"
+#include <time.h>
 #include <map>
 
 #include <esp_ota_ops.h>        // ↯ einmal ganz oben in A_Task_Web.cpp
@@ -42,6 +48,19 @@ static float readEspTemperatureC() {
   return v; // likely already °C on ESP32-S2/S3/C3
 }
 
+static String formatSessionTime(time_t value) {
+  if (value <= 0) {
+    return "";
+  }
+
+  struct tm timeinfo;
+  localtime_r(&value, &timeinfo);
+
+  char buffer[24];
+  strftime(buffer, sizeof(buffer), "%d.%m.%Y %H:%M:%S", &timeinfo);
+  return String(buffer);
+}
+
 OtaStatus otaMain{};
 OtaStatus otaUi{};
 
@@ -51,6 +70,17 @@ static std::vector<uint8_t> g_pendingNetworkOnce;
 std::map<uint8_t, std::string> subscribedClients;    // Client number with page
 
 const char *WEB_TAG = "Task_Web: ";
+static constexpr const char* RFID_AUTH_REQUIRED_KEY = "rfidAuthReq";
+static constexpr const char* SESSION_IMPORT_PATH = "/charge_sessions_import.json";
+static constexpr size_t SESSION_PAGE_LIMIT = 100;
+static volatile bool g_rebootRequested = false;
+static volatile bool g_sessionImportPending = false;
+static volatile size_t g_sessionPageOffset = 0;
+
+struct SessionImportUpload {
+    File file;
+    bool failed = false;
+};
 
 // Initialization of webserver and websocket
 AsyncWebServer server(80); // the server uses port 80 (standard port for websites
@@ -163,26 +193,93 @@ void webSocketEvent(byte num, WStype_t type, uint8_t * payload, size_t length) {
                     } else if (strcmp(action, "setChargeParameters") == 0 && doc.containsKey("current")) {
                         int current = doc["current"].as<int>();
                         set_charging_current(current);
-                    } else if (strcmp(action, "setChargeParameters") == 0 && doc.containsKey("power")) {
-                        float power = doc["power"].as<float>();
-                        set_charging_power(power*10);
-                        // Page-Interfaces
-                    } else if (strcmp(action, "setEnergyMeter") == 0 && doc["state"].is<bool>()) {
+	                    } else if (strcmp(action, "setChargeParameters") == 0 && doc.containsKey("power")) {
+	                        float power = doc["power"].as<float>();
+	                        set_charging_power(power*10);
+	                    } else if (strcmp(action, "saveDynamicPowerLimitRow") == 0 && doc["index"].is<int>()) {
+	                        int index = doc["index"].as<int>();
+	                        bool enabled = doc["enabled"] | false;
+	                        String config = doc["config"] | "";
+	                        dynamic_power_limit_save_row((uint8_t)index, enabled, config);
+	                        // Page-Interfaces
+	                    } else if (strcmp(action, "setEnergyMeter") == 0 && doc["state"].is<bool>()) {
                         bool state = doc["state"].as<bool>();
                         preferences.putBool("emEnable", state);  
                         sdm.enable = state;
                       //  sdm.error = state;
-                    } else if (strcmp(action, "setEnergySign") == 0 && doc["state"].is<bool>()) {
-                        bool state = doc["state"].as<bool>();
-                        preferences.putBool("emSignEnable", state); 
-                        sdm.invSign = state;    
-                    } else if (strcmp(action, "setRfid") == 0 && doc["state"].is<bool>()) {
-                        bool state = doc["state"].as<bool>();
-                        preferences.putBool("rfidEnable", state); 
-                        rfid.enable = state;
-                       // rfid.error = state;
-                       // ESP_LOGI(WEB_TAG, "energyMeterEnable = %d", preferences.getBool("rfidEnable", false));
-                    }
+	                    } else if (strcmp(action, "setEnergyMeterType") == 0 && doc["type"].is<int>()) {
+	                        int type = doc["type"].as<int>();
+	                        if (type < EnergyMeter_EastronSdm630 || type > EnergyMeter_YtDts353F2) {
+	                            type = EnergyMeter_EastronSdm630;
+	                        }
+	                        sdm.type = (energy_meter_type_t)type;
+	                        preferences.putUChar("emType", (uint8_t)sdm.type);
+	                    } else if (strcmp(action, "setEnergyMeterModbusId") == 0 && doc["address"].is<int>()) {
+	                        int address = doc["address"].as<int>();
+	                        if (address < 1 || address > 247) address = 1;
+	                        sdm.modbusId = (uint8_t)address;
+	                        preferences.putUChar("emMbId", sdm.modbusId);
+	                    } else if (strcmp(action, "setEnergySign") == 0 && doc["state"].is<bool>()) {
+	                        bool state = doc["state"].as<bool>();
+	                        preferences.putBool("emSignEnable", state); 
+	                        sdm.invSign = state;    
+	                    } else if (strcmp(action, "setWallboxName") == 0 && doc["name"].is<const char*>()) {
+	                        String name = doc["name"].as<String>();
+	                        name.trim();
+	                        if (name.length() > 32) {
+	                            name = name.substring(0, 32);
+	                        }
+	                        preferences.putString("wallboxName", name);
+		                    } else if (strcmp(action, "setRfid") == 0 && doc["state"].is<bool>()) {
+		                        bool state = doc["state"].as<bool>();
+		                        preferences.putBool("rfidEnable", state); 
+		                        rfid.enable = state;
+		                       // rfid.error = state;
+		                       // ESP_LOGI(WEB_TAG, "energyMeterEnable = %d", preferences.getBool("rfidEnable", false));
+			                    } else if (strcmp(action, "setRfidModbusId") == 0 && doc["address"].is<int>()) {
+			                        int address = doc["address"].as<int>();
+			                        if (address < 1 || address > 247) address = 2;
+			                        rfid.modbusId = (uint8_t)address;
+			                        preferences.putUChar("rfidMbId", rfid.modbusId);
+			                    } else if (strcmp(action, "setRfidBuzzer") == 0 && doc["state"].is<bool>()) {
+			                        rfid.buzzer = doc["state"].as<bool>();
+			                        preferences.putBool("rfidBuzzer", rfid.buzzer);
+			                    } else if (strcmp(action, "setRfidLed") == 0 && doc["value"].is<int>()) {
+			                        int value = doc["value"].as<int>();
+			                        if (value < 0 || value > 2) value = 0;
+			                        rfid.led = (uint8_t)value;
+			                        preferences.putUChar("rfidLed", rfid.led);
+			                    } else if (strcmp(action, "saveRfidUser") == 0) {
+	                        rfid_user_t user;
+		                        user.idTag = doc["idTag"] | "";
+		                        user.name = doc["name"] | "";
+		                        user.enabled = doc["enabled"] | true;
+		                        int maxChargeMinutes = doc["maxChargeMinutes"] | 0;
+		                        if (maxChargeMinutes < 0) maxChargeMinutes = 0;
+		                        if (maxChargeMinutes > 65535) maxChargeMinutes = 65535;
+		                        user.maxChargeMinutes = (uint16_t)maxChargeMinutes;
+		                        user.note = doc["note"] | "";
+		                        rfid_db_upsert_user(user);
+	                    } else if (strcmp(action, "deleteRfidUser") == 0) {
+	                        const char* idTag = doc["idTag"] | "";
+	                        rfid_db_delete_user(idTag);
+				                    } else if (strcmp(action, "setRfidAuthorizationRequired") == 0 && doc["state"].is<bool>()) {
+				                        bool state = doc["state"].as<bool>();
+				                        preferences.putBool(RFID_AUTH_REQUIRED_KEY, state);
+				                        rfidAuth.required = state;
+					                    } else if (strcmp(action, "importChargeSessions") == 0 && doc["data"].is<const char*>()) {
+					                        charge_session_log_import_json(doc["data"].as<String>());
+					                    } else if (strcmp(action, "requestSessionPage") == 0) {
+					                        int offset = doc["offset"] | 0;
+					                        if (offset < 0) offset = 0;
+					                        g_sessionPageOffset = (size_t)offset;
+					                    } else if (strcmp(action, "saveSessionMailerSettings") == 0 && doc["settings"].is<JsonObject>()) {
+					                        session_mailer_save_settings(doc["settings"].as<JsonObjectConst>());
+				                    } else if (strcmp(action, "sendSessionReportNow") == 0) {
+				                        session_mailer_send_manual_report();
+				                    } else if (strcmp(action, "rebootDevice") == 0) {
+			                        g_rebootRequested = true;
+			                    }
                 }
 
                 // Verarbeitung der anderen JSON-Felder außerhalb des 'if (!val.isNull())'-Blocks
@@ -302,7 +399,7 @@ void webSocketEvent(byte num, WStype_t type, uint8_t * payload, size_t length) {
 
 static void Task_WebPush(void* arg) {
   // Caches der letzten JSONs je Seite (um identische Frames nicht zu spammen)
-  String lastIndex, lastInterfaces, lastSystem;
+	  String lastIndex, lastInterfaces, lastSystem, lastRfid, lastSessions;
 
   for (;;) {
 
@@ -322,7 +419,7 @@ static void Task_WebPush(void* arg) {
         wifi_sta_state_t wifi;
         get_wifi_sta_state(&wifi);
 
-        StaticJsonDocument<640> doc;
+	        StaticJsonDocument<768> doc;
         char mac[18];
         char ip [16];
 
@@ -379,9 +476,10 @@ static void Task_WebPush(void* arg) {
         snprintf(ip, sizeof(ip), "%u.%u.%u.%u", wifi.dns2[0], wifi.dns2[1], wifi.dns2[2], wifi.dns2[3]);
         doc["wifi_dns2"] = ip;
 
-        doc["wifi_static"]    = preferences.getBool("wifiStatic", false);
-        doc["wifi_connected"] = wifi.connected;
-        doc["wifi_enable"]    = preferences.getBool("wifiEnable", false);
+	        doc["wifi_static"]    = preferences.getBool("wifiStatic", false);
+	        doc["wifi_connected"] = wifi.connected;
+	        doc["wifi_enable"]    = preferences.getBool("wifiEnable", false);
+	        doc["rescueMode"]     = rescueMode;
 
 /*
 
@@ -427,49 +525,56 @@ ESP_LOGI(WEB_TAG,
     }
 
     // --- 2) Bedarf je Seite feststellen ---
-    bool needIndex = false, needInterfaces = false, needSystem = false;
-    for (auto &c : clients) {
-      if      (c.second == "index")      needIndex      = true;
-      else if (c.second == "interfaces") needInterfaces = true;
-      else if (c.second == "system")     needSystem     = true;
-    }
+	    bool needIndex = false, needInterfaces = false, needSystem = false, needRfid = false, needSessions = false;
+	    for (auto &c : clients) {
+	      if      (c.second == "index")      needIndex      = true;
+	      else if (c.second == "interfaces") needInterfaces = true;
+	      else if (c.second == "system")     needSystem     = true;
+	      else if (c.second == "rfid")       needRfid       = true;
+	      else if (c.second == "sessions")   needSessions   = true;
+	    }
 
     // --- 3) JSONs je Seite GENAU EINMAL bauen (nur wenn benötigt) ---
-    String jsonIndex, jsonInterfaces, jsonSystem;
+	    String jsonIndex, jsonInterfaces, jsonSystem, jsonRfid, jsonSessions;
 
-    if (needIndex) {
-      StaticJsonDocument<384> doc;
-      doc["cpState"]             = cpStateToName(currentCpState.state);
+	    if (needIndex) {
+	      StaticJsonDocument<1536> doc;
+	      doc["wallboxName"]         = preferences.getString("wallboxName", "InnoCharge");
+	      doc["cpState"]             = cpStateToName(currentCpState.state);
       doc["cpVoltage"]           = round(highVoltage * 10) / 10.0;
       doc["espTemp"]             = round(readEspTemperatureC() * 10) / 10.0;
       doc["phaseMode"] = currentCpState.threePhaseActive ? "Three-phase" : "Single-phase";
       doc["targetChargeCurrent"] = (int)round(get_current_from_duty(getCpDuty));
       doc["targetChargePower"]   = round(get_power_from_duty(getCpDuty)) / 10.0;
-      doc["cpRelayState"]        = get_cp_relays_status();
-      doc["delayedPhaseSwitchingSeconds"] = delayedPhaseSwitchingSeconds;
-      doc["phaseSwitchDelayRemainingSeconds"] = phaseSwitchDelayRemainingSeconds;
-      jsonIndex.reserve(256);
-      serializeJson(doc, jsonIndex);
-    }
+	      doc["cpRelayState"]        = get_cp_relays_status();
+	      doc["delayedPhaseSwitchingSeconds"] = delayedPhaseSwitchingSeconds;
+	      doc["phaseSwitchDelayRemainingSeconds"] = phaseSwitchDelayRemainingSeconds;
+	      dynamic_power_limit_append_json(doc.as<JsonObject>());
+		      jsonIndex.reserve(1024);
+	      serializeJson(doc, jsonIndex);
+	    }
 
     if (needInterfaces) {
-      StaticJsonDocument<512> doc;
-      doc["energyMeterState"] = preferences.getBool("emEnable", false);
-      doc["energySignState"]  = preferences.getBool("emSignEnable", false);
+		      StaticJsonDocument<512> doc;
+		      doc["energyMeterState"] = preferences.getBool("emEnable", false);
+		      doc["energyMeterType"]  = preferences.getUChar("emType", EnergyMeter_EastronSdm630);
+		      doc["energyMeterModbusId"] = sdm.modbusId;
+		      doc["energySignState"]  = preferences.getBool("emSignEnable", false);
       doc["l1Voltage"] =  (int16_t)roundf(sdm.voltL1 * 10);
       doc["l2Voltage"] =  (int16_t)roundf(sdm.voltL2 * 10);
       doc["l3Voltage"] =  (int16_t)roundf(sdm.voltL3 * 10);
       doc["l1Current"] =  (int16_t)roundf(sdm.currL1 * 10);
       doc["l2Current"] =  (int16_t)roundf(sdm.currL2 * 10);
       doc["l3Current"] =  (int16_t)roundf(sdm.currL3 * 10);
-      doc["l1Power"]   =  (int16_t)roundf(sdm.pwrL1  * 10);
-      doc["l2Power"]   =  (int16_t)roundf(sdm.pwrL2  * 10);
-      doc["l3Power"]   =  (int16_t)roundf(sdm.pwrL3  * 10);
-      doc["totPower"]  =  (int16_t)roundf(sdm.pwrTot * 10);
-      doc["impPower"]  =  (int16_t)roundf(sdm.enrImp * 100);
-      doc["expPower"]  =  (int16_t)roundf(sdm.enrExp * 100);
+      doc["l1Power"]   =  (int32_t)roundf(sdm.pwrL1  * 10);
+      doc["l2Power"]   =  (int32_t)roundf(sdm.pwrL2  * 10);
+      doc["l3Power"]   =  (int32_t)roundf(sdm.pwrL3  * 10);
+      doc["totPower"]  =  (int32_t)roundf(sdm.pwrTot * 10);
+      doc["impPower"]  =  (int32_t)roundf(sdm.enrImp * 100);
+      doc["expPower"]  =  (int32_t)roundf(sdm.enrExp * 100);
       doc["energyMeterError"] = sdm.error;
       doc["rfidState"]        = preferences.getBool("rfidEnable", false);
+      doc["rfidModbusId"]     = rfid.modbusId;
       doc["rfidTag"]          = rfid.uidStr;
       doc["lastRfidTag"]      = rfid.lastUidStr;
       doc["rfidError"]        = rfid.error;
@@ -477,30 +582,76 @@ ESP_LOGI(WEB_TAG,
       serializeJson(doc, jsonInterfaces);
     }
 
-    if (needSystem) {
-      StaticJsonDocument<256> doc;
-      doc["otaMainProgress"] = otaMain.progress;
-      doc["otaMainCode"]     = otaMain.code;
-      doc["otaMainMessage"]  = otaMain.message;
-      doc["otaMainVersion"]  = FW_VERSION_MAIN;
-      doc["otaUiProgress"]   = otaUi.progress;
-      doc["otaUiCode"]       = otaUi.code;
-      doc["otaUiMessage"]    = otaUi.message;
-      jsonSystem.reserve(256);
-      serializeJson(doc, jsonSystem);
-    }
+			    if (needSystem) {
+			      StaticJsonDocument<640> doc;
+				      doc["wallboxName"]     = preferences.getString("wallboxName", "InnoCharge");
+			      doc["dipSwitch1"]      = (digitalRead(DIP_SWITCH_1) == LOW);
+			      doc["dipSwitch2"]      = (digitalRead(DIP_SWITCH_2) == LOW);
+			      doc["otaMainProgress"] = otaMain.progress;
+	      doc["otaMainCode"]     = otaMain.code;
+	      doc["otaMainMessage"]  = otaMain.message;
+	      doc["otaMainVersion"]  = FW_VERSION_MAIN;
+	      doc["otaUiProgress"]   = otaUi.progress;
+	      doc["otaUiCode"]       = otaUi.code;
+		      doc["otaUiMessage"]    = otaUi.message;
+		      doc["localTime"]       = time_service_local_string();
+		      jsonSystem.reserve(256);
+	      serializeJson(doc, jsonSystem);
+	    }
+
+	    if (needRfid) {
+	      JsonDocument doc;
+	      String dbJson = rfid_db_to_json();
+	      doc["rfidState"]        = preferences.getBool("rfidEnable", false);
+	      doc["rfidModbusId"]     = rfid.modbusId;
+	      doc["rfidBuzzer"]       = rfid.buzzer;
+	      doc["rfidLed"]          = rfid.led;
+	      doc["rfidTag"]          = rfid.uidStr;
+	      doc["lastRfidTag"]      = rfid.lastUidStr;
+	      doc["rfidError"]        = rfid.error;
+	      rfid_user_t currentUser;
+			      rfidAuth.authorized     = rfid_db_is_authorized(rfid.uidStr, &currentUser);
+			      rfidAuth.required       = preferences.getBool(RFID_AUTH_REQUIRED_KEY, false);
+			      doc["rfidAuthorized"]   = rfidAuth.authorized;
+			      doc["rfidUserName"]     = currentUser.name;
+			      doc["rfidAuthRequired"] = rfidAuth.required;
+				      doc["chargeSessionAuthorized"] = chargeAuthSession.authorized;
+				      doc["chargeSessionVehicleWasConnected"] = chargeAuthSession.vehicleWasConnected;
+				      doc["chargeSessionAuthorizationMillis"] = chargeAuthSession.authorizationGrantedMillis;
+			      doc["chargeSessionLastChargeMillis"] = chargeAuthSession.lastChargeActiveMillis;
+			      doc["chargeSessionAuthorizationTime"] = formatSessionTime(chargeAuthSession.authorizationGrantedTime);
+			      doc["chargeSessionLastChargeTime"] = formatSessionTime(chargeAuthSession.lastChargeActiveTime);
+			      doc["chargeSessionIdTag"] = chargeAuthSession.idTag;
+			      doc["chargeSessionUserName"] = chargeAuthSession.userName;
+			      doc["chargeSessionMaxChargeMinutes"] = chargeAuthSession.maxChargeMinutes;
+		      doc["rfidDb"]           = serialized(dbJson);
+		      jsonRfid.reserve(1536);
+	      serializeJson(doc, jsonRfid);
+	    }
+
+	    if (needSessions) {
+	      JsonDocument doc;
+	      deserializeJson(doc, charge_session_log_to_json_page(g_sessionPageOffset, SESSION_PAGE_LIMIT));
+	      doc["wallboxName"] = preferences.getString("wallboxName", "InnoCharge");
+	      session_mailer_append_status(doc.as<JsonObject>());
+	      serializeJson(doc, jsonSessions);
+	    }
 
     // --- 4) Optional: nur bei Änderung senden (spart Last) ---
-    if (needIndex      && jsonIndex      == lastIndex)      needIndex      = false; else lastIndex      = jsonIndex;
-    if (needInterfaces && jsonInterfaces == lastInterfaces) needInterfaces = false; else lastInterfaces = jsonInterfaces;
-    if (needSystem     && jsonSystem     == lastSystem)     needSystem     = false; else lastSystem     = jsonSystem;
+	    if (needIndex      && jsonIndex      == lastIndex)      needIndex      = false; else lastIndex      = jsonIndex;
+	    if (needInterfaces && jsonInterfaces == lastInterfaces) needInterfaces = false; else lastInterfaces = jsonInterfaces;
+	    if (needSystem     && jsonSystem     == lastSystem)     needSystem     = false; else lastSystem     = jsonSystem;
+	    if (needRfid       && jsonRfid       == lastRfid)       needRfid       = false; else lastRfid       = jsonRfid;
+	    if (needSessions   && jsonSessions   == lastSessions)   needSessions   = false; else lastSessions   = jsonSessions;
 
     // --- 5) Verteilen ---
     for (auto &c : clients) {
-      if      (c.second == "index"      && needIndex)      webSocket.sendTXT(c.first, jsonIndex);
-      else if (c.second == "interfaces" && needInterfaces) webSocket.sendTXT(c.first, jsonInterfaces);
-      else if (c.second == "system"     && needSystem)     webSocket.sendTXT(c.first, jsonSystem);
-    }
+	      if      (c.second == "index"      && needIndex)      webSocket.sendTXT(c.first, jsonIndex);
+	      else if (c.second == "interfaces" && needInterfaces) webSocket.sendTXT(c.first, jsonInterfaces);
+	      else if (c.second == "system"     && needSystem)     webSocket.sendTXT(c.first, jsonSystem);
+	      else if (c.second == "rfid"       && needRfid)       webSocket.sendTXT(c.first, jsonRfid);
+	      else if (c.second == "sessions"   && needSessions)   webSocket.sendTXT(c.first, jsonSessions);
+	    }
 
     vTaskDelay(pdMS_TO_TICKS(800));  // gleiche Rate wie zuvor
   }
@@ -520,6 +671,39 @@ void handleWifiScanRequest(AsyncWebServerRequest *request) {
     String response;
     serializeJson(doc, response);
     request->send(200, "application/json", response);
+}
+
+void handleSessionImportBody(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+    if (index == 0) {
+        if (!request->authenticate(www_username, www_password)) {
+            return request->requestAuthentication();
+        }
+
+        SPIFFS.remove(SESSION_IMPORT_PATH);
+        auto *upload = new SessionImportUpload();
+        upload->file = SPIFFS.open(SESSION_IMPORT_PATH, FILE_WRITE);
+        upload->failed = !upload->file;
+        request->_tempObject = upload;
+    }
+
+    auto *upload = static_cast<SessionImportUpload*>(request->_tempObject);
+    if (!upload) {
+        request->send(500, "text/plain", "import buffer error");
+        return;
+    }
+
+    if (!upload->failed && upload->file.write(data, len) != len) {
+        upload->failed = true;
+    }
+
+    if (index + len == total) {
+        if (upload->file) upload->file.close();
+        bool ok = !upload->failed;
+        delete upload;
+        request->_tempObject = nullptr;
+        if (ok) g_sessionImportPending = true;
+        request->send(ok ? 202 : 500, "text/plain", ok ? "import queued" : "import upload failed");
+    }
 }
 
 void A_Task_Web(void *pvParameter) {
@@ -547,9 +731,7 @@ void A_Task_Web(void *pvParameter) {
     req->send(SPIFFS, "/index.html", "text/html");
     });
     
-    server.onRequestBody([](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
-        ESP_LOGI(WEB_TAG, "Body: %s", (char *)data);
-    });
+    server.onRequestBody([](AsyncWebServerRequest*, uint8_t*, size_t, size_t, size_t) {});
 
     setupUploadMain();
     setupUploadUi();
@@ -557,6 +739,7 @@ void A_Task_Web(void *pvParameter) {
     // Register routes
     registerWebRoutes(server);
     server.on("/wifi_scan", HTTP_GET, handleWifiScanRequest);
+    server.on("/importsessions", HTTP_POST, [](AsyncWebServerRequest*) {}, nullptr, handleSessionImportBody);
 
     server.begin(); // start server
 
@@ -566,8 +749,18 @@ void A_Task_Web(void *pvParameter) {
     g_wsSubsMutex = xSemaphoreCreateMutex();
     xTaskCreatePinnedToCore(Task_WebPush, "WebPush", 4096, nullptr, 3, nullptr, 1);
 
-    while(1) {
-        webSocket.loop();
-        vTaskDelay(50 / portTICK_PERIOD_MS);
-    }
+	    while(1) {
+	        webSocket.loop();
+	        if (g_sessionImportPending) {
+	            g_sessionImportPending = false;
+	            bool ok = charge_session_log_import_file(SESSION_IMPORT_PATH);
+	            SPIFFS.remove(SESSION_IMPORT_PATH);
+	            ESP_LOGI(WEB_TAG, "Session import %s", ok ? "ok" : "failed");
+	        }
+	        if (g_rebootRequested) {
+	            vTaskDelay(500 / portTICK_PERIOD_MS);
+	            esp_restart();
+	        }
+	        vTaskDelay(50 / portTICK_PERIOD_MS);
+	    }
 }

@@ -59,8 +59,26 @@ function processMsg(txt) {
   let j;
   try { j = JSON.parse(txt); } catch { return; }
 
+  if (j.wallboxName !== undefined) {
+    const field = document.getElementById('wallboxName');
+    if (field && document.activeElement !== field) {
+      field.value = j.wallboxName;
+    }
+  }
+
+  if (j.dipSwitch1 !== undefined) {
+    setDipSwitchText('dipSwitch1', j.dipSwitch1);
+  }
+  if (j.dipSwitch2 !== undefined) {
+    setDipSwitchText('dipSwitch2', j.dipSwitch2);
+  }
+
   // current versions
   document.getElementById('fwMainVersion').textContent = j.otaMainVersion;
+  if (j.localTime !== undefined) {
+    document.getElementById('localTime').textContent = j.localTime;
+  }
+
   // UI-Version NICHT mehr aus WS setzen: fwUiVersion bleibt ausschließlich aus /ui_version.txt
 
   // progress MAIN
@@ -142,6 +160,7 @@ async function handleFwUiForm(ev) {
   ev.preventDefault();
   const fileInput = document.getElementById('fwUiFile');
   if (!validateFile(fileInput, 'UI_IC_Fw_')) return;
+  if (!confirm('Warning: Updating the Web-UI filesystem will delete all recorded charge sessions.\n\nExport your charge sessions first from the Sessions page if you want to keep them.\n\nContinue with Web-UI update?')) return;
 
   const file = fileInput.files[0];
   document.getElementById('fwUiProgress').textContent = '0 %';
@@ -183,4 +202,32 @@ document.addEventListener('DOMContentLoaded', () => {
           .addEventListener('submit', handleFwMainForm);
   document.getElementById('fwUiForm')
           .addEventListener('submit', handleFwUiForm);
+
+	  document.getElementById('rebootDevice')
+	          .addEventListener('click', () => {
+	            if (socket?.readyState !== 1) return;
+	            if (!confirm('Reboot device now?')) return;
+	            socket.send(JSON.stringify({ action: 'rebootDevice' }));
+	          });
+
+	  document.getElementById('wallboxName')
+	          .addEventListener('keydown', ev => {
+	            if (ev.key === 'Enter') saveWallboxName();
+	          });
+	  document.getElementById('wallboxName')
+	          .addEventListener('change', saveWallboxName);
+
 });
+
+function saveWallboxName() {
+  if (socket?.readyState !== 1) return;
+  const name = document.getElementById('wallboxName').value.trim().slice(0, 32);
+  socket.send(JSON.stringify({ action: 'setWallboxName', name }));
+}
+
+function setDipSwitchText(id, isOn) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = isOn ? 'ON' : 'OFF';
+  el.style.color = isOn ? 'green' : '#333';
+}

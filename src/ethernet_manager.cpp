@@ -22,6 +22,7 @@
 #include "ethernet_manager.hpp"
 #include "lwip/apps/netbiosns.h"
 #include "AA_globals.h"
+#include "time_service.hpp"
 
 static const char *ETHERNET_TAG = "eth_example";
 esp_netif_t *eth_netif_spi = { NULL };
@@ -123,6 +124,7 @@ static void got_ip_event_handler(void *arg, esp_event_base_t event_base, int32_t
     memcpy(current_ethernet_status.dns1, &dns_info.ip.u_addr.ip4.addr, 4);
     esp_netif_get_dns_info(eth_netif_spi, ESP_NETIF_DNS_BACKUP, &dns_info);
     memcpy(current_ethernet_status.dns2, &dns_info.ip.u_addr.ip4.addr, 4);
+    time_service_request_sync();
     
 }
 

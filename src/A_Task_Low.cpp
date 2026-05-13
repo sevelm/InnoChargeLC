@@ -68,16 +68,30 @@ void A_Task_Low(void *pvParameter){
       
      //   ESP_LOGI(CP_LOGI, "+++++++ IO9 Status: %s", inputState ? "HIGH" : "LOW");
 
-        ESP_LOGI(CP_LOGI,
-         "ChargePower: %.2f kW | switchToL1N: %s | switchToL2L3: %s | stateL1N: %s | stateL2L3: %s | phaseSwitchAllowed: %s",
-         g_setChargingPower_kW,
-         switchToL1N ? "true" : "false",
-         switchToL2L3 ? "true" : "false",
-         stateRelayL1N ? "true" : "false",
-         stateRelayL2L3 ? "true" : "false",
-         phaseSwitchAllowed ? "true" : "false");
+    //    ESP_LOGI(CP_LOGI, "ChargePower: %.2f kW | switchToL1N: %s | switchToL2L3: %s ",
+    //     g_setChargingPower_kW,
+    //     switchToL1N ? "true" : "false",
+    //     switchToL2L3 ? "true" : "false");
+
+     //    ESP_LOGI(CP_LOGI, "CP: %d | RFID: %s | rfidRequired: %s | rfidAuthorized: %s | chargeSessionAuthorized: %s",
+     //    (int)currentCpState.state,
+     //    rfid.uidStr.c_str(),
+     //    rfidAuth.required ? "true" : "false",
+     //    rfidAuth.authorized ? "true" : "false",
+     //    chargeAuthSession.authorized ? "true" : "false");
+
+   //     ESP_LOGI(CP_LOGI,
+   //      "ChargePower: %.2f kW | switchToL1N: %s | switchToL2L3: %s | stateL1N: %s | stateL2L3: %s | phaseSwitchAllowed: %s",
+   //      g_setChargingPower_kW,
+   //      switchToL1N ? "true" : "false",
+   //      switchToL2L3 ? "true" : "false",
+   //      stateRelayL1N ? "true" : "false",
+    //     stateRelayL2L3 ? "true" : "false",
+    //     phaseSwitchAllowed ? "true" : "false");
 
 
+
+      //  ESP_LOGI(CP_LOGI, "ChargePower: %.2f kW", g_setChargingPower_kW);
 
         //uint8_t ip[4] = {0}, netmask[4] = {0}, gw[4] = {0}, dns1[4] = {0}, dns2[4] = {0};
         //preferences.getBytes("wifi_dns1", dns1, sizeof(dns1));
