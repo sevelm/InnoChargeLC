@@ -81,7 +81,9 @@ static bool lastRfidBuzzerWritten = false;
 static uint8_t lastRfidLedWritten = 255;
 static String lastRfidReaderIoTag = "";
 static uint32_t rfidReaderBuzzerUntilMillis = 0;
+static uint32_t lastRfidBuzzerOffWriteMillis = 0;
 constexpr uint32_t RFID_READER_BUZZER_MS = 1000;
+constexpr uint32_t RFID_READER_BUZZER_OFF_REFRESH_MS = 1000;
 
 static bool isEmptyRfidTag(const String& idTag)
 {
@@ -400,18 +402,22 @@ void A_Task_MB(void*)
 		                bool ok = true;
 		                uint16_t d[4]{};
 	
-		                setRs485Config(SERIAL_8N1);
-		                const uint32_t now = millis();
-		                const bool desiredRfidBuzzer = rfid.buzzer || now < rfidReaderBuzzerUntilMillis;
-		                const uint8_t desiredRfidLed = currentRfidReaderLed();
+			                setRs485Config(SERIAL_8N1);
+			                const uint32_t now = millis();
+			                const bool desiredRfidBuzzer = rfid.buzzer || now < rfidReaderBuzzerUntilMillis;
+			                const bool refreshRfidBuzzerOff = !desiredRfidBuzzer && now - lastRfidBuzzerOffWriteMillis >= RFID_READER_BUZZER_OFF_REFRESH_MS;
+			                const uint8_t desiredRfidLed = currentRfidReaderLed();
 
-		                if (desiredRfidBuzzer != lastRfidBuzzerWritten) {
-		                    lastRc = Modbus::EX_SUCCESS;
-			                    if (!mbRTU.writeCoil(rfid.modbusId, 1, desiredRfidBuzzer, trxCB)) ok = false;
-		                    while (mbRTU.slave()) { mbRTU.task(); vTaskDelay(1); }
-		                    if (lastRc != Modbus::EX_SUCCESS) ok = false;
-		                    if (ok) lastRfidBuzzerWritten = desiredRfidBuzzer;
-		                }
+			                if (desiredRfidBuzzer != lastRfidBuzzerWritten || refreshRfidBuzzerOff) {
+			                    lastRc = Modbus::EX_SUCCESS;
+				                    if (!mbRTU.writeCoil(rfid.modbusId, 1, desiredRfidBuzzer, trxCB)) ok = false;
+			                    while (mbRTU.slave()) { mbRTU.task(); vTaskDelay(1); }
+			                    if (lastRc != Modbus::EX_SUCCESS) ok = false;
+			                    if (ok) {
+			                        lastRfidBuzzerWritten = desiredRfidBuzzer;
+			                        if (!desiredRfidBuzzer) lastRfidBuzzerOffWriteMillis = now;
+			                    }
+			                }
 
 		                if (desiredRfidLed != lastRfidLedWritten) {
 		                    if (desiredRfidLed == 1) {

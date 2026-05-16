@@ -534,8 +534,28 @@ void callLedEffect()
               default:                 stateB();              break;
           }
         break;
-        case StateC_Charge:             stateC();            break;
-        case StateD_VentCharge:         stateC();            break;
+        case StateC_Charge:
+          if (setCpDuty > 0.0f && setCpDuty < 100.0f) {
+              stateC();
+          } else {
+              switch (currentRfidLedState()) {
+                  case RfidLed_Authorized: waitingWaveEffect(RgbColor(255, 195, 0), RgbColor(0, 255, 0)); break; // Orange mit gruener Welle
+                  case RfidLed_Denied:     waitingWaveEffect(RgbColor(255, 195, 0), RgbColor(255, 0, 0)); break; // Orange mit roter Welle
+                  default:                 waitingWaveEffect(RgbColor(255, 195, 0), RgbColor(255, 255, 255)); break; //Orange mit Weisser Welle
+              }
+          }
+        break;
+        case StateD_VentCharge:
+          if (setCpDuty > 0.0f && setCpDuty < 100.0f) {
+              stateC();
+          } else {
+              switch (currentRfidLedState()) {
+                  case RfidLed_Authorized: waitingWaveEffect(RgbColor(255, 195, 0), RgbColor(0, 255, 0)); break; // Orange mit gruener Welle
+                  case RfidLed_Denied:     waitingWaveEffect(RgbColor(255, 195, 0), RgbColor(255, 0, 0)); break; // Orange mit roter Welle
+                  default:                 waitingWaveEffect(RgbColor(255, 195, 0), RgbColor(255, 255, 255)); break; //Orange mit Weisser Welle
+              }
+          }
+        break;
         case StateE_Error:              stateE();            break;
         case StateF_Fault:              stateF();            break;
         case StateCustom_CpRelayOff:    stateSwOff();        break;
