@@ -71,6 +71,7 @@ std::map<uint8_t, std::string> subscribedClients;    // Client number with page
 
 const char *WEB_TAG = "Task_Web: ";
 static constexpr const char* RFID_AUTH_REQUIRED_KEY = "rfidAuthReq";
+static constexpr const char* WEB_PASSWORD_KEY = "webPass";
 static constexpr const char* SESSION_IMPORT_PATH = "/charge_sessions_import.json";
 static constexpr size_t SESSION_PAGE_LIMIT = 100;
 static volatile bool g_rebootRequested = false;
@@ -86,7 +87,11 @@ struct SessionImportUpload {
 AsyncWebServer server(80); // the server uses port 80 (standard port for websites
 
 const char* www_username = "admin";
-const char* www_password = "admin";
+static String www_password_storage = "admin";
+
+static const char* current_web_password() {
+    return rescueMode ? "admin" : www_password_storage.c_str();
+}
 
 class CaptiveRequestHandler : public AsyncWebHandler {
 public:
@@ -99,7 +104,7 @@ public:
     }
 
     void handleRequest(AsyncWebServerRequest *request) {
-        if (!request->authenticate(www_username, www_password)) {
+        if (!request->authenticate(www_username, current_web_password())) {
             return request->requestAuthentication(); // fordert Benutzer+Passwort an
         }
         //ESP_LOGI(WEB_TAG, "Handling request for %s", request->url().c_str());
@@ -125,6 +130,16 @@ public:
 };
 
 WebSocketsServer webSocket = WebSocketsServer(81);
+
+static void send_web_password_status(uint8_t num, bool ok, const char* message) {
+    JsonDocument response;
+    response["type"] = "webPasswordStatus";
+    response["ok"] = ok;
+    response["message"] = message;
+    String out;
+    serializeJson(response, out);
+    webSocket.sendTXT(num, out);
+}
 
 void webSocketEvent(byte num, WStype_t type, uint8_t * payload, size_t length) {
     switch (type) {
@@ -223,14 +238,28 @@ void webSocketEvent(byte num, WStype_t type, uint8_t * payload, size_t length) {
 	                        bool state = doc["state"].as<bool>();
 	                        preferences.putBool("emSignEnable", state); 
 	                        sdm.invSign = state;    
-	                    } else if (strcmp(action, "setWallboxName") == 0 && doc["name"].is<const char*>()) {
-	                        String name = doc["name"].as<String>();
-	                        name.trim();
-	                        if (name.length() > 32) {
-	                            name = name.substring(0, 32);
-	                        }
-	                        preferences.putString("wallboxName", name);
-		                    } else if (strcmp(action, "setRfid") == 0 && doc["state"].is<bool>()) {
+		                    } else if (strcmp(action, "setWallboxName") == 0 && doc["name"].is<const char*>()) {
+		                        String name = doc["name"].as<String>();
+		                        name.trim();
+		                        if (name.length() > 32) {
+		                            name = name.substring(0, 32);
+		                        }
+		                        preferences.putString("wallboxName", name);
+		                    } else if (strcmp(action, "setWebPassword") == 0 && doc["password"].is<const char*>()) {
+		                        String password = doc["password"].as<String>();
+		                        password.trim();
+		                        if (password.length() < 4) {
+		                            send_web_password_status(num, false, "Password must contain at least 4 characters.");
+		                        } else if (password.length() > 32) {
+		                            send_web_password_status(num, false, "Password must contain 32 characters or less.");
+		                        } else {
+		                            preferences.putString(WEB_PASSWORD_KEY, password);
+			                            if (!rescueMode) {
+			                                www_password_storage = password;
+			                            }
+			                            send_web_password_status(num, true, "Password saved. Reboot required.");
+			                        }
+			                    } else if (strcmp(action, "setRfid") == 0 && doc["state"].is<bool>()) {
 		                        bool state = doc["state"].as<bool>();
 		                        preferences.putBool("rfidEnable", state); 
 		                        rfid.enable = state;
@@ -659,15 +688,47 @@ ESP_LOGI(WEB_TAG,
 
 
 void handleWifiScanRequest(AsyncWebServerRequest *request) {
-    wifi_scan();
+    bool started = wifi_scan_start();
     JsonDocument doc;
-    JsonArray networks = doc["networks"].to<JsonArray>();
-    for (uint16_t i = 0; i < scanned_ap_count; ++i) {
-        JsonObject network = networks.add<JsonObject>();
-        network["name"] = scanned_aps[i].ssid;
-        network["signal"] = scanned_aps[i].rssi;
-        network["encryption"] = auth_mode_type(scanned_aps[i].authmode);
+    doc["scanning"] = wifi_scan_is_running();
+    doc["ready"] = wifi_scan_has_result();
+    doc["ok"] = started && wifi_scan_last_error()[0] == '\0';
+    if (wifi_scan_last_error()[0] != '\0') {
+        doc["error"] = wifi_scan_last_error();
     }
+    JsonArray networks = doc["networks"].to<JsonArray>();
+    if (wifi_scan_has_result()) {
+        for (uint16_t i = 0; i < scanned_ap_count; ++i) {
+            JsonObject network = networks.add<JsonObject>();
+            network["name"] = scanned_aps[i].ssid;
+            network["signal"] = scanned_aps[i].rssi;
+            network["encryption"] = auth_mode_type(scanned_aps[i].authmode);
+        }
+    }
+    String response;
+    serializeJson(doc, response);
+    request->send(200, "application/json", response);
+}
+
+void handleWifiScanStatusRequest(AsyncWebServerRequest *request) {
+    JsonDocument doc;
+    doc["scanning"] = wifi_scan_is_running();
+    doc["ready"] = wifi_scan_has_result();
+    doc["ok"] = wifi_scan_last_error()[0] == '\0';
+    if (wifi_scan_last_error()[0] != '\0') {
+        doc["error"] = wifi_scan_last_error();
+    }
+
+    JsonArray networks = doc["networks"].to<JsonArray>();
+    if (wifi_scan_has_result()) {
+        for (uint16_t i = 0; i < scanned_ap_count; ++i) {
+            JsonObject network = networks.add<JsonObject>();
+            network["name"] = scanned_aps[i].ssid;
+            network["signal"] = scanned_aps[i].rssi;
+            network["encryption"] = auth_mode_type(scanned_aps[i].authmode);
+        }
+    }
+
     String response;
     serializeJson(doc, response);
     request->send(200, "application/json", response);
@@ -675,7 +736,7 @@ void handleWifiScanRequest(AsyncWebServerRequest *request) {
 
 void handleSessionImportBody(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
     if (index == 0) {
-        if (!request->authenticate(www_username, www_password)) {
+        if (!request->authenticate(www_username, current_web_password())) {
             return request->requestAuthentication();
         }
 
@@ -708,12 +769,26 @@ void handleSessionImportBody(AsyncWebServerRequest *request, uint8_t *data, size
 
 void A_Task_Web(void *pvParameter) {
     // Setup code
+    ESP_LOGI(WEB_TAG, "Starting web task");
+    www_password_storage = preferences.getString(WEB_PASSWORD_KEY, "admin");
+    if (www_password_storage.length() == 0 || www_password_storage.length() > 32) {
+        ESP_LOGW(WEB_TAG, "Invalid stored web password length. Falling back to default password.");
+        www_password_storage = "admin";
+        preferences.putString(WEB_PASSWORD_KEY, www_password_storage);
+    }
+    ESP_LOGI(WEB_TAG, "Web authentication ready. Rescue mode: %s", rescueMode ? "true" : "false");
+    g_wsSubsMutex = xSemaphoreCreateMutex();
+    if (!g_wsSubsMutex) {
+        ESP_LOGE(WEB_TAG, "Failed to create websocket subscription mutex");
+        vTaskDelete(nullptr);
+    }
+
     server.serveStatic("/", SPIFFS, "/")
       .setDefaultFile("index.html")
-      .setAuthentication(www_username, www_password);
+      .setAuthentication(www_username, current_web_password());
 
     auto send204 = [&](AsyncWebServerRequest* req) {
-    if (!req->authenticate(www_username, www_password))
+    if (!req->authenticate(www_username, current_web_password()))
         return req->requestAuthentication();
     req->send(204);
     };
@@ -726,11 +801,11 @@ void A_Task_Web(void *pvParameter) {
     server.on("/robots.txt",           HTTP_ANY, send204);
 
     server.onNotFound([&](AsyncWebServerRequest* req){
-    if (!req->authenticate(www_username, www_password))
+    if (!req->authenticate(www_username, current_web_password()))
         return req->requestAuthentication();
     req->send(SPIFFS, "/index.html", "text/html");
     });
-    
+
     server.onRequestBody([](AsyncWebServerRequest*, uint8_t*, size_t, size_t, size_t) {});
 
     setupUploadMain();
@@ -739,14 +814,16 @@ void A_Task_Web(void *pvParameter) {
     // Register routes
     registerWebRoutes(server);
     server.on("/wifi_scan", HTTP_GET, handleWifiScanRequest);
+    server.on("/wifi_scan_status", HTTP_GET, handleWifiScanStatusRequest);
     server.on("/importsessions", HTTP_POST, [](AsyncWebServerRequest*) {}, nullptr, handleSessionImportBody);
 
     server.begin(); // start server
+    ESP_LOGI(WEB_TAG, "HTTP server started on port 80");
 
     webSocket.begin();
     webSocket.onEvent(webSocketEvent);
+    ESP_LOGI(WEB_TAG, "WebSocket server started on port 81");
     //start_periodic_timer();
-    g_wsSubsMutex = xSemaphoreCreateMutex();
     xTaskCreatePinnedToCore(Task_WebPush, "WebPush", 4096, nullptr, 3, nullptr, 1);
 
 	    while(1) {

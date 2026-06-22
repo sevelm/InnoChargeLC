@@ -17,6 +17,10 @@ int retry_interval = 1000;
 int max_retry = 0;
 int retry_count = 0;
 static esp_timer_handle_t wifi_retry_timer = nullptr;
+static bool wifi_scan_event_registered = false;
+static volatile bool wifi_scan_running = false;
+static volatile bool wifi_scan_result_ready = false;
+static char wifi_scan_error[64] = "";
 
 static void wifi_retry_cb(void *) {
     esp_wifi_connect();
@@ -67,61 +71,20 @@ bool ssid_exists(const char* ssid, wifi_ap_record_t wifi_records[], int index) {
     return false;
 }
 
-void wifi_scan() {
-    ESP_LOGI(WIFI_TAG, "Starting Wi-Fi scan...");
-    esp_err_t err;
-
-    // Get current Wi-Fi connection status
-    wifi_sta_state_t wifi_state;
-    get_wifi_sta_state(&wifi_state);
-    bool was_connected = wifi_state.connected;
-
-    // Ensure Wi-Fi is initialized
-    wifi_mode_t mode;
-    err = esp_wifi_get_mode(&mode);
-
-    // This is where WLAN is started, initialized or disconnected so that the scan always works.
-    if (err == ESP_ERR_WIFI_NOT_INIT) {
-        wifi_sta_start_config_t wifi_sta_config = {
-            .retry_interval = 5000,
-            .max_retry = -1
-        };
-        wifi_init_sta(&wifi_sta_config);
-    //} else if (!was_connected) {
-    //    ESP_LOGI(WIFI_TAG, "Disconnecting Wi-Fi before scan...");
-    //    err = esp_wifi_disconnect();
-    //    if (err != ESP_OK && err != ESP_ERR_WIFI_NOT_CONNECT) {
-    //        ESP_LOGE(WIFI_TAG, "Failed to disconnect Wi-Fi before scan: %s", esp_err_to_name(err));
-    //        return;
-     //   }
-        
-    }
-    // Wi-Fi scan configuration
-    wifi_scan_config_t scan_config = {
-        .ssid = NULL,
-        .bssid = NULL,
-        .channel = 0,
-        .show_hidden = false,
-        .scan_type = WIFI_SCAN_TYPE_ACTIVE,
-        .scan_time = {
-            .active = {
-                .min = 60,
-                .max = 150
-            }
-        }
-    };
-
-    // Start Wi-Fi scan
-    err = esp_wifi_scan_start(&scan_config, true); //async
-    if (err != ESP_OK) {
-        ESP_LOGE(WIFI_TAG, "Wi-Fi scan failed to start: %s", esp_err_to_name(err));
-        return;
-    }
-
-    // Get scan results
+static void wifi_store_scan_results()
+{
     static wifi_ap_record_t wifi_records[MAXIMUM_AP];
     uint16_t max_records = MAXIMUM_AP;
-    ESP_ERROR_CHECK(esp_wifi_scan_get_ap_records(&max_records, wifi_records));
+    esp_err_t err = esp_wifi_scan_get_ap_records(&max_records, wifi_records);
+    if (err != ESP_OK) {
+        ESP_LOGE(WIFI_TAG, "Failed to get Wi-Fi scan records: %s", esp_err_to_name(err));
+        strncpy(wifi_scan_error, esp_err_to_name(err), sizeof(wifi_scan_error) - 1);
+        wifi_scan_error[sizeof(wifi_scan_error) - 1] = '\0';
+        scanned_ap_count = 0;
+        esp_wifi_clear_ap_list();
+        return;
+    }
+    esp_wifi_clear_ap_list();
 
     // printf("Number of Access Points Found: %d\n", max_records);
     // printf("\n");
@@ -129,7 +92,6 @@ void wifi_scan() {
     // printf("***************************************************************\n");
 
     // Initialize scanned_ap_count and index
-    scanned_ap_count = 0;
     uint16_t scanned_ap_index = 0;
 
     for (int i = 0; i < max_records; i++) {
@@ -158,6 +120,129 @@ void wifi_scan() {
     scanned_ap_count = scanned_ap_index;
 
     // printf("***************************************************************\n");
+}
+
+static void wifi_scan_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
+{
+    if (event_base != WIFI_EVENT || event_id != WIFI_EVENT_SCAN_DONE) {
+        return;
+    }
+
+    ESP_LOGI(WIFI_TAG, "Wi-Fi scan done");
+    wifi_store_scan_results();
+    wifi_scan_running = false;
+    wifi_scan_result_ready = true;
+}
+
+static esp_err_t wifi_prepare_scan()
+{
+    if (!wifi_scan_event_registered) {
+        esp_err_t err = esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_SCAN_DONE, &wifi_scan_event_handler, NULL);
+        if (err != ESP_OK) {
+            return err;
+        }
+        wifi_scan_event_registered = true;
+    }
+
+    wifi_mode_t mode;
+    esp_err_t err = esp_wifi_get_mode(&mode);
+    if (err == ESP_ERR_WIFI_NOT_INIT) {
+        if (!esp_netif_get_handle_from_ifkey("WIFI_STA_DEF")) {
+            esp_netif_create_default_wifi_sta();
+        }
+
+        wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+        err = esp_wifi_init(&cfg);
+        if (err != ESP_OK) {
+            return err;
+        }
+
+        err = esp_wifi_set_mode(WIFI_MODE_STA);
+        if (err != ESP_OK) {
+            return err;
+        }
+
+        return esp_wifi_start();
+    }
+
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    if (mode == WIFI_MODE_NULL) {
+        err = esp_wifi_set_mode(WIFI_MODE_STA);
+    } else if (mode == WIFI_MODE_AP) {
+        err = esp_wifi_set_mode(WIFI_MODE_APSTA);
+    }
+
+    return err;
+}
+
+bool wifi_scan_start()
+{
+    if (wifi_scan_running) {
+        return true;
+    }
+
+    ESP_LOGI(WIFI_TAG, "Starting Wi-Fi scan...");
+    scanned_ap_count = 0;
+    wifi_scan_error[0] = '\0';
+    wifi_scan_result_ready = false;
+
+    esp_err_t err = wifi_prepare_scan();
+    if (err != ESP_OK) {
+        ESP_LOGE(WIFI_TAG, "Failed to prepare Wi-Fi scan: %s", esp_err_to_name(err));
+        strncpy(wifi_scan_error, esp_err_to_name(err), sizeof(wifi_scan_error) - 1);
+        wifi_scan_error[sizeof(wifi_scan_error) - 1] = '\0';
+        return false;
+    }
+
+    wifi_scan_config_t scan_config = {
+        .ssid = NULL,
+        .bssid = NULL,
+        .channel = 0,
+        .show_hidden = false,
+        .scan_type = WIFI_SCAN_TYPE_ACTIVE,
+        .scan_time = {
+            .active = {
+                .min = 60,
+                .max = 150
+            }
+        }
+    };
+
+    wifi_scan_running = true;
+    err = esp_wifi_scan_start(&scan_config, false);
+    if (err != ESP_OK) {
+        ESP_LOGE(WIFI_TAG, "Wi-Fi scan failed to start: %s", esp_err_to_name(err));
+        strncpy(wifi_scan_error, esp_err_to_name(err), sizeof(wifi_scan_error) - 1);
+        wifi_scan_error[sizeof(wifi_scan_error) - 1] = '\0';
+        wifi_scan_running = false;
+        esp_wifi_clear_ap_list();
+        return false;
+    }
+
+    return true;
+}
+
+bool wifi_scan_is_running()
+{
+    return wifi_scan_running;
+}
+
+bool wifi_scan_has_result()
+{
+    return wifi_scan_result_ready;
+}
+
+const char* wifi_scan_last_error()
+{
+    return wifi_scan_error;
+}
+
+void wifi_scan()
+{
+    wifi_scan_start();
 }
 
 void get_wifi_ip(char *ip) {
@@ -407,6 +492,14 @@ void wifi_stop_sta() {
     err = esp_event_handler_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_sta_event_handler);
     if (err != ESP_OK) {
         ESP_LOGE(WIFI_TAG, "Failed to unregister IP event handler: %s", esp_err_to_name(err));
+    }
+    if (wifi_scan_event_registered) {
+        err = esp_event_handler_unregister(WIFI_EVENT, WIFI_EVENT_SCAN_DONE, &wifi_scan_event_handler);
+        if (err != ESP_OK) {
+            ESP_LOGE(WIFI_TAG, "Failed to unregister WiFi scan event handler: %s", esp_err_to_name(err));
+        } else {
+            wifi_scan_event_registered = false;
+        }
     }
     // Deinitialize WiFi
     err = esp_wifi_deinit();

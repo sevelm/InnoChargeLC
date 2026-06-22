@@ -141,17 +141,49 @@ function startWifiScan() {
   fetch('/wifi_scan')
     .then(response => response.json())
     .then(data => {
-      console.log('WiFi scan data received:', data);
-      scanMessage.style.display = 'none';
-      displayWifiScanResults(data);
-      populateWifiNetworks(data); // Populate the SSID dropdown with scan results
-      document.getElementById('wifi_rescan_btn').style.display = 'inline-block';
+      console.log('WiFi scan started:', data);
+      if (data.scanning) {
+        pollWifiScanResults(scanMessage);
+      } else {
+        finishWifiScan(data, scanMessage);
+      }
     })
     .catch(error => {
       console.error('Error during WiFi scan:', error);
       scanMessage.style.display = 'none';
       document.getElementById('wifi_scan_results').innerHTML = 'Fehler beim Scannen der WiFi-Netzwerke.';
+      document.getElementById('wifi_rescan_btn').style.display = 'inline-block';
     });
+}
+
+function pollWifiScanResults(scanMessage) {
+  fetch('/wifi_scan_status')
+    .then(response => response.json())
+    .then(data => {
+      console.log('WiFi scan status:', data);
+      if (data.scanning) {
+        setTimeout(() => pollWifiScanResults(scanMessage), 500);
+      } else {
+        finishWifiScan(data, scanMessage);
+      }
+    })
+    .catch(error => {
+      console.error('Error during WiFi scan status:', error);
+      scanMessage.style.display = 'none';
+      document.getElementById('wifi_scan_results').innerHTML = 'Fehler beim Scannen der WiFi-Netzwerke.';
+      document.getElementById('wifi_rescan_btn').style.display = 'inline-block';
+    });
+}
+
+function finishWifiScan(data, scanMessage) {
+  scanMessage.style.display = 'none';
+  if (data.error) {
+    document.getElementById('wifi_scan_results').innerHTML = 'Fehler beim Scannen der WiFi-Netzwerke.';
+  } else {
+    displayWifiScanResults(data);
+    populateWifiNetworks(data); // Populate the SSID dropdown with scan results
+  }
+  document.getElementById('wifi_rescan_btn').style.display = 'inline-block';
 }
 
 // Function to populate WiFi networks in the dropdown

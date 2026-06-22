@@ -170,7 +170,7 @@ table td {
     vertical-align: middle;
 }
 
-table input[type="text"], table input[type="number"], table select {
+table input[type="text"], table input[type="password"], table input[type="number"], table select {
     width: 100%;
     padding: 8px;
     border: 1px solid #ccc;
@@ -405,10 +405,93 @@ table td label, table td span {
 }
 
 .dip-switch-hint {
-    margin-left: 24px;
+    margin-left: 10px;
     font-size: 12px;
     font-style: italic;
     color: #607d8b;
+}
+
+.device-layout {
+    display: grid;
+    grid-template-columns: minmax(430px, 520px) minmax(360px, 1fr);
+    column-gap: 46px;
+    row-gap: 18px;
+    align-items: start;
+}
+
+.device-column {
+    max-width: 560px;
+}
+
+.device-side-column {
+    padding-top: 0;
+}
+
+.device-group-title {
+    margin: 14px 0 8px 0;
+    padding-bottom: 4px;
+    border-bottom: 1px solid #e0e5e8;
+    color: #607d8b;
+    font-size: 13px;
+    font-weight: bold;
+    text-transform: uppercase;
+}
+
+.device-group-title:first-child {
+    margin-top: 0;
+}
+
+.device-row {
+    display: grid;
+    grid-template-columns: 132px minmax(190px, 236px);
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+
+.device-row label,
+.device-status-label {
+    font-size: 16px;
+    color: #333;
+}
+
+.device-row input[type="text"],
+.device-row input[type="password"] {
+    width: 100%;
+    height: 34px;
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-sizing: border-box;
+    color: #333;
+    font-size: 14px;
+}
+
+.device-status-row {
+    display: grid;
+    grid-template-columns: 110px 42px minmax(190px, 1fr);
+    align-items: center;
+    gap: 10px;
+    min-height: 34px;
+    margin-bottom: 10px;
+}
+
+.device-time-row {
+    grid-template-columns: 110px minmax(190px, 1fr);
+}
+
+.device-action-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 34px;
+    margin-top: 8px;
+}
+
+.device-inline-status {
+    font-size: 13px;
+    line-height: 1.25;
+    color: #333;
 }
 
 .control-subheading {
@@ -630,13 +713,4 @@ button.small-help-button:hover {
 button.compact-button {
     padding: 7px 12px;
     font-size: 13px;
-}
-
-button.secondary-button {
-    margin-left: 6px;
-    background-color: #607d8b;
-}
-
-button.secondary-button:hover {
-    background-color: #546e7a;
 }

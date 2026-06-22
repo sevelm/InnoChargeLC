@@ -2,6 +2,7 @@
 
 // global WebSocket variable
 let socket = null;
+let passwordSaveTimer = null;
 
 /* ---------- initialize WebSocket ---------- */
 function initWebSocket() {
@@ -58,6 +59,23 @@ function validateFile(inputEl, requiredPrefix) {
 function processMsg(txt) {
   let j;
   try { j = JSON.parse(txt); } catch { return; }
+
+  if (j.type === 'webPasswordStatus') {
+    if (passwordSaveTimer) {
+      clearTimeout(passwordSaveTimer);
+      passwordSaveTimer = null;
+    }
+    const status = document.getElementById('webPasswordStatus');
+    if (status) {
+      status.textContent = j.message || '';
+      status.style.color = j.ok ? 'green' : 'red';
+    }
+    if (j.ok) {
+      document.getElementById('webPassword').value = '';
+      document.getElementById('webPasswordConfirm').value = '';
+    }
+    return;
+  }
 
   if (j.wallboxName !== undefined) {
     const field = document.getElementById('wallboxName');
@@ -203,19 +221,22 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('fwUiForm')
           .addEventListener('submit', handleFwUiForm);
 
-	  document.getElementById('rebootDevice')
-	          .addEventListener('click', () => {
-	            if (socket?.readyState !== 1) return;
-	            if (!confirm('Reboot device now?')) return;
-	            socket.send(JSON.stringify({ action: 'rebootDevice' }));
-	          });
+		  document.getElementById('rebootDevice')
+		          .addEventListener('click', () => {
+		            if (socket?.readyState !== 1) return;
+		            if (!confirm('Reboot device now?')) return;
+		            socket.send(JSON.stringify({ action: 'rebootDevice' }));
+		          });
 
 	  document.getElementById('wallboxName')
 	          .addEventListener('keydown', ev => {
 	            if (ev.key === 'Enter') saveWallboxName();
 	          });
-	  document.getElementById('wallboxName')
-	          .addEventListener('change', saveWallboxName);
+		  document.getElementById('wallboxName')
+		          .addEventListener('change', saveWallboxName);
+
+		  document.getElementById('saveWebPassword')
+		          .addEventListener('click', saveWebPassword);
 
 });
 
@@ -230,4 +251,53 @@ function setDipSwitchText(id, isOn) {
   if (!el) return;
   el.textContent = isOn ? 'ON' : 'OFF';
   el.style.color = isOn ? 'green' : '#333';
+}
+
+function saveWebPassword() {
+  const password = document.getElementById('webPassword').value.trim();
+  const confirmPassword = document.getElementById('webPasswordConfirm').value.trim();
+  const status = document.getElementById('webPasswordStatus');
+
+  if (status) {
+    status.textContent = '';
+    status.style.color = '#333';
+  }
+
+  if (socket?.readyState !== 1) {
+    if (status) {
+      status.textContent = 'WebSocket not connected';
+      status.style.color = 'red';
+    }
+    return;
+  }
+
+  if (password.length < 4) {
+    if (status) {
+      status.textContent = 'Minimum 4 characters';
+      status.style.color = 'red';
+    }
+    return;
+  }
+  if (password !== confirmPassword) {
+    if (status) {
+      status.textContent = 'Passwords do not match';
+      status.style.color = 'red';
+    }
+    return;
+  }
+  if (!confirm('Change web password and reboot device now?')) return;
+
+  if (status) {
+    status.textContent = 'Saving...';
+    status.style.color = '#333';
+  }
+  if (passwordSaveTimer) clearTimeout(passwordSaveTimer);
+  passwordSaveTimer = setTimeout(() => {
+    if (status) {
+      status.textContent = 'No response from controller';
+      status.style.color = 'red';
+    }
+  }, 4000);
+
+  socket.send(JSON.stringify({ action: 'setWebPassword', password }));
 }

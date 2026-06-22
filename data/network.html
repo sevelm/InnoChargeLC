@@ -131,9 +131,10 @@
           <tr>
             <td><label for="wifi_ssid">WiFi Network:</label></td>
             <td>
-              <select id="wifi_ssid">
+              <input type="text" id="wifi_ssid" list="wifi_ssid_list" value="" maxlength="32">
+              <datalist id="wifi_ssid_list">
                 <!-- Options will be populated dynamically -->
-              </select>
+              </datalist>
             </td>
           </tr>
           <tr>

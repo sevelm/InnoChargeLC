@@ -106,39 +106,56 @@
     </table>
   </div>
 
-  <div class="container compact-time-settings">
-    <h2>Time</h2>
-    <table>
-      <tr>
-        <td><label for="localTime">Current:</label></td>
-        <td><span id="localTime" style="font-size: 16px; color: #333; font-weight: bold;"></span></td>
-      </tr>
-    </table>
-  </div>
-
-	  <div class="container compact-time-settings">
+	  <div class="container compact-time-settings device-settings">
 	    <h2>Device</h2>
-	    <table>
-	      <tr>
-	        <td><label for="wallboxName">Wallbox Name:</label></td>
-	        <td><input type="text" id="wallboxName" maxlength="32"></td>
-	      </tr>
-	      <tr>
-	        <td>DIP Switch 2:</td>
-	        <td>
+	    <div class="device-layout">
+	      <div class="device-column">
+	        <div class="device-group-title">General</div>
+	        <div class="device-row">
+	          <label for="wallboxName">Wallbox Name:</label>
+	          <input type="text" id="wallboxName" maxlength="32">
+	        </div>
+
+	        <div class="device-group-title">Web Login</div>
+	        <div class="device-row">
+	          <label for="webPassword">Password:</label>
+	          <input type="password" id="webPassword" maxlength="32" autocomplete="new-password">
+	        </div>
+	        <div class="device-row">
+	          <label for="webPasswordConfirm">Confirm:</label>
+	          <input type="password" id="webPasswordConfirm" maxlength="32" autocomplete="new-password">
+	        </div>
+	        <div class="device-action-row">
+	          <button id="saveWebPassword" class="compact-button">Save Password</button>
+	          <span id="webPasswordStatus" class="device-inline-status"></span>
+	        </div>
+	      </div>
+
+	      <div class="device-column device-side-column">
+	        <div class="device-group-title">Time</div>
+	        <div class="device-status-row device-time-row">
+	          <span class="device-status-label">Current:</span>
+	          <span id="localTime" class="device-status-text"></span>
+	        </div>
+
+	        <div class="device-group-title">Hardware</div>
+	        <div class="device-status-row">
+	          <span class="device-status-label">DIP Switch 2:</span>
 	          <span id="dipSwitch2" class="device-status-text"></span>
 	          <span class="dip-switch-hint">Rescue network mode at boot</span>
-	        </td>
-	      </tr>
-	      <tr>
-	        <td>DIP Switch 1:</td>
-	        <td>
+	        </div>
+	        <div class="device-status-row">
+	          <span class="device-status-label">DIP Switch 1:</span>
 	          <span id="dipSwitch1" class="device-status-text"></span>
 	          <span class="dip-switch-hint">Charge limit: OFF = 11 kW, ON = 22 kW</span>
-	        </td>
-	      </tr>
-	    </table>
-	    <button id="rebootDevice" class="compact-button secondary-button">Reboot</button>
+	        </div>
+
+	        <div class="device-group-title">Service</div>
+	        <div class="device-action-row">
+	          <button id="rebootDevice" class="compact-button">Reboot</button>
+	        </div>
+	      </div>
+	    </div>
 	  </div>
 </div>
 

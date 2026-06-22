@@ -97,7 +97,7 @@ volatile bool stateRelayL1N = false;
 volatile bool stateRelayL2L3 = false;
 volatile bool switchToL1N = false;
 volatile bool switchToL2L3 = false;
-volatile uint16_t delayedPhaseSwitchingSeconds = 0;
+volatile uint16_t delayedPhaseSwitchingSeconds = 300;
 volatile bool phaseSwitchAllowed = true;
 volatile uint16_t phaseSwitchDelayRemainingSeconds = 0;
 volatile TickType_t lastSuccessfulPhaseSwitch = 0;
@@ -295,7 +295,7 @@ void A_Task_CP(void *pvParameter){
 //////////////////////////////////////////////////// Setup ///////////////////////////////////////////////////
 //////////////////////////////////////////////////// Setup ///////////////////////////////////////////////////
 //////////////////////////////////////////////////// Setup ///////////////////////////////////////////////////
-    delayedPhaseSwitchingSeconds = preferences.getUShort("delayed1p3pS", 0);
+    delayedPhaseSwitchingSeconds = preferences.getUShort("delayed1p3pS", 300);
     phaseSwitchAllowed = true;
     init_control_pilot();
     //set_charging_current(16);

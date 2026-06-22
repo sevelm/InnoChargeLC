@@ -69,9 +69,6 @@ void setup() {
     delay(5000); // 1 Sekunde warten
     ESP_LOGI(MAIN_TAG, "Starting up EVSE Test Programm!");
 
-    //######################### Preferences
-    preferences.begin("store", false);                      //create folder
-
     // ######################### Initialize NVS
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -79,6 +76,9 @@ void setup() {
         ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
+
+    //######################### Preferences
+    preferences.begin("store", false);                      //create folder
 
     // ######################### Default values for fresh NVS
     if (!preferences.isKey("wallboxName")) preferences.putString("wallboxName", "InnoCharge");
@@ -92,6 +92,8 @@ void setup() {
     if (!preferences.isKey("dpl1cfg")) preferences.putString("dpl1cfg", "");
     if (!preferences.isKey("dpl2cfg")) preferences.putString("dpl2cfg", "");
     if (!preferences.isKey("rfidUsers")) preferences.putString("rfidUsers", "");
+    if (!preferences.isKey("webPass")) preferences.putString("webPass", "admin");
+    if (!preferences.isKey("delayed1p3pS")) preferences.putUShort("delayed1p3pS", 300);
 
     // ######################### Initialize TCP/IP Stack and Default Event Loop
     ESP_ERROR_CHECK(esp_netif_init());

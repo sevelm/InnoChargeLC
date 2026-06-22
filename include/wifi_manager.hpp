@@ -38,7 +38,10 @@ void wifi_init_sta(wifi_sta_start_config_t *config);
 void wifi_start_rescue_ap();
 void get_wifi_sta_state(wifi_sta_state_t *state);
 void wifi_scan();
+bool wifi_scan_start();
+bool wifi_scan_is_running();
+bool wifi_scan_has_result();
+const char* wifi_scan_last_error();
 void wifi_stop_sta();
 void get_wifi_ip(char *ip);
 #endif // WIFI_MANAGER_HPP
-

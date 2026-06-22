@@ -127,19 +127,52 @@ function startWifiScan() {
   fetch('/wifi_scan')
     .then(r => r.json())
     .then(data => {
-      console.log('[WiFi] scan data:', data);
-      displayWifiScanResults(data);
-      populateWifiNetworks(data);
-      document.getElementById('wifi_rescan_btn').style.display = 'inline-block';
+      console.log('[WiFi] scan started:', data);
+      if (data.scanning) {
+        pollWifiScanResults(msg);
+      } else {
+        finishWifiScan(data, msg);
+      }
     })
     .catch(err => {
       console.error('[WiFi] scan error:', err);
       document.getElementById('wifi_scan_results').innerHTML = 'Error scanning WiFi networks.';
-    })
-    .finally(() => {
       msg.style.display = 'none';
       scanInProgress    = false;
+      document.getElementById('wifi_rescan_btn').style.display = 'inline-block';
     });
+}
+
+function pollWifiScanResults(msg) {
+  fetch('/wifi_scan_status')
+    .then(r => r.json())
+    .then(data => {
+      console.log('[WiFi] scan status:', data);
+      if (data.scanning) {
+        setTimeout(() => pollWifiScanResults(msg), 500);
+      } else {
+        finishWifiScan(data, msg);
+      }
+    })
+    .catch(err => {
+      console.error('[WiFi] scan status error:', err);
+      document.getElementById('wifi_scan_results').innerHTML = 'Error scanning WiFi networks.';
+      msg.style.display = 'none';
+      scanInProgress = false;
+      document.getElementById('wifi_rescan_btn').style.display = 'inline-block';
+    });
+}
+
+function finishWifiScan(data, msg) {
+  if (data.error) {
+    document.getElementById('wifi_scan_results').innerHTML = 'Error scanning WiFi networks.';
+  } else {
+    displayWifiScanResults(data);
+    populateWifiNetworks(data);
+  }
+  msg.style.display = 'none';
+  scanInProgress = false;
+  document.getElementById('wifi_rescan_btn').style.display = 'inline-block';
 }
 
 /* ------------------------------------------------------------------
@@ -188,22 +221,9 @@ function setWifiInfo(data) {
   // SSID immer vorbefüllen, wenn geliefert
   if (typeof data.wifi_ssid === 'string') {
     document.getElementById('wifi_ssid').value = data.wifi_ssid;
-    // Merk dir die aktuelle SSID für Dropdown-Markierung
+    // Merk dir die aktuelle SSID für Scan-Vorschläge
     currentSSID = data.wifi_ssid;
-    // ensure the select shows the current SSID even without a scan
-    const sel = document.getElementById('wifi_ssid');
-    if (sel) {
-      let found = false;
-      for (const opt of sel.options) {
-        if (opt.value === currentSSID) { found = true; break; }
-      }
-      if (!found && currentSSID) {
-        // insert a preselected option at top
-        const opt = new Option(currentSSID + ' (Current)', currentSSID, true, true);
-        sel.add(opt, 0);
-      }
-      sel.value = currentSSID || '';
-    }
+    addWifiSsidSuggestion(currentSSID, 'Current');
   }
 
   // Passwort NUR setzen, wenn explizit geliefert (nicht auf '' leeren!)
@@ -261,31 +281,39 @@ function setWifiInfo(data) {
 
 
 function populateWifiNetworks(data) {
-  const sel = document.getElementById('wifi_ssid');
-  sel.innerHTML = '';
-  let exists = false;
+  const list = document.getElementById('wifi_ssid_list');
+  if (!list) return;
+
+  list.innerHTML = '';
+  const known = new Set();
 
   if (data.networks && data.networks.length) {
     data.networks.forEach(n => {
+      if (!n.name || known.has(n.name)) return;
       const opt = document.createElement('option');
-      opt.value = opt.text = n.name;
-      if (n.name === currentSSID) { opt.selected = true; exists = true; }
-      sel.appendChild(opt);
+      opt.value = n.name;
+      list.appendChild(opt);
+      known.add(n.name);
     });
   }
-  if (!exists && currentSSID) {
-    const opt = document.createElement('option');
-    opt.value = currentSSID;
-    opt.text  = currentSSID + ' (Currently Connected)';
-    opt.selected = true;
-    sel.appendChild(opt);
+
+  if (currentSSID && !known.has(currentSSID)) {
+    addWifiSsidSuggestion(currentSSID, 'Currently Connected');
   }
-  if (!sel.options.length) {
-    const opt = document.createElement('option');
-    opt.value = '';
-    opt.text  = 'No networks found';
-    sel.appendChild(opt);
+}
+
+function addWifiSsidSuggestion(ssid, label) {
+  const list = document.getElementById('wifi_ssid_list');
+  if (!list || !ssid) return;
+
+  for (const opt of list.options) {
+    if (opt.value === ssid) return;
   }
+
+  const opt = document.createElement('option');
+  opt.value = ssid;
+  if (label) opt.label = label;
+  list.appendChild(opt);
 }
 
 function hideWifiScanResults() {
@@ -314,6 +342,11 @@ function displayWifiScanResults(data) {
   });
   data.networks.forEach(n => {
     const r = t.insertRow();
+    r.style.cursor = 'pointer';
+    r.onclick = () => {
+      const ssid = document.getElementById('wifi_ssid');
+      if (ssid) ssid.value = n.name || '';
+    };
     r.insertCell().textContent = n.name;
     r.insertCell().textContent = getSignalQuality(n.signal);
     r.insertCell().textContent = n.encryption;
