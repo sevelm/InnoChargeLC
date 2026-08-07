@@ -348,6 +348,82 @@ table td label, table td span {
     padding: 9px 14px;
 }
 
+.mail-recipient-list {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    margin-bottom: 8px;
+}
+
+.mail-recipient-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+}
+
+table .mail-recipient-row input[type="email"] {
+    width: 100%;
+    min-width: 260px;
+    height: 34px;
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-sizing: border-box;
+    font-size: 14px;
+    color: #333;
+}
+
+button.mail-recipient-add {
+    padding: 8px 12px;
+    font-size: 13px;
+}
+
+button.mail-recipient-remove {
+    flex: 0 0 34px;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    font-size: 21px;
+    line-height: 32px;
+    background-color: #7f8c92;
+}
+
+button.mail-recipient-remove:hover {
+    background-color: #c0392b;
+}
+
+button.mail-recipient-add:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
+.mail-log {
+    margin-top: 8px;
+}
+
+.mail-log strong {
+    display: block;
+    margin-bottom: 7px;
+    color: #333;
+}
+
+.mail-log pre {
+    width: min(900px, 80vw);
+    min-height: 90px;
+    max-height: 240px;
+    margin: 0;
+    padding: 10px;
+    overflow: auto;
+    border: 1px solid #cfd8dc;
+    border-radius: 4px;
+    background-color: #f7f9fa;
+    color: #263238;
+    box-sizing: border-box;
+    font: 12px/1.5 Consolas, "Courier New", monospace;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
 .session-import-actions {
     display: flex;
     align-items: center;
@@ -713,4 +789,117 @@ button.small-help-button:hover {
 button.compact-button {
     padding: 7px 12px;
     font-size: 13px;
+}
+
+.grid-pin-panel {
+    max-width: 560px;
+}
+
+.grid-settings-table td:first-child {
+    min-width: 280px;
+}
+
+.grid-label {
+    font-size: 16px;
+    color: #333;
+}
+
+.grid-settings-table input[type="number"],
+.grid-settings-table select {
+    width: 220px;
+}
+
+.grid-action-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 10px;
+}
+
+.grid-inline-status {
+    min-height: 18px;
+    font-size: 14px;
+    font-weight: bold;
+    color: #333;
+}
+
+.grid-warning {
+    max-width: 520px;
+    padding: 8px 10px;
+    border-left: 4px solid #c77800;
+    background: #fff7e6;
+    color: #5f3b00;
+    font-size: 14px;
+    line-height: 1.35;
+}
+
+.grid-strong-text {
+    font-size: 16px;
+    color: #333;
+    font-weight: bold;
+}
+
+.login-page {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    height: auto;
+    background-color: #263238;
+}
+
+.login-box {
+    width: min(360px, calc(100vw - 40px));
+    padding: 24px;
+    background-color: #fff;
+    border: 1px solid #ddd;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.login-logo {
+    display: block;
+    width: 260px;
+    max-width: 100%;
+    margin: 0 auto 28px auto;
+}
+
+.login-box h1 {
+    margin-top: 0;
+}
+
+.login-input-row {
+    display: flex;
+    align-items: center;
+    height: 42px;
+    margin-bottom: 14px;
+    border-bottom: 1px solid #cfd8dc;
+}
+
+.login-input-icon {
+    width: 22px;
+    height: 22px;
+    margin: 0 12px 0 6px;
+    object-fit: contain;
+    opacity: 0.85;
+}
+
+.login-box input[type="text"],
+.login-box input[type="password"] {
+    width: 100%;
+    height: 40px;
+    padding: 8px 6px;
+    border: none;
+    outline: none;
+    box-sizing: border-box;
+    font-size: 16px;
+    color: #333;
+}
+
+.login-box input::placeholder {
+    color: #9aa4aa;
+}
+
+.login-box button {
+    width: 100%;
+    margin-top: 6px;
 }

@@ -68,21 +68,27 @@ void apply_charging_authorization()
     * @return void
 */
 void init_control_pilot(void){
-    pinMode(cp_gen_pin, OUTPUT);
     ledcSetup(cp_control_channel, cp_gen_freq, 12);
+    ledcWrite(cp_control_channel, 4095); // 100% Standby vor Pin-Attach
+    setCpDuty = 100.0f;
     ledcAttachPin(cp_gen_pin, cp_control_channel);
+
     pinMode(cp_feedback_pin, INPUT);
     pinMode(cp_relay_pin, OUTPUT);
     digitalWrite(cp_relay_pin, LOW);
+
     adc1_config_width(ADC_WIDTH_BIT_12);
     adc1_config_channel_atten(cp_measure_channel, ADC_ATTEN_DB_11);
  
     ledcSetup(RELAY_CH_L1_N, 1000, 12);
     ledcAttachPin(RELAY_PIN_L1_N, RELAY_CH_L1_N);
+
     ledcSetup(RELAY_CH_L2_L3, 1000, 12);
     ledcAttachPin(RELAY_PIN_L2_L3, RELAY_CH_L2_L3);
+
     pinMode(RELAY_DRIVE, OUTPUT);   // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! To Delete Q11
     digitalWrite(RELAY_DRIVE, HIGH);// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! To Delete Q11
+    
     pinMode(rcm_fault, INPUT_PULLUP);
 }
 
@@ -125,14 +131,12 @@ int16_t get_cp_state_int() {
     * @return void
 */
 void set_control_pilot_duty(float duty){
-    ledcAttachPin(cp_gen_pin, cp_control_channel);   // re-attach PWM
     setCpDuty = duty;
     int i_duty = 4095 * duty / 100;
     ledcWrite(cp_control_channel, i_duty);
 }
 
 void set_control_pilot_duty_Error(float duty){
-    ledcAttachPin(cp_gen_pin, cp_control_channel);   // re-attach PWM
     int i_duty = 4095 * duty / 100;
     ledcWrite(cp_control_channel, i_duty);
 }
@@ -222,9 +226,21 @@ void set_charging_current(float current){
     if (current == 0 || !charging_authorization_allows_charging()) {
         set_control_pilot_100();  // Status B (WAIT)
     } else {
+        if (gridPhaseImbalanceLimitActive && current > 16.0f) {
+            current = 16.0f;
+        }
+
         float duty = get_duty_from_current(current);
         set_control_pilot_duty(duty);
     }
+}
+
+bool set_charging_current_external(float current)
+{
+    if (gridProtectionStatus == 1) return false;
+
+    set_charging_current(current);
+    return true;
 }
 
 /**
@@ -248,17 +264,23 @@ void set_charging_power(float power){
         return;
     }
 
-    if (phaseSwitchAllowed) {
-        if ((power > 0.0f) && (power < PHASE_SWITCH_TO_1P_DEFAULT) && ((stateRelayL1N && stateRelayL2L3) || (!stateRelayL1N && !stateRelayL2L3))) {
+    float powerToApply = power;
+    if (gridReconnectRampActive && powerToApply > gridReconnectRampLimitPower) {
+        powerToApply = gridReconnectRampLimitPower;
+    }
+    if (gridPhaseImbalanceLimitActive && powerToApply > 110.0f) {
+        powerToApply = 110.0f;
+    }
+
+    if (phaseSwitchAllowed && !gridReconnectRampActive && gridProtectionStatus == 0) {
+        if ((powerToApply > 0.0f) && (powerToApply < PHASE_SWITCH_TO_1P_DEFAULT) && ((stateRelayL1N && stateRelayL2L3) || (!stateRelayL1N && !stateRelayL2L3))) {
             switchToL1N = true;
             switchToL2L3 = false;
-            g_setChargingPower_kW = power;
             if (stateRelayL1N || stateRelayL2L3) set_control_pilot_100();  // Status B (WAIT)
         }
-        if ((power > 0.0f) && (power >= PHASE_SWITCH_TO_3P_DEFAULT) && ((stateRelayL1N && !stateRelayL2L3) || (!stateRelayL1N && !stateRelayL2L3))) {
+        if ((powerToApply > 0.0f) && (powerToApply >= PHASE_SWITCH_TO_3P_DEFAULT) && ((stateRelayL1N && !stateRelayL2L3) || (!stateRelayL1N && !stateRelayL2L3))) {
             switchToL2L3 = true;
             switchToL1N = false;
-            g_setChargingPower_kW = power;
             if (stateRelayL1N || stateRelayL2L3) set_control_pilot_100();  // Status B (WAIT)
         }
     }
@@ -269,18 +291,26 @@ void set_charging_power(float power){
     }
 
     // Active 3-phase charging must not drop below 6 A (~4.2 kW).
-    if (stateRelayL1N && stateRelayL2L3 && power > 0.0f && power < 42.0f) {
-        power = 42.0f;
+    if (!gridReconnectRampActive && stateRelayL1N && stateRelayL2L3 && powerToApply > 0.0f && powerToApply < 42.0f) {
+        powerToApply = 42.0f;
     }
     // Active 1-phase charging must not exceed 16 A (~3.7 kW).
-    if (stateRelayL1N && !stateRelayL2L3 && power > 37.0f) {
-        power = 37.0f;
+    if (stateRelayL1N && !stateRelayL2L3 && powerToApply > 37.0f) {
+        powerToApply = 37.0f;
     }
-    float duty = get_duty_from_power(power);
+    float duty = get_duty_from_power(powerToApply);
     set_control_pilot_duty(duty);
 
-         ESP_LOGI(CP_LOG, "Set unten: %f", power);
+     //    ESP_LOGI(CP_LOG, "Set unten: %f", powerToApply);
 
+}
+
+bool set_charging_power_external(float power)
+{
+    if (gridProtectionStatus == 1) return false;
+
+    set_charging_power(power);
+    return true;
 }
 
 /** 
@@ -301,7 +331,13 @@ float get_current_from_duty(float duty) {
 
 */
 void turn_on_cp_relay(){
-    set_charging_current(16);
+    //set_charging_current(16);
+    set_charging_power((digitalRead(DIP_SWITCH_1) == LOW) ? 220 : 110);
+    digitalWrite(cp_relay_pin, HIGH);
+    cp_relay_status = true;
+}
+
+void turn_on_cp_relay_only(){
     digitalWrite(cp_relay_pin, HIGH);
     cp_relay_status = true;
 }

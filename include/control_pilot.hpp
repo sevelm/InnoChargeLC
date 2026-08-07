@@ -3,9 +3,12 @@
 void init_control_pilot(void);
 void set_charging_current(float current);
 void set_charging_power(float power);
+bool set_charging_current_external(float current);
+bool set_charging_power_external(float power);
 bool charging_authorization_allows_charging(void);
 void apply_charging_authorization(void);
 void turn_on_cp_relay(void);
+void turn_on_cp_relay_only(void);
 void turn_off_cp_relay(void);
 void turn_off_cp_relay_now(void);
 void set_control_pilot_100(void);

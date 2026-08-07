@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>InnoCharge App Test</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 20px;
+      background: #111;
+      color: #eee;
+      font-family: Arial, sans-serif;
+    }
+    main {
+      max-width: 520px;
+      margin: 0 auto;
+    }
+    h1 {
+      margin-top: 0;
+      font-size: 26px;
+    }
+    .box {
+      margin: 14px 0;
+      padding: 16px;
+      background: #202225;
+      border-radius: 8px;
+    }
+    .row {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 8px 0;
+      border-bottom: 1px solid #333;
+    }
+    .row:last-child {
+      border-bottom: 0;
+    }
+    .label {
+      color: #aaa;
+    }
+    .value {
+      font-weight: bold;
+      text-align: right;
+    }
+    input, button {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 12px;
+      margin-top: 10px;
+      font-size: 18px;
+    }
+    button {
+      border: 0;
+      background: #3bbf72;
+      color: #07120b;
+      font-weight: bold;
+      border-radius: 6px;
+    }
+    #connection {
+      color: #ff7070;
+      font-weight: bold;
+    }
+    #connection.online {
+      color: #3bbf72;
+    }
+    #message {
+      min-height: 20px;
+      color: #aaa;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1 id="wallboxName">InnoCharge</h1>
+    <div id="connection">offline</div>
+
+    <section class="box">
+      <div class="row"><span class="label">CP State</span><span class="value" id="cpState">-</span></div>
+      <div class="row"><span class="label">Phase Mode</span><span class="value" id="phaseMode">-</span></div>
+      <div class="row"><span class="label">Target Charge Power</span><span class="value"><span id="targetChargePower">-</span> kW</span></div>
+      <div class="row"><span class="label">Vehicle Connected</span><span class="value" id="vehicleConnected">-</span></div>
+      <div class="row"><span class="label">Charging Active</span><span class="value" id="chargingActive">-</span></div>
+    </section>
+
+    <section class="box">
+      <label for="setChargePower">Charge Power (kW)</label>
+      <input type="number" id="setChargePower" min="0" max="22" step="0.1" inputmode="decimal">
+      <button type="button" id="sendPower">Senden</button>
+      <p id="message"></p>
+    </section>
+  </main>
+
+  <script>
+	    const APP_CLIENT = 'innocharge-public-app';
+	    let socket;
+	    let powerInitialized = false;
+
+    function setConnection(online) {
+      const el = document.getElementById('connection');
+      el.textContent = online ? 'online' : 'offline';
+      el.classList.toggle('online', online);
+    }
+
+    function sendMessage(message) {
+      if (!socket || socket.readyState !== WebSocket.OPEN) return false;
+      socket.send(JSON.stringify({ client: APP_CLIENT, ...message }));
+      return true;
+    }
+
+    function setText(id, value) {
+      const el = document.getElementById(id);
+      if (el) el.textContent = value;
+    }
+
+    function processUpdate(data) {
+      if (data.wallboxName !== undefined) setText('wallboxName', data.wallboxName || 'InnoCharge');
+      if (data.cpState !== undefined) setText('cpState', data.cpState);
+      if (data.phaseMode !== undefined) setText('phaseMode', data.phaseMode);
+	      if (data.targetChargePower !== undefined) {
+	        setText('targetChargePower', data.targetChargePower);
+	        const field = document.getElementById('setChargePower');
+	        if (!powerInitialized && document.activeElement !== field) {
+	          field.value = data.targetChargePower;
+	          powerInitialized = true;
+	        }
+      }
+      if (data.vehicleConnected !== undefined) setText('vehicleConnected', data.vehicleConnected ? 'yes' : 'no');
+      if (data.chargingActive !== undefined) setText('chargingActive', data.chargingActive ? 'yes' : 'no');
+    }
+
+    function connect() {
+      socket = new WebSocket('ws://' + window.location.hostname + ':81/');
+
+      socket.onopen = function() {
+        setConnection(true);
+        sendMessage({ action: 'subscribeUpdates', page: 'app' });
+      };
+
+      socket.onmessage = function(event) {
+        try {
+          processUpdate(JSON.parse(event.data));
+        } catch (error) {
+          document.getElementById('message').textContent = 'Ungueltige Daten empfangen';
+        }
+      };
+
+      socket.onerror = function() {
+        setConnection(false);
+      };
+
+      socket.onclose = function() {
+        setConnection(false);
+        window.setTimeout(connect, 2500);
+      };
+    }
+
+    function sendPower() {
+      const value = parseFloat(document.getElementById('setChargePower').value);
+      const message = document.getElementById('message');
+      if (Number.isNaN(value) || value < 0 || value > 22) {
+        message.textContent = 'Charge Power muss zwischen 0 und 22 kW liegen.';
+        return;
+      }
+
+	      if (sendMessage({ action: 'setChargeParameters', power: value })) {
+	        message.textContent = 'Charge Power gesendet.';
+      } else {
+        message.textContent = 'WebSocket ist nicht verbunden.';
+      }
+    }
+
+	    document.addEventListener('DOMContentLoaded', function() {
+	      setConnection(false);
+      connect();
+      document.getElementById('sendPower').addEventListener('click', sendPower);
+      document.getElementById('setChargePower').addEventListener('keydown', function(event) {
+        if (event.key === 'Enter') sendPower();
+      });
+    });
+
+    window.addEventListener('beforeunload', function() {
+      sendMessage({ action: 'unsubscribeUpdates', page: 'app' });
+      if (socket) socket.close();
+    });
+  </script>
+</body>
+</html>

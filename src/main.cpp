@@ -40,7 +40,7 @@ const char *MAIN_TAG = "Web: ";
 Preferences preferences;
 
 // cp_measurements_t measurements = {0.0, 0.0, {0.0}, 0};
-NeoPixelBus<NeoGrbFeature, Neo800KbpsMethod> strip(8, 10); // Set to Pin 10
+NeoPixelBus<NeoGrbFeature, NeoEsp32LcdX8Ws2812xMethod> strip(8, 10); // Set to Pin 10
 int cpState;
 float highVoltage, getCpDuty, setCpDuty;
 volatile int ledDummyState = 1;
@@ -66,7 +66,7 @@ bool rescueMode = false;
 
 
 void setup() {
-    delay(5000); // 1 Sekunde warten
+    //delay(5000); // 1 Sekunde warten
     ESP_LOGI(MAIN_TAG, "Starting up EVSE Test Programm!");
 
     // ######################### Initialize NVS
@@ -198,6 +198,7 @@ void setup() {
     xTaskCreatePinnedToCore(A_Task_MB, "Task_Modbus_Operation", 8192, NULL, 10, NULL, 0);   
     xTaskCreatePinnedToCore(A_Task_Web, "Task_Web_Operation", 8192, NULL, 5, NULL, 1);
     xTaskCreatePinnedToCore(A_Task_Low, "Task_Low_Operation", 8192, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(A_Task_LED, "Task_LED", 3072, NULL, 1, NULL, 1);
 
     // Scan WiFi networks
    // wifi_scan();
@@ -213,8 +214,7 @@ void setup() {
 //////////////////////////////////////////////////// Loop ///////////////////////////////////////////////////
 //////////////////////////////////////////////////// Loop ///////////////////////////////////////////////////
 void loop() {
-    // control LED
-    callLedEffect();
+    vTaskDelay(pdMS_TO_TICKS(1000));
 
 // WiFi control based on wifiEnabled
 //bool newWifiEnabled = preferences.getBool("wifiEnable", false);

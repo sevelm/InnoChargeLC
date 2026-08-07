@@ -23,6 +23,7 @@ void simpleColorChange();
 void knightRiderEffect();
 void waveEffect();
 void callLedEffect();
+void A_Task_LED(void* pvParameter);
 void mbColor();
 void rescueLedBlink();
 

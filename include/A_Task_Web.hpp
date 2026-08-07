@@ -27,6 +27,8 @@ extern OtaStatus otaUi;
 void setupUploadMain();
 void setupUploadUi();
 
+bool web_request_has_session(AsyncWebServerRequest* request);
+
 void A_Task_Web(void *pvParameter);
 void webSocketCreate(void *pvParameter);
 void registerWebRoutes(AsyncWebServer& server);

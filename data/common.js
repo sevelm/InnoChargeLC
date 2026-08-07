@@ -3,6 +3,36 @@
 // Global variable to track connection status
 let isConnectionActive = true; // Assume connection is active by default
 
+function getCookieValue(name) {
+  const prefix = name + '=';
+  const parts = document.cookie.split(';');
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i].trim();
+    if (part.indexOf(prefix) === 0) return part.substring(prefix.length);
+  }
+  return '';
+}
+
+// Fuegt bestehenden JSON-WebSocket-Nachrichten automatisch die Login-Session hinzu.
+(function installWebSocketSessionInjector() {
+  const originalSend = WebSocket.prototype.send;
+  WebSocket.prototype.send = function(data) {
+    if (typeof data !== 'string' || data.charAt(0) !== '{') {
+      return originalSend.call(this, data);
+    }
+
+    try {
+      const message = JSON.parse(data);
+      if (!message.session) {
+        message.session = getCookieValue('ICSESSION');
+      }
+      return originalSend.call(this, JSON.stringify(message));
+    } catch (error) {
+      return originalSend.call(this, data);
+    }
+  };
+})();
+
 // Function to load the navigation bar
 function loadNavbar() {
     // Load the navigation bar content from 'navbar.html'

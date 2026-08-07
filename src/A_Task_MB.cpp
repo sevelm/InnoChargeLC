@@ -32,7 +32,9 @@
 int16_t mbTcpRegRead09 = 0;
 
 /* ---------- Error-Counter ------------------------------ */
-constexpr uint8_t  SDM_ERR_MAX   = 3;      // 3 Fehlversuche  ≈ 6 s
+constexpr uint8_t  SDM_ERR_MAX   = 5;      // 5 fehlgeschlagene Poll-Zyklen
+constexpr uint8_t  SDM_READ_ATTEMPTS = 2;  // Ein Wiederholungsversuch je Registerblock
+constexpr uint32_t SDM_RETRY_GAP_MS  = 20;
 constexpr uint8_t  RFID_ERR_MAX  = 5;      // 5 Fehlversuche  ≈ 0,5 s
 
 /* ---------- Control-Register ------------------------------ */
@@ -47,7 +49,8 @@ const struct { uint16_t sdm; uint16_t tcp; } SDM_MAP[] = {
   {0x0006,  6},{0x0008,  8},{0x000A, 10},   // I L1-L3
   {0x000C, 12},{0x000E, 14},{0x0010, 16},   // P L1-L3
   {0x0034, 18},                             // P total
-  {0x0156, 20},{0x0158, 22}                 // E-Imp / E-Exp
+  {0x0156, 20},{0x0158, 22},                // E-Imp / E-Exp
+  {0x0046, 24}                              // Frequency
 };
 constexpr uint8_t  SDM_CNT      = sizeof(SDM_MAP)/sizeof(SDM_MAP[0]);
 constexpr uint32_t SDM_POLL_MS  = 2000;
@@ -56,7 +59,8 @@ const struct { uint16_t reg; uint16_t tcp; } YT_DTS353F2_MAP[] = {
   {0x0016,  6},{0x0018,  8},{0x001A, 10},   // I L1-L3
   {0x001E, 12},{0x0020, 14},{0x0022, 16},   // P L1-L3
   {0x001C, 18},                             // P total
-  {0x0110, 20},{0x0108, 22}                 // E-Imp / E-Exp
+  {0x0110, 20},{0x0108, 22},                // E-Imp / E-Exp
+  {0x0014, 24}                              // Frequency
 };
 constexpr uint8_t YT_DTS353F2_CNT = sizeof(YT_DTS353F2_MAP)/sizeof(YT_DTS353F2_MAP[0]);
 constexpr uint16_t SDM_TCP_BASE = 1000;      // 1000 … 1006
@@ -78,12 +82,14 @@ rfid_auth_t rfidAuth;
 charge_auth_session_t chargeAuthSession;
 
 static bool lastRfidBuzzerWritten = false;
+static bool rfidBuzzerStateKnown = false;
 static uint8_t lastRfidLedWritten = 255;
 static String lastRfidReaderIoTag = "";
 static uint32_t rfidReaderBuzzerUntilMillis = 0;
 static uint32_t lastRfidBuzzerOffWriteMillis = 0;
 constexpr uint32_t RFID_READER_BUZZER_MS = 1000;
 constexpr uint32_t RFID_READER_BUZZER_OFF_REFRESH_MS = 1000;
+constexpr bool RFID_READER_BUZZER_OFF_REFRESH_ENABLED = false; // Diagnostic test
 
 static bool isEmptyRfidTag(const String& idTag)
 {
@@ -158,7 +164,8 @@ static float* const SDM_SLOT[] = {
   &sdm.voltL1,&sdm.voltL2,&sdm.voltL3,
   &sdm.currL1,&sdm.currL2,&sdm.currL3,
   &sdm.pwrL1 ,&sdm.pwrL2 ,&sdm.pwrL3,
-  &sdm.pwrTot,&sdm.enrImp,&sdm.enrExp
+  &sdm.pwrTot,&sdm.enrImp,&sdm.enrExp,
+  &sdm.frequency
 };
 
 /* ---------- Dummy-Hooks bleiben unverändert ----------------*/
@@ -173,8 +180,8 @@ uint16_t cbCtrl(TRegister* reg, uint16_t val)
     const uint16_t adr = reg->address.address;
 
     switch (adr) {
-        case 4: set_charging_current(float(sVal)); break;
-        case 5: set_charging_power  (float(sVal)/100); break;
+        case 4: set_charging_current_external(float(sVal)); break;
+        case 5: set_charging_power_external(float(sVal) / 100); break;
         case 6: sVal ? turn_off_cp_relay() : turn_on_cp_relay(); break;
         case 9: mbTcpRegRead09 = sVal; break;
 
@@ -253,18 +260,22 @@ void A_Task_MB(void*)
 
     RS485.begin(9600, SERIAL_8N1, RX_PIN, TX_PIN);
     mbRTU.begin(&RS485, RTS_PIN);  mbRTU.master();
+    // Modbus RTU requires at least 3.5 character times of silence between
+    // frames. The library otherwise defaults to 1750 us, which is too short
+    // at 9600 baud and can make the SDM ignore the immediately following read.
+    mbRTU.setBaudrate(9600);
 
     /* TCP-Register anlegen */
     for (uint16_t i = 0; i < IO_CNT; ++i)  mbTCP.addHreg(IO_TCP_BASE + i);
     mbTCP.onSetHreg(IO_TCP_BASE, cbCtrl, CTRL_CNT);
 
-    for (uint16_t i=0; i<24; ++i) mbTCP.addHreg(SDM_TCP_BASE + i);
+    for (uint16_t i=0; i<26; ++i) mbTCP.addHreg(SDM_TCP_BASE + i);
     for (uint16_t i=0; i< 7; ++i) mbTCP.addHreg(RFID_TCP_BASE + i);
     mbTCP.server();
 
     ESP_LOGI(TAG,"Start: SDM %lums, RFID %lums", SDM_POLL_MS, RFID_POLL_MS);
 
-    uint32_t tSDM = 0, tRF = 0;
+    uint32_t tSDM = millis() - SDM_POLL_MS, tRF = 0;
     TickType_t nextWake = xTaskGetTickCount();
     
     // Init-Error-Counter
@@ -281,30 +292,80 @@ void A_Task_MB(void*)
 	        mbRTU.task();
 	
 		       /* ---------- SDM-Polling & Cleanup --------------------------------- */
-    if (sdm.enable)
+    if (sdm.enable && millis() - tSDM >= SDM_POLL_MS)
     {
+	        tSDM = millis();
 	        bool ok = true;
 	        if (sdm.type == EnergyMeter_YtDts353F2) {
 	            setRs485Config(SERIAL_8E1);
-	            for (uint8_t i = 0; i < YT_DTS353F2_CNT; ++i) {
-	                uint16_t w[2]{};
+	            constexpr uint16_t YT_MAIN_FIRST = 0x000E;
+	            constexpr uint16_t YT_MAIN_CNT   = 22;
+	            constexpr uint16_t YT_ENERGY_FIRST = 0x0108;
+	            constexpr uint16_t YT_ENERGY_CNT   = 10;
+	            uint16_t mainBuf[YT_MAIN_CNT]{};
+	            uint16_t energyBuf[YT_ENERGY_CNT]{};
+
+	            bool mainOk = false;
+	            for (uint8_t attempt = 0; attempt < SDM_READ_ATTEMPTS; ++attempt) {
 	                lastRc = Modbus::EX_SUCCESS;
-	                if (!mbRTU.readHreg(sdm.modbusId, YT_DTS353F2_MAP[i].reg, w, 2, trxCB)) {
-	                    ESP_LOGE(TAG, "readHreg YT-DTS353F-2 0x%04X failed", YT_DTS353F2_MAP[i].reg);
-	                    ok = false;
+	                const bool started = mbRTU.readHreg(sdm.modbusId, YT_MAIN_FIRST, mainBuf, YT_MAIN_CNT, trxCB);
+	                if (started && waitModbusDone()) {
+	                    mainOk = true;
 	                    break;
 	                }
-	                if (!waitModbusDone()) {
-	                    ESP_LOGE(TAG, "Modbus error YT-DTS353F-2 0x%04X: %d", YT_DTS353F2_MAP[i].reg, lastRc);
-	                    ok = false;
-	                    break;
+	                if (attempt + 1 < SDM_READ_ATTEMPTS) {
+	                    vTaskDelay(pdMS_TO_TICKS(SDM_RETRY_GAP_MS));
 	                }
-                storeMeterFloat(i, YT_DTS353F2_MAP[i].tcp, w, (i >= 6 && i <= 9) ? 1000.0f : 1.0f,
-                                !preferences.getBool("emSignEnable", false));
 	            }
-	        } else {
-	            setRs485Config(SERIAL_8N1);
-	        const uint16_t FIRST1 = 0x0000, CNT1 = 54;
+	            if (!mainOk) {
+	                ESP_LOGE(TAG, "Modbus error YT-DTS353F-2 main block after %u attempts: %d",
+	                         SDM_READ_ATTEMPTS, lastRc);
+	                ok = false;
+	            }
+
+	            if (ok) {
+	                vTaskDelay(pdMS_TO_TICKS(SDM_RETRY_GAP_MS));
+	                bool energyOk = false;
+	                for (uint8_t attempt = 0; attempt < SDM_READ_ATTEMPTS; ++attempt) {
+	                    lastRc = Modbus::EX_SUCCESS;
+	                    const bool started = mbRTU.readHreg(sdm.modbusId, YT_ENERGY_FIRST, energyBuf, YT_ENERGY_CNT, trxCB);
+	                    if (started && waitModbusDone()) {
+	                        energyOk = true;
+	                        break;
+	                    }
+	                    if (attempt + 1 < SDM_READ_ATTEMPTS) {
+	                        vTaskDelay(pdMS_TO_TICKS(SDM_RETRY_GAP_MS));
+	                    }
+	                }
+	                if (!energyOk) {
+	                    ESP_LOGE(TAG, "Modbus error YT-DTS353F-2 energy block after %u attempts: %d",
+	                             SDM_READ_ATTEMPTS, lastRc);
+	                    ok = false;
+	                }
+	            }
+
+	            if (ok) {
+	                const bool invertPowerSign = !preferences.getBool("emSignEnable", false);
+	                for (uint8_t i = 0; i < YT_DTS353F2_CNT; ++i) {
+	                    const uint16_t reg = YT_DTS353F2_MAP[i].reg;
+	                    const uint16_t* w = nullptr;
+	                    if (reg >= YT_MAIN_FIRST && reg + 1 < YT_MAIN_FIRST + YT_MAIN_CNT) {
+	                        w = &mainBuf[reg - YT_MAIN_FIRST];
+	                    } else if (reg >= YT_ENERGY_FIRST && reg + 1 < YT_ENERGY_FIRST + YT_ENERGY_CNT) {
+	                        w = &energyBuf[reg - YT_ENERGY_FIRST];
+	                    }
+	                    if (!w) {
+	                        ok = false;
+	                        break;
+	                    }
+	                    storeMeterFloat(i, YT_DTS353F2_MAP[i].tcp, w,
+	                                    (i >= 6 && i <= 9) ? 1000.0f : 1.0f,
+	                                    invertPowerSign);
+	                }
+	            }
+		        } else {
+		            setRs485Config(SERIAL_8N1);
+		        const uint16_t FIRST1 = 0x0000, CNT1 = 72;
         uint16_t buf1[CNT1];
 
 	      //  ESP_LOGI(TAG, "Reading SDM register block 1 (0x%04X, %u)", FIRST1, CNT1);
@@ -321,26 +382,40 @@ void A_Task_MB(void*)
             ok = false;
         }
 
-        uint16_t buf2[4];
-	      //  ESP_LOGI(TAG, "Reading SDM register block 2 (0x0156, 4)");
-	        lastRc = Modbus::EX_SUCCESS;
-		        if (!mbRTU.readIreg(sdm.modbusId, 0x0156, buf2, 4, trxCB)) {
-            ESP_LOGE(TAG, "readIreg block 2 failed");
-            ok = false;
-        }
-        while (mbRTU.slave()) {
-            mbRTU.task(); mbTCP.task(); vTaskDelay(1);
-        }
-        if (lastRc != Modbus::EX_SUCCESS) {
-            ESP_LOGE(TAG, "Modbus error block 2: %d", lastRc);
-            ok = false;
+        uint16_t buf2[4]{};
+        if (ok) {
+	        //  ESP_LOGI(TAG, "Reading SDM register block 2 (0x0156, 4)");
+	            // Give the meter additional turnaround time after the large
+	            // first response. Some SDM units sporadically ignore a request
+	            // that follows at only the minimum RTU inter-frame interval.
+	            vTaskDelay(pdMS_TO_TICKS(SDM_RETRY_GAP_MS));
+
+            bool block2Ok = false;
+            for (uint8_t attempt = 0; attempt < SDM_READ_ATTEMPTS; ++attempt) {
+	                lastRc = Modbus::EX_SUCCESS;
+		            const bool started = mbRTU.readIreg(sdm.modbusId, 0x0156, buf2, 4, trxCB);
+                if (started && waitModbusDone()) {
+                    block2Ok = true;
+                    break;
+                }
+
+                if (attempt + 1 < SDM_READ_ATTEMPTS) {
+                    vTaskDelay(pdMS_TO_TICKS(SDM_RETRY_GAP_MS));
+                }
+            }
+
+            if (!block2Ok) {
+                ESP_LOGE(TAG, "Modbus error block 2 after %u attempts: %d", SDM_READ_ATTEMPTS, lastRc);
+                ok = false;
+            }
         }
 
         if (ok) {
        //     ESP_LOGI(TAG, "Successfully read SDM data");
-            for (uint8_t i = 0; i < 10; ++i) {
-                const uint16_t* w = &buf1[SDM_MAP[i].sdm - FIRST1];
-                union { uint32_t u32; float f; } v{ (uint32_t(w[0])<<16) | w[1] };
+	            for (uint8_t i = 0; i < SDM_CNT; ++i) {
+	                if (SDM_MAP[i].sdm < FIRST1 || SDM_MAP[i].sdm >= FIRST1 + CNT1) continue;
+	                const uint16_t* w = &buf1[SDM_MAP[i].sdm - FIRST1];
+	                union { uint32_t u32; float f; } v{ (uint32_t(w[0])<<16) | w[1] };
                 // --- nur bei Power-Werten (Index 6..9) Vorzeichen invertieren ---
                 // Index-Layout: 0..2=Volt, 3..5=Curr, 6..8=Power L1..L3, 9=Power Total
                 if (i >= 6 && i <= 9) {
@@ -363,13 +438,14 @@ void A_Task_MB(void*)
                 *SDM_SLOT[i] = v.f;
             }
 
-            for (uint8_t i = 10; i < SDM_CNT; ++i) {
-                const uint16_t* w = &buf2[SDM_MAP[i].sdm - 0x0156];
-                union { uint32_t u32; float f; } v{ (uint32_t(w[0])<<16)|w[1] };
+	            for (uint8_t i = 0; i < SDM_CNT; ++i) {
+	                if (SDM_MAP[i].sdm < 0x0156 || SDM_MAP[i].sdm >= 0x015A) continue;
+	                const uint16_t* w = &buf2[SDM_MAP[i].sdm - 0x0156];
+	                union { uint32_t u32; float f; } v{ (uint32_t(w[0])<<16)|w[1] };
            //     ESP_LOGD(TAG, "SDM[%d] @0x%04X = %.2f", i, SDM_MAP[i].sdm, v.f);
-                hregFloat(SDM_MAP[i].tcp, w);
-                *SDM_SLOT[i] = v.f;
-            }
+	                hregFloat(SDM_MAP[i].tcp, w);
+	                *SDM_SLOT[i] = v.f;
+	            }
 
 	        }
 
@@ -380,7 +456,8 @@ void A_Task_MB(void*)
             sdm.error = false;
         } else {
             ESP_LOGW(TAG, "Error reading SDM values (%d consecutive errors)", sdmErrCnt + 1);
-            if (++sdmErrCnt >= SDM_ERR_MAX) {
+            if (sdmErrCnt < UINT8_MAX) ++sdmErrCnt;
+            if (sdmErrCnt == SDM_ERR_MAX) {
                 ESP_LOGE(TAG, "SDM reached %d failed cycles → setting error status", SDM_ERR_MAX);
                 sdm.error = true;
             }
@@ -397,97 +474,141 @@ void A_Task_MB(void*)
             tRF = millis();
 
             /* 1. Wenn Reader aktiv → normal pollen ------------------------ */
-		            if (rfid.enable)
-		            {
-		                bool ok = true;
-		                uint16_t d[4]{};
-	
-			                setRs485Config(SERIAL_8N1);
-			                const uint32_t now = millis();
-			                const bool desiredRfidBuzzer = rfid.buzzer || now < rfidReaderBuzzerUntilMillis;
-			                const bool refreshRfidBuzzerOff = !desiredRfidBuzzer && now - lastRfidBuzzerOffWriteMillis >= RFID_READER_BUZZER_OFF_REFRESH_MS;
-			                const uint8_t desiredRfidLed = currentRfidReaderLed();
+			            if (rfid.enable)
+			            {
+			                bool ioOk = true;
+			                uint16_t d[4]{};
+		
+				                setRs485Config(SERIAL_8N1);
+				                const uint32_t beforeUidMillis = millis();
+				                const bool desiredBuzzerBeforeUid =
+				                    rfid.buzzer || beforeUidMillis < rfidReaderBuzzerUntilMillis;
+				                const bool urgentBuzzerOff =
+				                    !rfidBuzzerStateKnown ||
+				                    (!desiredBuzzerBeforeUid && lastRfidBuzzerWritten);
+				                bool buzzerWriteAttempted = false;
 
-			                if (desiredRfidBuzzer != lastRfidBuzzerWritten || refreshRfidBuzzerOff) {
-			                    lastRc = Modbus::EX_SUCCESS;
-				                    if (!mbRTU.writeCoil(rfid.modbusId, 1, desiredRfidBuzzer, trxCB)) ok = false;
-			                    while (mbRTU.slave()) { mbRTU.task(); vTaskDelay(1); }
-			                    if (lastRc != Modbus::EX_SUCCESS) ok = false;
-			                    if (ok) {
-			                        lastRfidBuzzerWritten = desiredRfidBuzzer;
-			                        if (!desiredRfidBuzzer) lastRfidBuzzerOffWriteMillis = now;
+				                // Establish a known OFF state after initialization. A real
+				                // ON -> OFF transition also remains safety-critical.
+				                if (urgentBuzzerOff) {
+				                    buzzerWriteAttempted = true;
+				                    lastRc = Modbus::EX_SUCCESS;
+				                    const bool started = mbRTU.writeCoil(rfid.modbusId, 1, false, trxCB);
+				                    while (mbRTU.slave()) { mbRTU.task(); vTaskDelay(1); }
+				                    if (started && lastRc == Modbus::EX_SUCCESS) {
+				                        lastRfidBuzzerWritten = false;
+				                        rfidBuzzerStateKnown = true;
+				                        lastRfidBuzzerOffWriteMillis = millis();
+				                    } else {
+				                        ioOk = false;
+				                    }
+				                }
+
+				                // Read and evaluate the UID before non-critical reader I/O.
+				                lastRc = Modbus::EX_SUCCESS;
+				                const bool uidReadStarted = mbRTU.readHreg(rfid.modbusId, 4, d, 4, trxCB);
+	                while (mbRTU.slave()) { mbRTU.task(); vTaskDelay(1); }
+	                const bool uidReadOk = uidReadStarted && lastRc == Modbus::EX_SUCCESS;
+
+	                if (uidReadOk) {
+	                    /* UID & Register ablegen ------------------------------ */
+	                    const uint16_t base = RFID_TCP_BASE;
+	                    mbTCP.Hreg(base+0, d[0] & 0xFF);
+	                    mbTCP.Hreg(base+1, d[0] >> 8);
+	                    mbTCP.Hreg(base+2, d[1] & 0xFF);
+	                    mbTCP.Hreg(base+3, d[1] >> 8);
+	                    mbTCP.Hreg(base+4, d[2] & 0xFF);
+	                    mbTCP.Hreg(base+5, d[2] >> 8);
+	                    mbTCP.Hreg(base+6, d[3] & 0xFF);
+
+	                    rfid.uid[0] = d[0] & 0xFF;  rfid.uid[1] = d[0] >> 8;
+	                    rfid.uid[2] = d[1] & 0xFF;  rfid.uid[3] = d[1] >> 8;
+	                    rfid.uid[4] = d[2] & 0xFF;  rfid.uid[5] = d[2] >> 8;
+	                    rfid.uid[6] = d[3] & 0xFF;
+
+	                    char buf[3*7];
+	                    snprintf(buf, sizeof(buf),
+	                            "%02X:%02X:%02X:%02X:%02X:%02X:%02X",
+	                            rfid.uid[0], rfid.uid[1], rfid.uid[2],
+	                            rfid.uid[3], rfid.uid[4], rfid.uid[5],
+	                            rfid.uid[6]);
+			                    rfid.uidStr = String(buf);
+			                    if (rfid.uidStr != F("00:00:00:00:00:00:00")) {
+			                        rfid.lastUidStr = rfid.uidStr;
+			                        if (rfid.uidStr != lastRfidReaderIoTag) {
+			                            rfidReaderBuzzerUntilMillis = millis() + RFID_READER_BUZZER_MS;
+			                            lastRfidReaderIoTag = rfid.uidStr;
+			                        }
+			                    } else {
+			                        lastRfidReaderIoTag = "";
+			                    }
+			                    updateRfidAuthorizationFromCurrentTag();
+	                }
+
+				                const uint32_t afterUidMillis = millis();
+				                const bool desiredRfidBuzzer =
+				                    rfid.buzzer || afterUidMillis < rfidReaderBuzzerUntilMillis;
+				                const bool refreshRfidBuzzerOff =
+				                    RFID_READER_BUZZER_OFF_REFRESH_ENABLED &&
+				                    !desiredRfidBuzzer &&
+				                    afterUidMillis - lastRfidBuzzerOffWriteMillis >= RFID_READER_BUZZER_OFF_REFRESH_MS;
+
+				                // Buzzer ON and the periodic OFF reassurance are deliberately
+				                // handled after UID reading. Failed writes remain pending.
+				                if (!buzzerWriteAttempted &&
+				                    (desiredRfidBuzzer != lastRfidBuzzerWritten || refreshRfidBuzzerOff)) {
+				                    lastRc = Modbus::EX_SUCCESS;
+				                    const bool started = mbRTU.writeCoil(
+				                        rfid.modbusId, 1, desiredRfidBuzzer, trxCB);
+				                    while (mbRTU.slave()) { mbRTU.task(); vTaskDelay(1); }
+				                    if (started && lastRc == Modbus::EX_SUCCESS) {
+				                        lastRfidBuzzerWritten = desiredRfidBuzzer;
+				                        rfidBuzzerStateKnown = true;
+				                        if (!desiredRfidBuzzer) {
+				                            lastRfidBuzzerOffWriteMillis = millis();
+				                        }
+				                    } else {
+				                        ioOk = false;
+				                    }
+				                }
+
+			                const uint8_t desiredRfidLed = currentRfidReaderLed();
+			                if (desiredRfidLed != lastRfidLedWritten) {
+			                    bool ledOk = true;
+			                    if (desiredRfidLed == 1) {
+			                        lastRc = Modbus::EX_SUCCESS;
+				                        const bool started = mbRTU.writeCoil(rfid.modbusId, 2, true, trxCB);
+			                        while (mbRTU.slave()) { mbRTU.task(); vTaskDelay(1); }
+			                        if (!started || lastRc != Modbus::EX_SUCCESS) ledOk = false;
+			                    } else if (desiredRfidLed == 2) {
+			                        lastRc = Modbus::EX_SUCCESS;
+				                        const bool started = mbRTU.writeCoil(rfid.modbusId, 3, true, trxCB);
+			                        while (mbRTU.slave()) { mbRTU.task(); vTaskDelay(1); }
+		                        if (!started || lastRc != Modbus::EX_SUCCESS) ledOk = false;
+		                    } else {
+		                        lastRc = Modbus::EX_SUCCESS;
+				                        const bool firstStarted = mbRTU.writeCoil(rfid.modbusId, 2, false, trxCB);
+		                        while (mbRTU.slave()) { mbRTU.task(); vTaskDelay(1); }
+		                        if (!firstStarted || lastRc != Modbus::EX_SUCCESS) ledOk = false;
+
+		                        if (ledOk) {
+		                            lastRc = Modbus::EX_SUCCESS;
+				                        const bool secondStarted = mbRTU.writeCoil(rfid.modbusId, 3, false, trxCB);
+		                            while (mbRTU.slave()) { mbRTU.task(); vTaskDelay(1); }
+		                            if (!secondStarted || lastRc != Modbus::EX_SUCCESS) ledOk = false;
+			                        }
+			                    }
+
+			                    if (ledOk) {
+			                        lastRfidLedWritten = desiredRfidLed;
+			                    } else {
+			                        ioOk = false;
 			                    }
 			                }
 
-		                if (desiredRfidLed != lastRfidLedWritten) {
-		                    if (desiredRfidLed == 1) {
-		                        lastRc = Modbus::EX_SUCCESS;
-			                        if (!mbRTU.writeCoil(rfid.modbusId, 2, true, trxCB)) ok = false;
-		                        while (mbRTU.slave()) { mbRTU.task(); vTaskDelay(1); }
-		                        if (lastRc != Modbus::EX_SUCCESS) ok = false;
-		                    } else if (desiredRfidLed == 2) {
-		                        lastRc = Modbus::EX_SUCCESS;
-			                        if (!mbRTU.writeCoil(rfid.modbusId, 3, true, trxCB)) ok = false;
-		                        while (mbRTU.slave()) { mbRTU.task(); vTaskDelay(1); }
-	                        if (lastRc != Modbus::EX_SUCCESS) ok = false;
-	                    } else {
-	                        lastRc = Modbus::EX_SUCCESS;
-		                        if (!mbRTU.writeCoil(rfid.modbusId, 2, false, trxCB)) ok = false;
-	                        while (mbRTU.slave()) { mbRTU.task(); vTaskDelay(1); }
-	                        if (lastRc != Modbus::EX_SUCCESS) ok = false;
-
-	                        if (ok) {
-	                            lastRc = Modbus::EX_SUCCESS;
-			                        if (!mbRTU.writeCoil(rfid.modbusId, 3, false, trxCB)) ok = false;
-	                            while (mbRTU.slave()) { mbRTU.task(); vTaskDelay(1); }
-	                            if (lastRc != Modbus::EX_SUCCESS) ok = false;
-		                        }
-		                    }
-
-		                    if (ok) lastRfidLedWritten = desiredRfidLed;
-		                }
-
-		                lastRc = Modbus::EX_SUCCESS;
-			                if (!mbRTU.readHreg(rfid.modbusId, 4, d, 4, trxCB)) ok = false;
-                while (mbRTU.slave()) { mbRTU.task(); vTaskDelay(1); }
-                if (lastRc != Modbus::EX_SUCCESS) ok = false;
-
-                if (ok) {
-                    /* UID & Register ablegen ------------------------------ */
-                    const uint16_t base = RFID_TCP_BASE;
-                    mbTCP.Hreg(base+0, d[0] & 0xFF);
-                    mbTCP.Hreg(base+1, d[0] >> 8);
-                    mbTCP.Hreg(base+2, d[1] & 0xFF);
-                    mbTCP.Hreg(base+3, d[1] >> 8);
-                    mbTCP.Hreg(base+4, d[2] & 0xFF);
-                    mbTCP.Hreg(base+5, d[2] >> 8);
-                    mbTCP.Hreg(base+6, d[3] & 0xFF);
-
-                    rfid.uid[0] = d[0] & 0xFF;  rfid.uid[1] = d[0] >> 8;
-                    rfid.uid[2] = d[1] & 0xFF;  rfid.uid[3] = d[1] >> 8;
-                    rfid.uid[4] = d[2] & 0xFF;  rfid.uid[5] = d[2] >> 8;
-                    rfid.uid[6] = d[3] & 0xFF;
-
-                    char buf[3*7];
-                    snprintf(buf, sizeof(buf),
-                            "%02X:%02X:%02X:%02X:%02X:%02X:%02X",
-                            rfid.uid[0], rfid.uid[1], rfid.uid[2],
-                            rfid.uid[3], rfid.uid[4], rfid.uid[5],
-                            rfid.uid[6]);
-	                    rfid.uidStr = String(buf);
-	                    if (rfid.uidStr != F("00:00:00:00:00:00:00")) {
-	                        rfid.lastUidStr = rfid.uidStr;
-	                        if (rfid.uidStr != lastRfidReaderIoTag) {
-	                            rfidReaderBuzzerUntilMillis = millis() + RFID_READER_BUZZER_MS;
-	                            lastRfidReaderIoTag = rfid.uidStr;
-	                        }
-	                    } else {
-	                        lastRfidReaderIoTag = "";
-	                    }
-	                    updateRfidAuthorizationFromCurrentTag();
-                }
-                /* Entprellung ------------------------------------------- */
-                if (ok) {
+	                /* Entprellung ------------------------------------------- */
+	                const bool ok = uidReadOk && ioOk;
+	                if (ok) {
                     rfidErrCnt = 0;
                     rfid.error = false;
                 } else if (++rfidErrCnt >= RFID_ERR_MAX) {
@@ -500,8 +621,10 @@ void A_Task_MB(void*)
                 for (uint16_t i = 0; i < 7; ++i) mbTCP.Hreg(RFID_TCP_BASE + i, 0);
                 memset(&rfid.uid, 0, sizeof(rfid.uid));
                 rfid.uidStr     = F("00:00:00:00:00:00:00");
-                rfid.lastUidStr = F("00:00:00:00:00:00:00");
-                rfidAuth.authorized = false;
+	                rfid.lastUidStr = F("00:00:00:00:00:00:00");
+	                rfidAuth.authorized = false;
+	                rfidBuzzerStateKnown = false;
+	                lastRfidBuzzerWritten = false;
                 /* Fehlerstatus zurücksetzen                                */
                 rfidErrCnt = 0;
                 rfid.error = false;       
@@ -526,4 +649,3 @@ void A_Task_MB(void*)
         //vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
-

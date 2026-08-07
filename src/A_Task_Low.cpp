@@ -42,8 +42,11 @@ void A_Task_Low(void *pvParameter){
     while(1){
         get_eth_ip(eth_ip);
         ESP_LOGI(CP_LOGI, "ETH IP : %s", eth_ip);
-        get_wifi_ip(eth_ip);
-        ESP_LOGI(CP_LOGI, "WIFI IP: %s", eth_ip);
+	        get_wifi_ip(eth_ip);
+	        ESP_LOGI(CP_LOGI, "WIFI IP: %s", eth_ip);
+	       // ESP_LOGI(CP_LOGI, "lastCpStatePersistentBoot: %d | lastCpStatePersWritten: %d",
+	       //          (int)lastCpStatePersistentBoot,
+	       //          (int)lastCpStatePersWritten);
 
 
 /* Für Messe Animation 

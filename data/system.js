@@ -77,14 +77,21 @@ function processMsg(txt) {
     return;
   }
 
-  if (j.wallboxName !== undefined) {
-    const field = document.getElementById('wallboxName');
-    if (field && document.activeElement !== field) {
-      field.value = j.wallboxName;
-    }
-  }
+	  if (j.wallboxName !== undefined) {
+	    const field = document.getElementById('wallboxName');
+	    if (field && document.activeElement !== field) {
+	      field.value = j.wallboxName;
+	    }
+	  }
+	  if (j.gridProfile !== undefined) {
+	    const status = document.getElementById('gridRuleStatus');
+	    if (status) {
+	      status.textContent = Number(j.gridProfile) === 1 ? 'AT - TOR V 1.2 active' : 'Disabled';
+	      status.style.color = Number(j.gridProfile) === 1 ? 'green' : '#333';
+	    }
+	  }
 
-  if (j.dipSwitch1 !== undefined) {
+	  if (j.dipSwitch1 !== undefined) {
     setDipSwitchText('dipSwitch1', j.dipSwitch1);
   }
   if (j.dipSwitch2 !== undefined) {

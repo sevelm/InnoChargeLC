@@ -6,6 +6,7 @@
 #include "ledEffect.hpp"
 
 unsigned long prevMillisLED       = 0;    // we use the "millis()" command for time reference and this will output an unsigned long
+static constexpr int LED_ANIM_STEP = 4;  // 20 ms task preserves the former 5 ms animation speed
 
 enum rfid_led_state_t {
   RfidLed_None,
@@ -173,57 +174,56 @@ void stateB_1 () {
 
 //################################### Wave with Green LED -> Charge Activ
 void stateC () {
-
 if (initStateC == 1) {
   switch (counterTag1[0]) {
-    case 0: counter1[0]++;
+    case 0: counter1[0] += LED_ANIM_STEP;
       if (counter1[0] >= 30) {
         counterTag1[0] = 1;
       }
       break;
-    case 1: counter1[0]++;
-      counter1[1]++;
+    case 1: counter1[0] += LED_ANIM_STEP;
+      counter1[1] += LED_ANIM_STEP;
       if (counter1[1] >= 30) {
         counterTag1[0] = 2;
       }
       break;
-    case 2: counter1[0]++;
-      counter1[1]++;
-      counter1[2]++;
+    case 2: counter1[0] += LED_ANIM_STEP;
+      counter1[1] += LED_ANIM_STEP;
+      counter1[2] += LED_ANIM_STEP;
       if (counter1[2] >= 30) {
         counterTag1[0] = 3;
       }
       break;
-    case 3: counter1[0]++;
-      counter1[1]++;
-      counter1[2]++;
-      counter1[3]++;      
+    case 3: counter1[0] += LED_ANIM_STEP;
+      counter1[1] += LED_ANIM_STEP;
+      counter1[2] += LED_ANIM_STEP;
+      counter1[3] += LED_ANIM_STEP;
       if (counter1[3] >= 255) {
         counterTag1[0] = 4;
       }
       break;
-    case 4: counter1[3]--;
+    case 4: counter1[3] -= LED_ANIM_STEP;
       if (counter1[3] <= 180) {
         counterTag1[0] = 5;
       }
       break;
-    case 5: counter1[2]--;
-      counter1[3]--;
+    case 5: counter1[2] -= LED_ANIM_STEP;
+      counter1[3] -= LED_ANIM_STEP;
       if (counter1[2] <= 180) {
         counterTag1[0] = 6;
       }
       break;
-    case 6: counter1[1]--;
-      counter1[2]--;
-      counter1[3]--;
+    case 6: counter1[1] -= LED_ANIM_STEP;
+      counter1[2] -= LED_ANIM_STEP;
+      counter1[3] -= LED_ANIM_STEP;
       if (counter1[1] <= 180) {
         counterTag1[0] = 7;
       }
       break;
-    case 7: counter1[0]--;
-      counter1[1]--;
-      counter1[2]--;
-      counter1[3]--;      
+    case 7: counter1[0] -= LED_ANIM_STEP;
+      counter1[1] -= LED_ANIM_STEP;
+      counter1[2] -= LED_ANIM_STEP;
+      counter1[3] -= LED_ANIM_STEP;
       if (counter1[0] <= 0) {
         counterTag1[0] = 0;
       }
@@ -254,14 +254,12 @@ if (initStateC == 1) {
     counter1[3] = 0;
   }
 } else {
-  counter1[0] = 255;
-  counter1[1] = 255;
-  counter1[2] = 255;
-  counter1[3] = 255;
-  counter1[4] = 255;
-  counter1[5] = 255; 
+  counter1[0] = 0;
+  counter1[1] = 0;
+  counter1[2] = 0;
+  counter1[3] = 0;
+  counterTag1[0] = 0;
   initStateC = 1;
-  counterTag1[0];           
 }
   strip.SetPixelColor(4, RgbColor(0, counter1[0], 0));
   strip.SetPixelColor(3, RgbColor(0, counter1[0], 0));
@@ -269,8 +267,8 @@ if (initStateC == 1) {
   strip.SetPixelColor(2, RgbColor(0, counter1[1], 0));
   strip.SetPixelColor(6, RgbColor(0, counter1[2], 0));
   strip.SetPixelColor(1, RgbColor(0, counter1[2], 0));
-  strip.SetPixelColor(7, RgbColor(0, counter1[2], 0));
-  strip.SetPixelColor(0, RgbColor(0, counter1[2], 0));  
+  strip.SetPixelColor(7, RgbColor(0, counter1[3], 0));
+  strip.SetPixelColor(0, RgbColor(0, counter1[3], 0));  
   strip.Show();   // Send the updated pixel colors to the hardware.
   
 }
@@ -389,7 +387,7 @@ void knightRiderEffect() {
   static int8_t direction = 1; // Richtung: 1 f�r vorw�rts, -1 f�r r�ckw�rts
   static int8_t currentPixel = 0;
   static uint8_t counter = 0;
-  const uint8_t cycleDuration = 30; // Dauer eines Zyklus in Anzahl der Schritte
+  const uint8_t cycleDuration = 8; // ca. 160 ms bei 20-ms-Task
 
   counter++;
   if (counter >= cycleDuration) {
@@ -419,7 +417,7 @@ void waveEffect() {
   static int8_t direction = 1; // Richtung: 1 f�r vorw�rts, -1 f�r r�ckw�rts
   static int8_t currentWavePos = 0;
   static uint8_t counter = 0;
-  const uint8_t cycleDuration = 15; // Dauer eines Zyklus in Anzahl der Schritte
+  const uint8_t cycleDuration = 4; // ca. 80 ms bei 20-ms-Task
 
   counter++;
   if (counter >= cycleDuration) {
@@ -457,7 +455,7 @@ static void waitingWaveEffect(RgbColor baseColor, RgbColor waveColor) {
   static int8_t direction = 1;
   static int8_t currentWaveCenter = -1;
   static uint8_t counter = 0;
-  const uint8_t cycleDuration = 30;
+  const uint8_t cycleDuration = 8; // ca. 160 ms bei 20-ms-Task
 
   counter++;
   if (counter < cycleDuration) {
@@ -497,8 +495,8 @@ static void waitingWaveEffect(RgbColor baseColor, RgbColor waveColor) {
 // control LED
 void callLedEffect()
 {
-    /* 5-ms-Takt ------------------------------------------------------ */
-    if (xTaskGetTickCount() - prevMillisLED < pdMS_TO_TICKS(5))
+    /* 20-ms-Takt ----------------------------------------------------- */
+    if (xTaskGetTickCount() - prevMillisLED < pdMS_TO_TICKS(20))
         return;
     prevMillisLED = xTaskGetTickCount();
 
@@ -570,6 +568,15 @@ void callLedEffect()
           }
         break;          
         case StateCustom_DutyCycle_0:   waitingWaveEffect(RgbColor(255, 195, 0), RgbColor(255, 255, 255)); break; //Orange mit Weißer Welle
+    }
+}
+
+void A_Task_LED(void*)
+{
+    TickType_t nextWake = xTaskGetTickCount();
+    while (true) {
+        callLedEffect();
+        vTaskDelayUntil(&nextWake, pdMS_TO_TICKS(20));
     }
 }
 

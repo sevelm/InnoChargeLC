@@ -27,11 +27,13 @@
 #include "charge_session_log.hpp"
 #include "session_mailer.hpp"
 #include "dynamic_power_limit.hpp"
+#include "grid_protection.hpp"
 #include "esp_wifi.h"
 
 #include "esp_timer.h"
 #include <time.h>
 #include <map>
+#include <set>
 
 #include <esp_ota_ops.h>        // ↯ einmal ganz oben in A_Task_Web.cpp
 
@@ -66,17 +68,25 @@ OtaStatus otaUi{};
 
 SemaphoreHandle_t g_wsSubsMutex;   // schützt subscribedClients
 static std::vector<uint8_t> g_pendingNetworkOnce;
+static std::set<uint8_t> g_gridSettingsUnlockedClients;
 
 std::map<uint8_t, std::string> subscribedClients;    // Client number with page
 
 const char *WEB_TAG = "Task_Web: ";
 static constexpr const char* RFID_AUTH_REQUIRED_KEY = "rfidAuthReq";
 static constexpr const char* WEB_PASSWORD_KEY = "webPass";
+static constexpr const char* WEB_SESSION_COOKIE = "ICSESSION";
 static constexpr const char* SESSION_IMPORT_PATH = "/charge_sessions_import.json";
 static constexpr size_t SESSION_PAGE_LIMIT = 100;
 static volatile bool g_rebootRequested = false;
 static volatile bool g_sessionImportPending = false;
 static volatile size_t g_sessionPageOffset = 0;
+static constexpr const char* GRID_SETTINGS_PIN = "2026";
+static constexpr const char* GRID_PROFILE_KEY = "gridProfile";
+static constexpr const char* GRID_NOMINAL_VOLTAGE_KEY = "gridNomVolt";
+static constexpr const char* GRID_UV_PERCENT_KEY = "gridUvPct";
+static constexpr const char* GRID_UV_TRIP_SECONDS_KEY = "gridUvTripS";
+static constexpr const char* GRID_RECONNECT_SECONDS_KEY = "gridRecS";
 
 struct SessionImportUpload {
     File file;
@@ -88,9 +98,138 @@ AsyncWebServer server(80); // the server uses port 80 (standard port for website
 
 const char* www_username = "admin";
 static String www_password_storage = "admin";
+static constexpr size_t MAX_WEB_SESSIONS = 4;
+static std::vector<String> g_webSessionTokens;
+
+static constexpr const char* RECOVERY_HTML =
+    "<!DOCTYPE html><html><head><meta charset=\"UTF-8\">"
+    "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">"
+    "<title>InnoCharge Recovery</title>"
+    "<style>"
+    "body{font-family:Arial,sans-serif;background:#f2f2f6;margin:0;padding:32px}"
+    ".box{background:#fff;padding:24px;max-width:520px;margin:auto;box-shadow:0 2px 8px #0002}"
+    "input,button{box-sizing:border-box;width:100%;padding:10px;margin:10px 0;font-size:16px}"
+    "button{background:#25343b;color:#fff;border:0;font-weight:bold}"
+    "p{line-height:1.4}"
+    "</style></head><body><div class=\"box\">"
+    "<h1>InnoCharge Recovery</h1>"
+    "<p>Upload a Web-UI firmware image if the normal web interface is not reachable.</p>"
+    "<form method=\"POST\" action=\"/uploadui\" enctype=\"multipart/form-data\">"
+    "<input type=\"hidden\" name=\"recovery\" value=\"1\">"
+    "<input type=\"file\" name=\"update\" accept=\".bin\" required>"
+    "<button type=\"submit\">Upload Web-UI Firmware</button>"
+    "</form></div></body></html>";
 
 static const char* current_web_password() {
     return rescueMode ? "admin" : www_password_storage.c_str();
+}
+
+static String make_web_session_token() {
+    char token[33];
+    snprintf(token, sizeof(token), "%08X%08X%08X%08X", esp_random(), esp_random(), esp_random(), esp_random());
+    return String(token);
+}
+
+static String web_request_session_token(AsyncWebServerRequest* request) {
+    if (!request->hasHeader("Cookie")) return "";
+
+    AsyncWebHeader* cookie = request->getHeader("Cookie");
+    if (!cookie) return "";
+
+    String prefix = String(WEB_SESSION_COOKIE) + "=";
+    String value = cookie->value();
+    int start = value.indexOf(prefix);
+    if (start < 0) return "";
+
+    start += prefix.length();
+    int end = value.indexOf(';', start);
+    return end >= 0 ? value.substring(start, end) : value.substring(start);
+}
+
+static bool web_session_valid_token(const String& token) {
+    if (token.length() == 0) return false;
+
+    bool valid = false;
+    if (g_wsSubsMutex && xSemaphoreTake(g_wsSubsMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+        for (const auto& sessionToken : g_webSessionTokens) {
+            if (sessionToken == token) {
+                valid = true;
+                break;
+            }
+        }
+        xSemaphoreGive(g_wsSubsMutex);
+    }
+    return valid;
+}
+
+static void add_web_session(const String& token) {
+    if (token.length() == 0) return;
+
+    if (g_wsSubsMutex && xSemaphoreTake(g_wsSubsMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+        for (auto it = g_webSessionTokens.begin(); it != g_webSessionTokens.end();) {
+            if (*it == token) it = g_webSessionTokens.erase(it);
+            else ++it;
+        }
+
+        while (g_webSessionTokens.size() >= MAX_WEB_SESSIONS) {
+            g_webSessionTokens.erase(g_webSessionTokens.begin());
+        }
+
+        g_webSessionTokens.push_back(token);
+        xSemaphoreGive(g_wsSubsMutex);
+    }
+}
+
+static void remove_web_session(const String& token) {
+    if (token.length() == 0) return;
+
+    if (g_wsSubsMutex && xSemaphoreTake(g_wsSubsMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+        for (auto it = g_webSessionTokens.begin(); it != g_webSessionTokens.end();) {
+            if (*it == token) it = g_webSessionTokens.erase(it);
+            else ++it;
+        }
+        xSemaphoreGive(g_wsSubsMutex);
+    }
+}
+
+bool web_request_has_session(AsyncWebServerRequest* request) {
+    return web_session_valid_token(web_request_session_token(request));
+}
+
+static void redirect_to_login(AsyncWebServerRequest* request) {
+    AsyncWebServerResponse* response = request->beginResponse(302);
+    response->addHeader("Location", "/login.html");
+    request->send(response);
+}
+
+static void send_protected_spiffs_file(AsyncWebServerRequest* request, const char* path) {
+    if (!web_request_has_session(request)) {
+        redirect_to_login(request);
+        return;
+    }
+    request->send(SPIFFS, path, "text/html");
+}
+
+static void register_protected_page_routes(AsyncWebServer& server) {
+    server.on("/", HTTP_GET, [](AsyncWebServerRequest* request) {
+        send_protected_spiffs_file(request, "/index.html");
+    });
+
+    const char* pages[] = {
+        "/index.html",
+        "/network.html",
+        "/interfaces.html",
+        "/rfid.html",
+        "/sessions.html",
+        "/grid_settings.html",
+        "/system.html"
+    };
+
+    for (const char* page : pages) {
+        server.on(page, HTTP_GET, [page](AsyncWebServerRequest* request) {
+            send_protected_spiffs_file(request, page);
+        });
+    }
 }
 
 class CaptiveRequestHandler : public AsyncWebHandler {
@@ -104,14 +243,11 @@ public:
     }
 
     void handleRequest(AsyncWebServerRequest *request) {
-        if (!request->authenticate(www_username, current_web_password())) {
-            return request->requestAuthentication(); // fordert Benutzer+Passwort an
-        }
         //ESP_LOGI(WEB_TAG, "Handling request for %s", request->url().c_str());
-        File file = SPIFFS.open("/index.html", "r");
+        File file = SPIFFS.open("/login.html", "r");
         if (!file) {
             // If the file cannot be opened, send a default response
-        //    ESP_LOGE(WEB_TAG, "Failed to open /index.html");
+        //    ESP_LOGE(WEB_TAG, "Failed to open /login.html");
             AsyncResponseStream *response = request->beginResponseStream("text/html");
             response->print("<!DOCTYPE html><html><head><title>Captive Portal</title></head><body>");
             response->print("<p>Failed to open file for reading.</p>");
@@ -121,8 +257,8 @@ public:
             request->send(response);
         } else {
             // If the file is opened successfully, send its content
-         //   ESP_LOGI(WEB_TAG, "Serving /index.html");
-            AsyncWebServerResponse *response = request->beginResponse(SPIFFS, "/index.html", "text/html");
+         //   ESP_LOGI(WEB_TAG, "Serving /login.html");
+            AsyncWebServerResponse *response = request->beginResponse(SPIFFS, "/login.html", "text/html");
             request->send(response);
             file.close();
         }
@@ -141,13 +277,125 @@ static void send_web_password_status(uint8_t num, bool ok, const char* message) 
     webSocket.sendTXT(num, out);
 }
 
+static void send_grid_settings_status(uint8_t num, const char* type, bool ok, const char* message) {
+    JsonDocument response;
+    response["type"] = type;
+    response["ok"] = ok;
+    response["message"] = message;
+    String out;
+    serializeJson(response, out);
+    webSocket.sendTXT(num, out);
+}
+
+static bool grid_settings_client_unlocked(uint8_t num) {
+    bool unlocked = false;
+    if (xSemaphoreTake(g_wsSubsMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+        unlocked = g_gridSettingsUnlockedClients.find(num) != g_gridSettingsUnlockedClients.end();
+        xSemaphoreGive(g_wsSubsMutex);
+    }
+    return unlocked;
+}
+
+static void lock_grid_settings_client(uint8_t num) {
+    if (xSemaphoreTake(g_wsSubsMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+        g_gridSettingsUnlockedClients.erase(num);
+        xSemaphoreGive(g_wsSubsMutex);
+    }
+}
+
+static void unlock_grid_settings_client(uint8_t num) {
+    if (xSemaphoreTake(g_wsSubsMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+        g_gridSettingsUnlockedClients.insert(num);
+        xSemaphoreGive(g_wsSubsMutex);
+    }
+}
+
+static bool websocket_session_valid(JsonDocument& doc) {
+    if (!doc["session"].is<const char*>()) return false;
+    return web_session_valid_token(String(doc["session"].as<const char*>()));
+}
+
+static bool websocket_public_app_allowed(JsonDocument& doc) {
+    if (!doc["client"].is<const char*>() ||
+        strcmp(doc["client"].as<const char*>(), "innocharge-public-app") != 0) {
+        return false;
+    }
+
+    const char* action = doc["action"] | "";
+    if (strcmp(action, "subscribeUpdates") == 0 || strcmp(action, "unsubscribeUpdates") == 0) {
+        return doc["page"].is<const char*>() && strcmp(doc["page"].as<const char*>(), "app") == 0;
+    }
+
+    return strcmp(action, "setChargeParameters") == 0 && doc.containsKey("power");
+}
+
+static String build_grid_settings_json() {
+    JsonDocument doc;
+    uint16_t nominalVoltage = preferences.getUShort(GRID_NOMINAL_VOLTAGE_KEY, 230);
+    uint8_t undervoltagePercent = preferences.getUChar(GRID_UV_PERCENT_KEY, 80);
+    float minVoltage = grid_protection_get_min_voltage(sdm.voltL1, sdm.voltL2, sdm.voltL3);
+
+    doc["gridProfile"] = preferences.getUChar(GRID_PROFILE_KEY, 0);
+    doc["gridNominalVoltage"] = nominalVoltage;
+    doc["gridUndervoltagePercent"] = undervoltagePercent;
+    doc["gridUndervoltageVolts"] = roundf(grid_protection_get_trip_voltage(nominalVoltage, undervoltagePercent) * 10.0f) / 10.0f;
+    doc["gridUndervoltageTripSeconds"] = preferences.getUShort(GRID_UV_TRIP_SECONDS_KEY, 3);
+    doc["gridReconnectDelaySeconds"] = preferences.getUShort(GRID_RECONNECT_SECONDS_KEY, 60);
+    doc["gridReconnectDelayRemainingSeconds"] = gridReconnectDelayRemainingSeconds;
+    doc["gridProtectionStatus"] = gridProtectionStatus;
+    doc["gridReconnectRampActive"] = gridReconnectRampActive;
+    doc["gridReconnectRampLimitPower"] = (int16_t)roundf(gridReconnectRampLimitPower);
+    doc["gridPhaseImbalanceDetected"] = grid_protection_phase_imbalance_active();
+    doc["gridPhaseImbalanceLimitActive"] = gridPhaseImbalanceLimitActive;
+    doc["gridPhaseImbalanceLimitRemainingSeconds"] = gridPhaseImbalanceLimitRemainingSeconds;
+    doc["energyMeterState"] = preferences.getBool("emEnable", false);
+    doc["energyMeterType"] = preferences.getUChar("emType", EnergyMeter_EastronSdm630);
+    doc["energyMeterModbusId"] = sdm.modbusId;
+    doc["energyMeterError"] = sdm.error;
+    doc["l1Voltage"] = (int16_t)roundf(sdm.voltL1 * 10);
+    doc["l2Voltage"] = (int16_t)roundf(sdm.voltL2 * 10);
+    doc["l3Voltage"] = (int16_t)roundf(sdm.voltL3 * 10);
+    doc["frequency"] = (int16_t)roundf(sdm.frequency * 100);
+    doc["minGridVoltage"] = (int16_t)roundf(minVoltage * 10);
+    doc["l1VoltageOk"] = grid_protection_voltage_reconnect_ok(nominalVoltage, sdm.voltL1);
+    doc["l2VoltageOk"] = grid_protection_voltage_reconnect_ok(nominalVoltage, sdm.voltL2);
+    doc["l3VoltageOk"] = grid_protection_voltage_reconnect_ok(nominalVoltage, sdm.voltL3);
+    doc["frequencyOk"] = grid_protection_frequency_reconnect_ok(sdm.frequency);
+
+    String out;
+    serializeJson(doc, out);
+    return out;
+}
+
+static bool save_grid_setting_value(const char* key, int value) {
+    // Speichert genau einen Grid-Parameter, damit andere Felder nicht ueberschrieben werden.
+    if (strcmp(key, "profile") == 0) {
+        preferences.putUChar(GRID_PROFILE_KEY, (uint8_t)value);
+        return true;
+    }
+    if (strcmp(key, "undervoltagePercent") == 0) {
+        preferences.putUChar(GRID_UV_PERCENT_KEY, (uint8_t)value);
+        return true;
+    }
+    if (strcmp(key, "undervoltageTripSeconds") == 0) {
+        preferences.putUShort(GRID_UV_TRIP_SECONDS_KEY, (uint16_t)value);
+        return true;
+    }
+    if (strcmp(key, "reconnectDelaySeconds") == 0) {
+        preferences.putUShort(GRID_RECONNECT_SECONDS_KEY, (uint16_t)value);
+        return true;
+    }
+    return false;
+}
+
 void webSocketEvent(byte num, WStype_t type, uint8_t * payload, size_t length) {
     switch (type) {
-        case WStype_DISCONNECTED:
-            if (xSemaphoreTake(g_wsSubsMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
-                subscribedClients.erase(num);
-                xSemaphoreGive(g_wsSubsMutex);
-            }
+	        case WStype_DISCONNECTED:
+	            if (xSemaphoreTake(g_wsSubsMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+	                subscribedClients.erase(num);
+	                g_gridSettingsUnlockedClients.erase(num);
+	                xSemaphoreGive(g_wsSubsMutex);
+	            }
             ESP_LOGI(WEB_TAG, "Client %s disconnected", String(num).c_str());
             break;
         case WStype_CONNECTED:
@@ -167,8 +415,13 @@ void webSocketEvent(byte num, WStype_t type, uint8_t * payload, size_t length) {
             } else {
                 JsonVariantConst val;
                 val = doc["action"];
-                if (!val.isNull()) {
-                    const char* action = val.as<const char*>();
+	                if (!val.isNull()) {
+	                    const char* action = val.as<const char*>();
+
+                    if (!websocket_session_valid(doc) && !websocket_public_app_allowed(doc)) {
+                        ESP_LOGW(WEB_TAG, "Rejected WebSocket action without valid session: %s", action);
+                        return;
+                    }
 
                 // NEU: One-Shot Network-Info anfordern (kein Subscribe)
                     if (strcmp(action, "requestNetworkInfo") == 0) {
@@ -189,7 +442,7 @@ void webSocketEvent(byte num, WStype_t type, uint8_t * payload, size_t length) {
                             subscribedClients[num] = std::string(page);
                             xSemaphoreGive(g_wsSubsMutex);
                         }
-                  //      ESP_LOGI(WEB_TAG, "Client %u subscribed to updates", num);
+	                  //      ESP_LOGI(WEB_TAG, "Client %u subscribed to updates", num);
                     } else if (strcmp(action, "unsubscribeUpdates") == 0) {
                         if (xSemaphoreTake(g_wsSubsMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
                             subscribedClients.erase(num);
@@ -205,23 +458,66 @@ void webSocketEvent(byte num, WStype_t type, uint8_t * payload, size_t length) {
                         if (seconds > 3600) seconds = 3600;
                         delayedPhaseSwitchingSeconds = (uint16_t)seconds;
                         preferences.putUShort("delayed1p3pS", delayedPhaseSwitchingSeconds);
-                    } else if (strcmp(action, "setChargeParameters") == 0 && doc.containsKey("current")) {
-                        int current = doc["current"].as<int>();
-                        set_charging_current(current);
-	                    } else if (strcmp(action, "setChargeParameters") == 0 && doc.containsKey("power")) {
-	                        float power = doc["power"].as<float>();
-	                        set_charging_power(power*10);
-	                    } else if (strcmp(action, "saveDynamicPowerLimitRow") == 0 && doc["index"].is<int>()) {
+	                    } else if (strcmp(action, "setChargeParameters") == 0 && doc.containsKey("current")) {
+	                        int current = doc["current"].as<int>();
+	                        set_charging_current_external(current);
+		                    } else if (strcmp(action, "setChargeParameters") == 0 && doc.containsKey("power")) {
+		                        float power = doc["power"].as<float>();
+		                        set_charging_power_external(power * 10);
+		                    } else if (strcmp(action, "saveDynamicPowerLimitRow") == 0 && doc["index"].is<int>()) {
 	                        int index = doc["index"].as<int>();
 	                        bool enabled = doc["enabled"] | false;
 	                        String config = doc["config"] | "";
 	                        dynamic_power_limit_save_row((uint8_t)index, enabled, config);
+	                    } else if (strcmp(action, "unlockGridSettings") == 0 && doc["pin"].is<const char*>()) {
+	                        const char* pin = doc["pin"];
+	                        if (strcmp(pin, GRID_SETTINGS_PIN) == 0) {
+	                            unlock_grid_settings_client(num);
+	                            send_grid_settings_status(num, "gridSettingsAuth", true, "Unlocked");
+	                            String gridJson = build_grid_settings_json();
+	                            webSocket.sendTXT(num, gridJson);
+	                        } else {
+	                            lock_grid_settings_client(num);
+	                            send_grid_settings_status(num, "gridSettingsAuth", false, "Wrong PIN");
+	                        }
+		                    } else if (strcmp(action, "lockGridSettings") == 0) {
+		                        lock_grid_settings_client(num);
+		                    } else if (strcmp(action, "saveGridSetting") == 0 && doc["key"].is<const char*>()) {
+		                        if (!grid_settings_client_unlocked(num)) {
+		                            send_grid_settings_status(num, "gridSettingsSaveStatus", false, "PIN required");
+		                        } else if (save_grid_setting_value(doc["key"].as<const char*>(), doc["value"] | 0)) {
+		                            send_grid_settings_status(num, "gridSettingsSaveStatus", true, "Saved");
+		                            String gridJson = build_grid_settings_json();
+		                            webSocket.sendTXT(num, gridJson);
+		                        } else {
+		                            send_grid_settings_status(num, "gridSettingsSaveStatus", false, "Unknown setting");
+		                        }
+		                    } else if (strcmp(action, "saveGridSettings") == 0 && doc["settings"].is<JsonObject>()) {
+		                        if (!grid_settings_client_unlocked(num)) {
+		                            send_grid_settings_status(num, "gridSettingsSaveStatus", false, "PIN required");
+	                        } else {
+	                            JsonObjectConst settings = doc["settings"].as<JsonObjectConst>();
+	                            preferences.putUChar(GRID_PROFILE_KEY, settings["profile"] | 0);
+	                            preferences.putUShort(GRID_NOMINAL_VOLTAGE_KEY, settings["nominalVoltage"] | 230);
+	                            preferences.putUChar(GRID_UV_PERCENT_KEY, settings["undervoltagePercent"] | 80);
+	                            preferences.putUShort(GRID_UV_TRIP_SECONDS_KEY, settings["undervoltageTripSeconds"] | 3);
+	                            preferences.putUShort(GRID_RECONNECT_SECONDS_KEY, settings["reconnectDelaySeconds"] | 60);
+	                            send_grid_settings_status(num, "gridSettingsSaveStatus", true, "Saved");
+	                            String gridJson = build_grid_settings_json();
+	                            webSocket.sendTXT(num, gridJson);
+	                        }
 	                        // Page-Interfaces
-	                    } else if (strcmp(action, "setEnergyMeter") == 0 && doc["state"].is<bool>()) {
-                        bool state = doc["state"].as<bool>();
-                        preferences.putBool("emEnable", state);  
-                        sdm.enable = state;
-                      //  sdm.error = state;
+			                    } else if (strcmp(action, "setEnergyMeter") == 0 && doc["state"].is<bool>()) {
+	                        bool state = doc["state"].as<bool>();
+	                        preferences.putBool("emEnable", state);  
+	                        preferences.putUChar(GRID_PROFILE_KEY, state ? 1 : 0);
+	                        if (state) {
+	                            preferences.putUChar(GRID_UV_PERCENT_KEY, 80);
+	                            preferences.putUShort(GRID_UV_TRIP_SECONDS_KEY, 3);
+	                            preferences.putUShort(GRID_RECONNECT_SECONDS_KEY, 60);
+	                        }
+	                        sdm.enable = state;
+	                      //  sdm.error = state;
 	                    } else if (strcmp(action, "setEnergyMeterType") == 0 && doc["type"].is<int>()) {
 	                        int type = doc["type"].as<int>();
 	                        if (type < EnergyMeter_EastronSdm630 || type > EnergyMeter_YtDts353F2) {
@@ -428,7 +724,7 @@ void webSocketEvent(byte num, WStype_t type, uint8_t * payload, size_t length) {
 
 static void Task_WebPush(void* arg) {
   // Caches der letzten JSONs je Seite (um identische Frames nicht zu spammen)
-	  String lastIndex, lastInterfaces, lastSystem, lastRfid, lastSessions;
+	  String lastIndex, lastInterfaces, lastSystem, lastRfid, lastSessions, lastGridSettings;
 
   for (;;) {
 
@@ -554,29 +850,37 @@ ESP_LOGI(WEB_TAG,
     }
 
     // --- 2) Bedarf je Seite feststellen ---
-	    bool needIndex = false, needInterfaces = false, needSystem = false, needRfid = false, needSessions = false;
-	    for (auto &c : clients) {
-	      if      (c.second == "index")      needIndex      = true;
-	      else if (c.second == "interfaces") needInterfaces = true;
+		    bool needIndex = false, needInterfaces = false, needSystem = false, needRfid = false, needSessions = false, needGridSettings = false, needApp = false;
+		    for (auto &c : clients) {
+			      if      (c.second == "index")      needIndex      = true;
+		      else if (c.second == "app")        needApp        = true;
+		      else if (c.second == "interfaces") needInterfaces = true;
 	      else if (c.second == "system")     needSystem     = true;
 	      else if (c.second == "rfid")       needRfid       = true;
 	      else if (c.second == "sessions")   needSessions   = true;
+	      else if (c.second == "grid_settings" && grid_settings_client_unlocked(c.first)) needGridSettings = true;
 	    }
 
     // --- 3) JSONs je Seite GENAU EINMAL bauen (nur wenn benötigt) ---
-	    String jsonIndex, jsonInterfaces, jsonSystem, jsonRfid, jsonSessions;
+		    String jsonIndex, jsonInterfaces, jsonSystem, jsonRfid, jsonSessions, jsonGridSettings, jsonApp;
 
-	    if (needIndex) {
-	      StaticJsonDocument<1536> doc;
+			    if (needIndex) {
+		      bool cpDuty100 = (currentCpState.state == StateCustom_DutyCycle_100) || (getCpDuty >= 99.5f);
+		      StaticJsonDocument<2048> doc;
 	      doc["wallboxName"]         = preferences.getString("wallboxName", "InnoCharge");
 	      doc["cpState"]             = cpStateToName(currentCpState.state);
       doc["cpVoltage"]           = round(highVoltage * 10) / 10.0;
       doc["espTemp"]             = round(readEspTemperatureC() * 10) / 10.0;
       doc["phaseMode"] = currentCpState.threePhaseActive ? "Three-phase" : "Single-phase";
-      doc["targetChargeCurrent"] = (int)round(get_current_from_duty(getCpDuty));
-      doc["targetChargePower"]   = round(get_power_from_duty(getCpDuty)) / 10.0;
-	      doc["cpRelayState"]        = get_cp_relays_status();
-	      doc["delayedPhaseSwitchingSeconds"] = delayedPhaseSwitchingSeconds;
+      doc["targetChargeCurrent"] = cpDuty100 ? 0 : (int)round(get_current_from_duty(getCpDuty));
+	      doc["targetChargePower"]   = cpDuty100 ? 0.0f : round(get_power_from_duty(getCpDuty)) / 10.0;
+		      doc["cpRelayState"]        = get_cp_relays_status();
+		      doc["gridProfile"]         = preferences.getUChar(GRID_PROFILE_KEY, 0);
+		      doc["gridProtectionStatus"] = gridProtectionStatus;
+		      doc["gridReconnectDelayRemainingSeconds"] = gridReconnectDelayRemainingSeconds;
+		      doc["gridReconnectRampLimitPower"] = (int16_t)roundf(gridReconnectRampLimitPower);
+		      doc["gridPhaseImbalanceLimitRemainingSeconds"] = gridPhaseImbalanceLimitRemainingSeconds;
+		      doc["delayedPhaseSwitchingSeconds"] = delayedPhaseSwitchingSeconds;
 	      doc["phaseSwitchDelayRemainingSeconds"] = phaseSwitchDelayRemainingSeconds;
 	      dynamic_power_limit_append_json(doc.as<JsonObject>());
 		      jsonIndex.reserve(1024);
@@ -584,7 +888,7 @@ ESP_LOGI(WEB_TAG,
 	    }
 
     if (needInterfaces) {
-		      StaticJsonDocument<512> doc;
+		      StaticJsonDocument<640> doc;
 		      doc["energyMeterState"] = preferences.getBool("emEnable", false);
 		      doc["energyMeterType"]  = preferences.getUChar("emType", EnergyMeter_EastronSdm630);
 		      doc["energyMeterModbusId"] = sdm.modbusId;
@@ -592,6 +896,7 @@ ESP_LOGI(WEB_TAG,
       doc["l1Voltage"] =  (int16_t)roundf(sdm.voltL1 * 10);
       doc["l2Voltage"] =  (int16_t)roundf(sdm.voltL2 * 10);
       doc["l3Voltage"] =  (int16_t)roundf(sdm.voltL3 * 10);
+      doc["frequency"] =  (int16_t)roundf(sdm.frequency * 100);
       doc["l1Current"] =  (int16_t)roundf(sdm.currL1 * 10);
       doc["l2Current"] =  (int16_t)roundf(sdm.currL2 * 10);
       doc["l3Current"] =  (int16_t)roundf(sdm.currL3 * 10);
@@ -612,9 +917,10 @@ ESP_LOGI(WEB_TAG,
     }
 
 			    if (needSystem) {
-			      StaticJsonDocument<640> doc;
-				      doc["wallboxName"]     = preferences.getString("wallboxName", "InnoCharge");
-			      doc["dipSwitch1"]      = (digitalRead(DIP_SWITCH_1) == LOW);
+				      StaticJsonDocument<640> doc;
+					      doc["wallboxName"]     = preferences.getString("wallboxName", "InnoCharge");
+				      doc["gridProfile"]     = preferences.getUChar(GRID_PROFILE_KEY, 0);
+				      doc["dipSwitch1"]      = (digitalRead(DIP_SWITCH_1) == LOW);
 			      doc["dipSwitch2"]      = (digitalRead(DIP_SWITCH_2) == LOW);
 			      doc["otaMainProgress"] = otaMain.progress;
 	      doc["otaMainCode"]     = otaMain.code;
@@ -658,29 +964,49 @@ ESP_LOGI(WEB_TAG,
 	      serializeJson(doc, jsonRfid);
 	    }
 
-	    if (needSessions) {
-	      JsonDocument doc;
-	      deserializeJson(doc, charge_session_log_to_json_page(g_sessionPageOffset, SESSION_PAGE_LIMIT));
-	      doc["wallboxName"] = preferences.getString("wallboxName", "InnoCharge");
-	      session_mailer_append_status(doc.as<JsonObject>());
-	      serializeJson(doc, jsonSessions);
-	    }
+		    if (needSessions) {
+		      JsonDocument doc;
+		      deserializeJson(doc, charge_session_log_to_json_page(g_sessionPageOffset, SESSION_PAGE_LIMIT));
+		      doc["wallboxName"] = preferences.getString("wallboxName", "InnoCharge");
+		      session_mailer_append_status(doc.as<JsonObject>());
+		      serializeJson(doc, jsonSessions);
+		    }
+
+        if (needApp) {
+          bool cpDuty100 = (currentCpState.state == StateCustom_DutyCycle_100) || (getCpDuty >= 99.5f);
+          StaticJsonDocument<512> doc;
+          doc["wallboxName"] = preferences.getString("wallboxName", "InnoCharge");
+          doc["cpState"] = cpStateToName(currentCpState.state);
+          doc["phaseMode"] = currentCpState.threePhaseActive ? "Three-phase" : "Single-phase";
+          doc["targetChargePower"] = cpDuty100 ? 0.0f : round(get_power_from_duty(getCpDuty)) / 10.0;
+          doc["vehicleConnected"] = currentCpState.vehicleConnected;
+          doc["chargingActive"] = currentCpState.chargingActive;
+          jsonApp.reserve(384);
+          serializeJson(doc, jsonApp);
+        }
+
+			    if (needGridSettings) {
+			      jsonGridSettings = build_grid_settings_json();
+			    }
 
     // --- 4) Optional: nur bei Änderung senden (spart Last) ---
-	    if (needIndex      && jsonIndex      == lastIndex)      needIndex      = false; else lastIndex      = jsonIndex;
+	    if (needIndex) lastIndex = jsonIndex;
 	    if (needInterfaces && jsonInterfaces == lastInterfaces) needInterfaces = false; else lastInterfaces = jsonInterfaces;
-	    if (needSystem     && jsonSystem     == lastSystem)     needSystem     = false; else lastSystem     = jsonSystem;
-	    if (needRfid       && jsonRfid       == lastRfid)       needRfid       = false; else lastRfid       = jsonRfid;
-	    if (needSessions   && jsonSessions   == lastSessions)   needSessions   = false; else lastSessions   = jsonSessions;
+		    if (needSystem     && jsonSystem     == lastSystem)     needSystem     = false; else lastSystem     = jsonSystem;
+		    if (needRfid       && jsonRfid       == lastRfid)       needRfid       = false; else lastRfid       = jsonRfid;
+		    if (needSessions   && jsonSessions   == lastSessions)   needSessions   = false; else lastSessions   = jsonSessions;
+		    if (needGridSettings && jsonGridSettings == lastGridSettings) needGridSettings = false; else lastGridSettings = jsonGridSettings;
 
     // --- 5) Verteilen ---
     for (auto &c : clients) {
-	      if      (c.second == "index"      && needIndex)      webSocket.sendTXT(c.first, jsonIndex);
-	      else if (c.second == "interfaces" && needInterfaces) webSocket.sendTXT(c.first, jsonInterfaces);
-	      else if (c.second == "system"     && needSystem)     webSocket.sendTXT(c.first, jsonSystem);
-	      else if (c.second == "rfid"       && needRfid)       webSocket.sendTXT(c.first, jsonRfid);
-	      else if (c.second == "sessions"   && needSessions)   webSocket.sendTXT(c.first, jsonSessions);
-	    }
+			      if      (c.second == "index"      && needIndex)      webSocket.sendTXT(c.first, jsonIndex);
+		      else if (c.second == "app"        && needApp)        webSocket.sendTXT(c.first, jsonApp);
+		      else if (c.second == "interfaces" && needInterfaces) webSocket.sendTXT(c.first, jsonInterfaces);
+		      else if (c.second == "system"     && needSystem)     webSocket.sendTXT(c.first, jsonSystem);
+		      else if (c.second == "rfid"       && needRfid)       webSocket.sendTXT(c.first, jsonRfid);
+		      else if (c.second == "sessions"   && needSessions)   webSocket.sendTXT(c.first, jsonSessions);
+		      else if (c.second == "grid_settings" && needGridSettings && grid_settings_client_unlocked(c.first)) webSocket.sendTXT(c.first, jsonGridSettings);
+		    }
 
     vTaskDelay(pdMS_TO_TICKS(800));  // gleiche Rate wie zuvor
   }
@@ -688,6 +1014,11 @@ ESP_LOGI(WEB_TAG,
 
 
 void handleWifiScanRequest(AsyncWebServerRequest *request) {
+    if (!web_request_has_session(request)) {
+        request->send(403, "text/plain", "login required");
+        return;
+    }
+
     bool started = wifi_scan_start();
     JsonDocument doc;
     doc["scanning"] = wifi_scan_is_running();
@@ -711,6 +1042,11 @@ void handleWifiScanRequest(AsyncWebServerRequest *request) {
 }
 
 void handleWifiScanStatusRequest(AsyncWebServerRequest *request) {
+    if (!web_request_has_session(request)) {
+        request->send(403, "text/plain", "login required");
+        return;
+    }
+
     JsonDocument doc;
     doc["scanning"] = wifi_scan_is_running();
     doc["ready"] = wifi_scan_has_result();
@@ -736,8 +1072,9 @@ void handleWifiScanStatusRequest(AsyncWebServerRequest *request) {
 
 void handleSessionImportBody(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
     if (index == 0) {
-        if (!request->authenticate(www_username, current_web_password())) {
-            return request->requestAuthentication();
+        if (!web_request_has_session(request)) {
+            redirect_to_login(request);
+            return;
         }
 
         SPIFFS.remove(SESSION_IMPORT_PATH);
@@ -783,13 +1120,61 @@ void A_Task_Web(void *pvParameter) {
         vTaskDelete(nullptr);
     }
 
+    server.on("/login.html", HTTP_GET, [](AsyncWebServerRequest* request) {
+        request->send(SPIFFS, "/login.html", "text/html");
+    });
+
+    server.on("/app.html", HTTP_GET, [](AsyncWebServerRequest* request) {
+        request->send(SPIFFS, "/app.html", "text/html");
+    });
+
+    server.on("/recovery", HTTP_GET, [](AsyncWebServerRequest* request) {
+        request->send(200, "text/html", RECOVERY_HTML);
+    });
+
+    server.on("/recovery.html", HTTP_GET, [](AsyncWebServerRequest* request) {
+        request->send(200, "text/html", RECOVERY_HTML);
+    });
+
+    server.on("/login", HTTP_POST, [](AsyncWebServerRequest* request) {
+        String username;
+        String password;
+        if (request->hasParam("username", true)) {
+            username = request->getParam("username", true)->value();
+        }
+        if (request->hasParam("password", true)) {
+            password = request->getParam("password", true)->value();
+        }
+
+        if (username != www_username || password != current_web_password()) {
+            AsyncWebServerResponse* response = request->beginResponse(302);
+            response->addHeader("Location", "/login.html");
+            request->send(response);
+            return;
+        }
+
+        String sessionToken = make_web_session_token();
+        add_web_session(sessionToken);
+        AsyncWebServerResponse* response = request->beginResponse(302);
+        response->addHeader("Location", "/index.html");
+        response->addHeader("Set-Cookie", String(WEB_SESSION_COOKIE) + "=" + sessionToken + "; Path=/; SameSite=Lax");
+        request->send(response);
+    });
+
+    server.on("/logout", HTTP_GET, [](AsyncWebServerRequest* request) {
+        remove_web_session(web_request_session_token(request));
+        AsyncWebServerResponse* response = request->beginResponse(302);
+        response->addHeader("Location", "/login.html");
+        response->addHeader("Set-Cookie", String(WEB_SESSION_COOKIE) + "=; Path=/; Max-Age=0; SameSite=Lax");
+        request->send(response);
+    });
+
+    register_protected_page_routes(server);
+
     server.serveStatic("/", SPIFFS, "/")
-      .setDefaultFile("index.html")
-      .setAuthentication(www_username, current_web_password());
+      .setDefaultFile("index.html");
 
     auto send204 = [&](AsyncWebServerRequest* req) {
-    if (!req->authenticate(www_username, current_web_password()))
-        return req->requestAuthentication();
     req->send(204);
     };
 
@@ -801,9 +1186,7 @@ void A_Task_Web(void *pvParameter) {
     server.on("/robots.txt",           HTTP_ANY, send204);
 
     server.onNotFound([&](AsyncWebServerRequest* req){
-    if (!req->authenticate(www_username, current_web_password()))
-        return req->requestAuthentication();
-    req->send(SPIFFS, "/index.html", "text/html");
+    redirect_to_login(req);
     });
 
     server.onRequestBody([](AsyncWebServerRequest*, uint8_t*, size_t, size_t, size_t) {});

@@ -30,6 +30,7 @@ typedef struct {
     float pwrL1 , pwrL2 , pwrL3;
     float pwrTot;
     float enrImp, enrExp;
+    float frequency;
 } sdm_data_t;
 extern sdm_data_t sdm;
 
@@ -105,6 +106,12 @@ extern volatile bool switchToL2L3;
 extern volatile uint16_t delayedPhaseSwitchingSeconds;
 extern volatile bool phaseSwitchAllowed;
 extern volatile uint16_t phaseSwitchDelayRemainingSeconds;
+extern volatile uint16_t gridReconnectDelayRemainingSeconds;
+extern volatile bool gridReconnectRampActive;
+extern volatile float gridReconnectRampLimitPower;
+extern volatile bool gridPhaseImbalanceLimitActive;
+extern volatile uint8_t gridProtectionStatus;
+extern volatile uint16_t gridPhaseImbalanceLimitRemainingSeconds;
 extern volatile TickType_t lastSuccessfulPhaseSwitch;
 
 extern charging_status_t currentCpState;
@@ -113,13 +120,15 @@ const char* cpStateToName(charging_state_t state);
 extern volatile charging_status_t vCurrentCpState;
 extern volatile uint32_t lastStateChangeTime;
 extern volatile charging_status_t currentCpStateDelay;
+extern charging_state_t lastCpStatePersistentBoot;
+extern charging_state_t lastCpStatePersWritten;
 extern float getCpDuty;
 extern float setCpDuty;
 
 //############### CP-Measurements declaration END
 
 // Deklaration des NeoPixel-Strip-Objekts
-extern NeoPixelBus<NeoGrbFeature, Neo800KbpsMethod> strip;
+extern NeoPixelBus<NeoGrbFeature, NeoEsp32LcdX8Ws2812xMethod> strip;
 extern wifi_sta_start_config_t wifi_sta_config;
 extern int16_t mbTcpRegRead09;          //LED-Status-Steuern
 extern volatile int ledDummyState;

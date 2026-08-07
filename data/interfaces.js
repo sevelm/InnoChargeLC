@@ -80,6 +80,7 @@ function processCommand(event) {
     l1Voltage: {factor:10,  dec:1, id:"l1Voltage"},
     l2Voltage: {factor:10,  dec:1, id:"l2Voltage"},
     l3Voltage: {factor:10,  dec:1, id:"l3Voltage"},
+    frequency: {factor:100, dec:2, id:"frequency"},
     l1Current: {factor:10,  dec:1, id:"l1Current"},
     l2Current: {factor:10,  dec:1, id:"l2Current"},
     l3Current: {factor:10,  dec:1, id:"l3Current"},

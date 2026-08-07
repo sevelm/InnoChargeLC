@@ -4,6 +4,7 @@
 <html>
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>InnoCharge Home</title>
   <link rel="stylesheet" type="text/css" href="styles.css">
   <!-- scripts.js is included at the end of the body -->
@@ -43,14 +44,20 @@
             <span id="espTemp" style="font-size: 16px; color: #333; font-weight: bold;"></span>
           </td>
         </tr>
-        <tr>
-          <td><label for="state">Phase Mode:</label></td>
-          <td>
-            <span id="phaseMode" style="font-size: 16px; color: #333; font-weight: bold;"></span>
-          </td>
-        </tr>
-        <tr>
-          <td><label for="state">Target Charge Current (A):</label></td>
+	        <tr>
+	          <td><label for="state">Phase Mode:</label></td>
+	          <td>
+	            <span id="phaseMode" style="font-size: 16px; color: #333; font-weight: bold;"></span>
+	          </td>
+	        </tr>
+	        <tr id="gridProtectionStatusRow" style="display: none;">
+	          <td><label for="gridProtectionStatus">Grid protection status:</label></td>
+	          <td>
+	            <span id="gridProtectionStatus" style="font-size: 16px; color: #333; font-weight: bold;"></span>
+	          </td>
+	        </tr>
+	        <tr>
+	          <td><label for="state">Target Charge Current (A):</label></td>
           <td>
             <span id="targetChargeCurrent" style="font-size: 16px; color: #333; font-weight: bold;"></span>
           </td>

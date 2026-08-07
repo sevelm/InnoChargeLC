@@ -7,6 +7,7 @@ var sessionPageOffset = 0;
 var sessionPageLimit = 100;
 var sessionPageTotal = 0;
 var wallboxName = 'InnoCharge';
+const MAX_MAIL_RECIPIENTS = 10;
 
 function initWebSocket() {
   Socket = new WebSocket('ws://' + window.location.hostname + ':81/');
@@ -222,34 +223,119 @@ function setFieldIfNotFocused(id, value) {
   el.value = value || '';
 }
 
+function updateMailRecipientControls() {
+  const rows = document.querySelectorAll('.mail-recipient-row');
+  rows.forEach(row => {
+    const removeButton = row.querySelector('.mail-recipient-remove');
+    removeButton.hidden = rows.length <= 1;
+  });
+  document.getElementById('addMailRecipient').disabled = rows.length >= MAX_MAIL_RECIPIENTS;
+}
+
+function addMailRecipient(value = '', focus = false) {
+  const container = document.getElementById('mailRecipients');
+  if (container.querySelectorAll('.mail-recipient-row').length >= MAX_MAIL_RECIPIENTS) return;
+
+  const row = document.createElement('div');
+  row.className = 'mail-recipient-row';
+
+  const input = document.createElement('input');
+  input.type = 'email';
+  input.className = 'mail-recipient-input';
+  input.placeholder = 'mail@example.com';
+  input.value = value;
+  input.setAttribute('aria-label', 'Mail recipient');
+
+  const removeButton = document.createElement('button');
+  removeButton.type = 'button';
+  removeButton.className = 'mail-recipient-remove';
+  removeButton.textContent = '×';
+  removeButton.title = 'Remove recipient';
+  removeButton.setAttribute('aria-label', 'Remove recipient');
+  removeButton.addEventListener('click', () => {
+    row.remove();
+    updateMailRecipientControls();
+  });
+
+  row.appendChild(input);
+  row.appendChild(removeButton);
+  container.appendChild(row);
+  updateMailRecipientControls();
+  if (focus) input.focus();
+}
+
+function renderMailRecipients(value) {
+  const container = document.getElementById('mailRecipients');
+  container.replaceChildren();
+  const recipients = String(value || '')
+    .split(/[;,]/)
+    .map(recipient => recipient.trim())
+    .filter(Boolean);
+
+  (recipients.length ? recipients : ['']).slice(0, MAX_MAIL_RECIPIENTS)
+    .forEach(recipient => addMailRecipient(recipient));
+}
+
+function collectMailRecipients() {
+  const recipients = [];
+  const seen = new Set();
+
+  for (const input of document.querySelectorAll('.mail-recipient-input')) {
+    const recipient = input.value.trim();
+    if (!recipient) continue;
+    if (!input.checkValidity()) {
+      document.getElementById('mailStatus').textContent = 'Invalid recipient address: ' + recipient;
+      input.focus();
+      return null;
+    }
+    const normalized = recipient.toLowerCase();
+    if (!seen.has(normalized)) {
+      seen.add(normalized);
+      recipients.push(recipient);
+    }
+  }
+  return recipients;
+}
+
 function renderMailer(mailer) {
   if (!mailerInitialized) {
     setFieldIfNotFocused('mailServer', mailer.server);
-    setFieldIfNotFocused('mailPort', mailer.port || 465);
-    document.getElementById('mailSsl').checked = mailer.ssl !== false;
+    const security = mailer.security || (mailer.ssl === false ? 'none' : 'ssl');
+    setFieldIfNotFocused('mailSecurity', security);
+    setFieldIfNotFocused('mailPort', mailer.port || (security === 'starttls' ? 587 : 465));
     setFieldIfNotFocused('mailUsername', mailer.username);
     setFieldIfNotFocused('mailFrom', mailer.from);
-    setFieldIfNotFocused('mailTo', mailer.to);
+    renderMailRecipients(mailer.to);
     setFieldIfNotFocused('mailSubject', mailer.subject || 'InnoCharge charge sessions');
     document.getElementById('mailEnable').checked = mailer.enable === true;
     setFieldIfNotFocused('mailMode', mailer.mode || 0);
     mailerInitialized = true;
   }
   document.getElementById('mailStatus').textContent = mailer.lastStatus || '';
+  const mailLog = document.getElementById('mailLog');
+  mailLog.textContent = mailer.log || 'No mail activity recorded.';
+  mailLog.scrollTop = mailLog.scrollHeight;
 }
 
 function saveMailerSettings() {
   if (!Socket || Socket.readyState !== 1) return;
+  const security = document.getElementById('mailSecurity').value;
+  const recipients = collectMailRecipients();
+  if (recipients === null) return;
+  if (document.getElementById('mailEnable').checked && recipients.length === 0) {
+    document.getElementById('mailStatus').textContent = 'At least one recipient is required.';
+    return;
+  }
   Socket.send(JSON.stringify({
     action: 'saveSessionMailerSettings',
     settings: {
       server: document.getElementById('mailServer').value.trim(),
-      port: Math.max(1, Number.parseInt(document.getElementById('mailPort').value, 10) || 465),
-      ssl: document.getElementById('mailSsl').checked,
+      port: Math.max(1, Number.parseInt(document.getElementById('mailPort').value, 10) || (security === 'starttls' ? 587 : 465)),
+      security: security,
       username: document.getElementById('mailUsername').value.trim(),
       password: document.getElementById('mailPassword').value,
       from: document.getElementById('mailFrom').value.trim(),
-      to: document.getElementById('mailTo').value.trim(),
+      to: recipients.join(','),
       subject: document.getElementById('mailSubject').value.trim() || 'InnoCharge charge sessions',
       enable: document.getElementById('mailEnable').checked,
       mode: Number.parseInt(document.getElementById('mailMode').value, 10) || 0
@@ -486,4 +572,12 @@ document.addEventListener('DOMContentLoaded', function() {
   document.getElementById('sessionNextPage').addEventListener('click', () => requestSessionPage(sessionPageOffset + sessionPageLimit));
   document.getElementById('saveMailerSettings').addEventListener('click', saveMailerSettings);
   document.getElementById('sendSessionReport').addEventListener('click', sendSessionReport);
+  document.getElementById('addMailRecipient').addEventListener('click', () => addMailRecipient('', true));
+  if (!document.querySelector('.mail-recipient-row')) addMailRecipient();
+  document.getElementById('mailSecurity').addEventListener('change', function() {
+    const port = document.getElementById('mailPort');
+    if (!port.value || port.value === '465' || port.value === '587') {
+      port.value = this.value === 'starttls' ? '587' : (this.value === 'ssl' ? '465' : '25');
+    }
+  });
 });

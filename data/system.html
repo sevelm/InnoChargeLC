@@ -3,6 +3,7 @@
 <html>
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>InnoCharge System</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
@@ -12,55 +13,8 @@
   <div class="main-content">
     <h1>System</h1>
 
-    <div class="container">
-      <h2>Main Firmware Update</h2>
-      <table>
-        <tr>
-          <td><label for="fwMainVersion">Current:</label></td>
-          <!-- currently installed version -->
-          <td><span id="fwMainVersion" style="font-size: 16px; color: #333; font-weight: bold;"></span></td>
-        </tr>
-        <tr>
-          <td><label for="fwMainVersionLast">Latest:</label></td>
-          <!-- latest published version + download button -->
-          <td>
-            <span id="fwMainVersionLast" style="font-size: 16px; color: #333; font-weight: bold;"></span>
-            &nbsp;
-            <a
-              id="fwMainDownload"
-              href="https://github.com/sevelm/InnoChargeLC/tree/main/build"
-              target="_blank"
-              title="Download latest firmware from GitHub"
-              style="font-size: 16px; font-weight: bold; color: #007bff; text-decoration: underline;"
-              >Download</a
-            >
-          </td>
-        </tr>
-      </table>
-      <form id="fwMainForm">
-        <input type="file" id="fwMainFile" class="wide-file" accept=".bin" required />
-        <button type="submit">Update</button>
-      </form>
-
-      <table id="fwMainBox" style="display: none">
-        <tr>
-          <td><label for="fwMainProgress">Progress:</label></td>
-          <td><span id="fwMainProgress" class="fw-text"></span></td>
-        </tr>
-        <!-- Status hidden -->
-        <tr id="rowStatusMain" style="display: none">
-          <td><label for="fwMainStatus">Status:</label></td>
-          <td><span id="fwMainStatus" class="fw-text"></span></td>
-        </tr>
-        <tr>
-          <td><label for="fwMainMsg">Messages:</label></td>
-          <td><span id="fwMainMsg" class="fw-text"></span></td>
-        </tr>
-      </table>
-    </div>
-      <!-- UI Beginn!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! -->
   <div class="container">
-    <h2>Web-UI Firmware Update</h2>
+    <h2>1) Web-UI Firmware Update</h2>
     <table>
       <tr>
         <td><label for="fwUiVersion">Current:</label></td>
@@ -106,17 +60,68 @@
     </table>
   </div>
 
+    <div class="container">
+      <h2>2) Main Firmware Update</h2>
+      <table>
+        <tr>
+          <td><label for="fwMainVersion">Current:</label></td>
+          <!-- currently installed version -->
+          <td><span id="fwMainVersion" style="font-size: 16px; color: #333; font-weight: bold;"></span></td>
+        </tr>
+        <tr>
+          <td><label for="fwMainVersionLast">Latest:</label></td>
+          <!-- latest published version + download button -->
+          <td>
+            <span id="fwMainVersionLast" style="font-size: 16px; color: #333; font-weight: bold;"></span>
+            &nbsp;
+            <a
+              id="fwMainDownload"
+              href="https://github.com/sevelm/InnoChargeLC/tree/main/build"
+              target="_blank"
+              title="Download latest firmware from GitHub"
+              style="font-size: 16px; font-weight: bold; color: #007bff; text-decoration: underline;"
+              >Download</a
+            >
+          </td>
+        </tr>
+      </table>
+      <form id="fwMainForm">
+        <input type="file" id="fwMainFile" class="wide-file" accept=".bin" required />
+        <button type="submit">Update</button>
+      </form>
+
+      <table id="fwMainBox" style="display: none">
+        <tr>
+          <td><label for="fwMainProgress">Progress:</label></td>
+          <td><span id="fwMainProgress" class="fw-text"></span></td>
+        </tr>
+        <!-- Status hidden -->
+        <tr id="rowStatusMain" style="display: none">
+          <td><label for="fwMainStatus">Status:</label></td>
+          <td><span id="fwMainStatus" class="fw-text"></span></td>
+        </tr>
+        <tr>
+          <td><label for="fwMainMsg">Messages:</label></td>
+          <td><span id="fwMainMsg" class="fw-text"></span></td>
+        </tr>
+      </table>
+    </div>
+
 	  <div class="container compact-time-settings device-settings">
 	    <h2>Device</h2>
 	    <div class="device-layout">
 	      <div class="device-column">
 	        <div class="device-group-title">General</div>
-	        <div class="device-row">
-	          <label for="wallboxName">Wallbox Name:</label>
-	          <input type="text" id="wallboxName" maxlength="32">
-	        </div>
+		        <div class="device-row">
+		          <label for="wallboxName">Wallbox Name:</label>
+		          <input type="text" id="wallboxName" maxlength="32">
+		        </div>
+		        <div class="device-row">
+		          <span class="device-status-label">Grid rule:</span>
+		          <span id="gridRuleStatus" class="device-status-text"></span>
+		        </div>
 
-	        <div class="device-group-title">Web Login</div>
+		        <div class="device-group-title">Web Login</div>
 	        <div class="device-row">
 	          <label for="webPassword">Password:</label>
 	          <input type="password" id="webPassword" maxlength="32" autocomplete="new-password">

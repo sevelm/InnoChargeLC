@@ -79,15 +79,16 @@ function processCommand(event) {
   if (obj.espTemp !== undefined && document.getElementById('espTemp') !== null) {
     document.getElementById('espTemp').innerHTML = obj.espTemp;
   }
-  if (obj.phaseMode !== undefined && document.getElementById('phaseMode') !== null) {
-    document.getElementById('phaseMode').innerHTML = obj.phaseMode;
-  }
-  if (obj.targetChargeCurrent !== undefined && document.getElementById('targetChargeCurrent') !== null) {
-    document.getElementById('targetChargeCurrent').innerHTML = obj.targetChargeCurrent;
-  }
-  if (obj.targetChargePower !== undefined && document.getElementById('targetChargePower') !== null) {
-    document.getElementById('targetChargePower').innerHTML = obj.targetChargePower;
-  }
+	  if (obj.phaseMode !== undefined && document.getElementById('phaseMode') !== null) {
+	    document.getElementById('phaseMode').innerHTML = obj.phaseMode;
+	  }
+		  updateGridProtectionStatus(obj);
+		  if (obj.targetChargeCurrent !== undefined && document.getElementById('targetChargeCurrent') !== null) {
+		    document.getElementById('targetChargeCurrent').innerHTML = obj.targetChargeCurrent;
+		  }
+	  if (obj.targetChargePower !== undefined && document.getElementById('targetChargePower') !== null) {
+	    document.getElementById('targetChargePower').innerHTML = obj.targetChargePower;
+	  }
   if (obj.delayedPhaseSwitchingSeconds !== undefined && document.getElementById('setDelayedPhaseSwitchingSeconds') !== null) {
     const field = document.getElementById('setDelayedPhaseSwitchingSeconds');
     if (document.activeElement !== field) {
@@ -108,10 +109,36 @@ function processCommand(event) {
   if (obj.cpRelayState !== undefined && document.getElementById('BTN_SET_RELAY') !== null) {
     var relayState = obj.cpRelayState ? 'ON' : 'OFF';
     document.getElementById('BTN_SET_RELAY').textContent = relayState;
-  }
-}
+	  }
+	}
 
-//--------------------------------DOMContentLoaded-----------------------------------//
+function updateGridProtectionStatus(obj) {
+  const row = document.getElementById('gridProtectionStatusRow');
+  const status = document.getElementById('gridProtectionStatus');
+  if (!row || !status) return;
+
+  const torActive = Number(obj.gridProfile) === 1;
+  row.style.display = torActive ? '' : 'none';
+  if (!torActive) return;
+
+  const value = Number(obj.gridProtectionStatus ?? 0);
+  let text = 'Idle';
+
+  if (value === 1) {
+    text = `Reconnect delay, ${obj.gridReconnectDelayRemainingSeconds ?? 0} s remaining`;
+  } else if (value === 2) {
+    text = `Ramp active, limit ${(obj.gridReconnectRampLimitPower ?? 0) / 10} kW`;
+  } else if (value === 3) {
+    text = `Phase imbalance detected, reducing in ${obj.gridPhaseImbalanceLimitRemainingSeconds ?? 0} s`;
+  } else if (value === 4) {
+    text = 'Phase imbalance limit active, limited to 16 A';
+  }
+
+  status.textContent = `${value} - ${text}`;
+  status.style.color = value === 0 ? '#333' : 'red';
+}
+	
+	//--------------------------------DOMContentLoaded-----------------------------------//
 //--------------------------------DOMContentLoaded-----------------------------------//
 //--------------------------------DOMContentLoaded-----------------------------------//
 // Event listener for buttons and page load

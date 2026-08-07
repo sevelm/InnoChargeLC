@@ -76,11 +76,14 @@ State:   Pilot Voltage:  EV Resistance:  Description:       Analog theoretic: (i
 #include "AA_globals.h"
 #include "ledEffect.hpp"
 #include "A_Task_CP.hpp"
+#include "grid_protection.hpp"
 
 volatile charging_status_t vCurrentCpState;
 volatile uint32_t lastStateChangeTimeState = 0;
 volatile uint32_t lastStateChangeTimeDuty = 0;
 volatile charging_status_t currentCpStateDelay;
+charging_state_t lastCpStatePersistentBoot = StateA_NotConnected;
+charging_state_t lastCpStatePersWritten = StateA_NotConnected;
 
 //############### Timer für Haltespannung der Relais
 static TickType_t relayL1N_on_time = 0;
@@ -90,6 +93,12 @@ static TickType_t relayL2L3_off_time = (TickType_t)-1;
 static TickType_t phaseSwitchDelay = 0;
 static TickType_t phaseSwitchPendingSince = 0;
 static TickType_t phaseSwitchStateBSince = 0;
+static TickType_t lastCpStateWriteDelayStart = 0;
+static TickType_t gridReconnectDelayStart = 0;
+static TickType_t gridReconnectRampStart = 0;
+static TickType_t gridProtectionResetStart = 0;
+static TickType_t gridUndervoltageTripStart = 0;
+static TickType_t gridPhaseImbalanceStart = 0;
 
 volatile float g_setChargingPower_kW = 0.0f;
 volatile bool threePhaseActive = false;
@@ -100,6 +109,12 @@ volatile bool switchToL2L3 = false;
 volatile uint16_t delayedPhaseSwitchingSeconds = 300;
 volatile bool phaseSwitchAllowed = true;
 volatile uint16_t phaseSwitchDelayRemainingSeconds = 0;
+volatile uint16_t gridReconnectDelayRemainingSeconds = 0;
+volatile bool gridReconnectRampActive = false;
+volatile float gridReconnectRampLimitPower = 0.0f;
+volatile bool gridPhaseImbalanceLimitActive = false;
+volatile uint8_t gridProtectionStatus = 0;
+volatile uint16_t gridPhaseImbalanceLimitRemainingSeconds = 0;
 volatile TickType_t lastSuccessfulPhaseSwitch = 0;
 
 
@@ -295,15 +310,26 @@ void A_Task_CP(void *pvParameter){
 //////////////////////////////////////////////////// Setup ///////////////////////////////////////////////////
 //////////////////////////////////////////////////// Setup ///////////////////////////////////////////////////
 //////////////////////////////////////////////////// Setup ///////////////////////////////////////////////////
+    lastCpStatePersistentBoot = (charging_state_t)preferences.getUChar("lastCpState", StateA_NotConnected);
+    lastCpStatePersWritten = lastCpStatePersistentBoot;
     delayedPhaseSwitchingSeconds = preferences.getUShort("delayed1p3pS", 300);
     phaseSwitchAllowed = true;
     init_control_pilot();
-    //set_charging_current(16);
-    set_charging_power((digitalRead(DIP_SWITCH_1) == LOW) ? 220 : 110);
     threePhaseActive = true;
-    turn_on_cp_relay();
-    vTaskDelay(pdMS_TO_TICKS(5000));
+    set_control_pilot_100();
 
+    vTaskDelay(pdMS_TO_TICKS(500));
+    turn_on_cp_relay_only();
+    vTaskDelay(pdMS_TO_TICKS(500));
+    set_charging_power((digitalRead(DIP_SWITCH_1) == LOW) ? 220 : 110);
+    
+    switchToL1N = false;
+    switchToL2L3 = false;
+    phaseSwitchDelay = 0;
+    phaseSwitchPendingSince = 0;
+    lastSuccessfulPhaseSwitch = 0;
+    phaseSwitchDelayRemainingSeconds = 0;
+    phaseSwitchAllowed = true;
 
 while (1) {
 //////////////////////////////////////////////////// Loop ///////////////////////////////////////////////////
@@ -373,6 +399,7 @@ while (1) {
 
 
         // Berechnung der Verzögerung für Umschaltung 1-phasig <-> 3-phasig
+        bool wasPhaseSwitchAllowed = phaseSwitchAllowed;
         if (delayedPhaseSwitchingSeconds == 0 || lastSuccessfulPhaseSwitch == 0) {
             phaseSwitchAllowed = true;
             phaseSwitchDelayRemainingSeconds = 0;
@@ -387,6 +414,11 @@ while (1) {
                 TickType_t oneSecondTicks = pdMS_TO_TICKS(1000);
                 phaseSwitchDelayRemainingSeconds = (uint16_t)((remainingTicks + oneSecondTicks - 1) / oneSecondTicks);
             }
+        }
+
+        // Nach Ablauf der Umschaltsperre den gespeicherten Sollwert erneut bewerten.
+        if (!wasPhaseSwitchAllowed && phaseSwitchAllowed && g_setChargingPower_kW > 0.0f && gridProtectionStatus == 0) {
+            set_charging_power(g_setChargingPower_kW);
         }
 
     /**********************************************************************
@@ -472,7 +504,189 @@ while (1) {
         actuatorCpState.chargingActive = vCurrentCpState.chargingActive;
         actuatorCpState.threePhaseActive = vCurrentCpState.threePhaseActive;
 
-        if (!charging_authorization_allows_charging() &&
+
+// RFID-Authorization und GRID-Profile-Check: Wenn nicht autorisiert, dann CP auf State B zurücksetzen (nur wenn aktuell C oder D)
+
+        bool gridProtectionResetRequired = rfidAuth.required ||
+                                           preferences.getUChar("gridProfile", 0) != 1 ||
+                                           !sdm.enable ||
+                                           sdm.error ||
+                                           vCurrentCpState.state == StateA_NotConnected;
+
+        if (gridProtectionResetRequired) {
+            if (gridProtectionResetStart == 0) {
+                gridProtectionResetStart = now;
+            }
+
+            if ((now - gridProtectionResetStart) >= pdMS_TO_TICKS(3000)) {
+                if (lastCpStatePersistentBoot != StateA_NotConnected || lastCpStatePersWritten != StateA_NotConnected) {
+                    preferences.putUChar("lastCpState", (uint8_t)StateA_NotConnected);
+                }
+                lastCpStatePersistentBoot = StateA_NotConnected;
+                lastCpStatePersWritten = StateA_NotConnected;
+                gridReconnectDelayStart = 0;
+                gridReconnectDelayRemainingSeconds = 0;
+                gridReconnectRampActive = false;
+                gridReconnectRampLimitPower = 0.0f;
+                gridReconnectRampStart = 0;
+                gridUndervoltageTripStart = 0;
+                set_charging_power(g_setChargingPower_kW);
+            }
+        } else {
+            gridProtectionResetStart = 0;
+        }
+
+
+        // Unterspannungsschutz: Wenn Grid-Protection aktiv, dann CP auf State B zurücksetzen (nur wenn aktuell C oder D)
+        bool gridUndervoltageTripFinished = false;
+        bool undervoltageRelevant = vCurrentCpState.state == StateB_Connected ||
+                                    vCurrentCpState.state == StateC_Charge ||
+                                    vCurrentCpState.state == StateD_VentCharge;
+
+        if (!gridProtectionResetRequired && undervoltageRelevant && grid_protection_undervoltage_trip_active()) {
+            if (gridUndervoltageTripStart == 0) {
+                gridUndervoltageTripStart = now;
+            }
+
+            uint16_t undervoltageTripSeconds = preferences.getUShort("gridUvTripS", 3);
+            TickType_t undervoltageTripTicks = pdMS_TO_TICKS((uint32_t)undervoltageTripSeconds * 1000UL);
+
+            if ((now - gridUndervoltageTripStart) >= undervoltageTripTicks) {
+                lastCpStatePersistentBoot = vCurrentCpState.state;
+                lastCpStatePersWritten = vCurrentCpState.state;
+                gridUndervoltageTripFinished = true;
+                gridReconnectRampActive = false;
+                gridReconnectRampLimitPower = 0.0f;
+                gridReconnectRampStart = 0;
+                gridReconnectDelayStart = 0;
+            }
+        } else {
+            gridUndervoltageTripStart = 0;
+        }
+
+        // Schieflastungsschutz: Wenn Grid-Protection aktiv
+        //
+        //
+        if (!gridProtectionResetRequired && grid_protection_phase_imbalance_active()) {
+            if (gridPhaseImbalanceStart == 0) {
+                gridPhaseImbalanceStart = now;
+            }
+
+            TickType_t gridPhaseImbalanceDelay = pdMS_TO_TICKS(30000);
+            TickType_t gridPhaseImbalanceElapsed = now - gridPhaseImbalanceStart;
+
+            if (gridPhaseImbalanceElapsed >= gridPhaseImbalanceDelay) {
+                gridPhaseImbalanceLimitRemainingSeconds = 0;
+                if (!gridPhaseImbalanceLimitActive) {
+                    gridPhaseImbalanceLimitActive = true;
+                    set_charging_power(g_setChargingPower_kW);
+                }
+            } else {
+                TickType_t remainingTicks = gridPhaseImbalanceDelay - gridPhaseImbalanceElapsed;
+                TickType_t oneSecondTicks = pdMS_TO_TICKS(1000);
+                gridPhaseImbalanceLimitRemainingSeconds = (uint16_t)((remainingTicks + oneSecondTicks - 1) / oneSecondTicks);
+            }
+        } else {
+            gridPhaseImbalanceStart = 0;
+            gridPhaseImbalanceLimitRemainingSeconds = 0;
+            if (gridPhaseImbalanceLimitActive) {
+                gridPhaseImbalanceLimitActive = false;
+                set_charging_power(g_setChargingPower_kW);
+            }
+        }
+
+
+        // Abaluf Wartezeit und Ramp-Up für Grid-Reconnect, wenn Grid-Protection aktiv ist - START
+        //
+        //
+        bool gridReconnectActive = grid_protection_reconnect_delay_required() && !gridReconnectRampActive;
+        uint16_t reconnectDelaySeconds = preferences.getUShort("gridRecS", 60);
+
+        if (gridReconnectActive) {
+            set_control_pilot_100();  // Status B (WAIT)
+            if (vCurrentCpState.state == StateA_NotConnected) {
+                lastCpStatePersistentBoot = StateA_NotConnected;
+                lastCpStatePersWritten = StateA_NotConnected;
+                gridReconnectDelayStart = 0;
+                gridReconnectDelayRemainingSeconds = 0;
+                gridReconnectRampActive = false;
+                gridReconnectRampLimitPower = 0.0f;
+                gridReconnectRampStart = 0;
+                gridReconnectActive = false;
+                set_charging_power(g_setChargingPower_kW);
+            } else if (!grid_protection_reconnect_grid_ok()) {
+                gridReconnectDelayStart = 0;
+                gridReconnectDelayRemainingSeconds = reconnectDelaySeconds;
+            } else {
+                if (gridReconnectDelayStart == 0) {
+                    gridReconnectDelayStart = now;
+                }
+
+                TickType_t reconnectDelayTicks = pdMS_TO_TICKS((uint32_t)reconnectDelaySeconds * 1000UL);
+                TickType_t elapsedTicks = now - gridReconnectDelayStart;
+
+                if (elapsedTicks >= reconnectDelayTicks) {
+                    gridReconnectDelayStart = 0;
+                    gridReconnectDelayRemainingSeconds = 0;
+                    gridReconnectRampStart = now;
+                    gridReconnectRampLimitPower = 42.0f;
+                    gridReconnectRampActive = true;
+                    gridReconnectActive = false;
+                    set_charging_power(g_setChargingPower_kW);
+                } else {
+                    TickType_t remainingTicks = reconnectDelayTicks - elapsedTicks;
+                    TickType_t oneSecondTicks = pdMS_TO_TICKS(1000);
+                    gridReconnectDelayRemainingSeconds = (uint16_t)((remainingTicks + oneSecondTicks - 1) / oneSecondTicks);
+                }
+            }
+        } else {
+            gridReconnectDelayStart = 0;
+            gridReconnectDelayRemainingSeconds = 0;
+        }
+
+        if (gridReconnectRampActive) {
+            if (vCurrentCpState.state == StateA_NotConnected) {
+                lastCpStatePersistentBoot = StateA_NotConnected;
+                lastCpStatePersWritten = StateA_NotConnected;
+                gridReconnectRampActive = false;
+                gridReconnectRampLimitPower = 0.0f;
+                gridReconnectRampStart = 0;
+                set_charging_power(g_setChargingPower_kW);
+            } else {
+                float ratedPower = (digitalRead(DIP_SWITCH_1) == LOW) ? 220.0f : 110.0f;
+                float elapsedMinutes = (now - gridReconnectRampStart) / (float)pdMS_TO_TICKS(60000);
+                gridReconnectRampLimitPower = 42.0f + (ratedPower * 0.10f * elapsedMinutes);
+
+                if (gridReconnectRampLimitPower >= g_setChargingPower_kW) {
+                    lastCpStatePersistentBoot = StateA_NotConnected;
+                    lastCpStatePersWritten = StateA_NotConnected;
+                    gridReconnectRampActive = false;
+                    gridReconnectRampLimitPower = 0.0f;
+                    gridReconnectRampStart = 0;
+                    gridProtectionStatus = 0;
+                }
+
+                set_charging_power(g_setChargingPower_kW);
+            }
+        }
+        //
+        //
+        // Abaluf Wartezeit und Ramp-Up für Grid-Reconnect, wenn Grid-Protection aktiv ist - ENDE
+
+        if (gridPhaseImbalanceLimitActive) {
+            gridProtectionStatus = 4;
+        } else if (gridPhaseImbalanceLimitRemainingSeconds > 0) {
+            gridProtectionStatus = 3;
+        } else if (gridReconnectActive) {
+            gridProtectionStatus = 1;
+        } else if (gridReconnectRampActive) {
+            gridProtectionStatus = 2;
+        } else {
+            gridProtectionStatus = 0;
+        }
+
+
+        if ((gridReconnectActive || gridUndervoltageTripFinished || !charging_authorization_allows_charging()) &&
             (actuatorCpState.state == StateC_Charge || actuatorCpState.state == StateD_VentCharge)) {
             actuatorCpState.state = StateB_Connected;
             actuatorCpState.chargingActive = false;
@@ -571,6 +785,23 @@ while (1) {
         currentCpState.threePhaseActive = vCurrentCpState.threePhaseActive;
         updateChargeAuthSessionFromCpState(vCurrentCpState.state);
         charge_session_log_update(vCurrentCpState.state);
+
+
+        // Persistenter Boot-State nur alle 2 Sekunden schreiben, wenn sich der State geändert hat nur für TOR-Auswertung
+        if (gridProtectionResetRequired) {
+            lastCpStateWriteDelayStart = 0;
+        } else if (vCurrentCpState.state != lastCpStatePersWritten) {
+                if (lastCpStateWriteDelayStart == 0) {
+                    lastCpStateWriteDelayStart = now;
+                }
+                if ((now - lastCpStateWriteDelayStart) >= pdMS_TO_TICKS(1000)) {
+                    preferences.putUChar("lastCpState", (uint8_t)vCurrentCpState.state);
+                    lastCpStatePersWritten = vCurrentCpState.state;
+                    lastCpStateWriteDelayStart = 0;
+                }
+        } else {
+            lastCpStateWriteDelayStart = 0;
+        }
 
         vTaskDelay(5 / portTICK_PERIOD_MS); // Adjusted delay
 }

@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>InnoCharge Login</title>
+  <link rel="stylesheet" type="text/css" href="styles.css">
+</head>
+<body class="login-page">
+  <div class="login-box">
+    <img src="innocharge.png" alt="InnoCharge Logo" class="login-logo">
+    <form method="POST" action="/login">
+      <div class="login-input-row">
+        <img src="login_user.png" alt="" class="login-input-icon">
+        <input type="text" id="username" name="username" placeholder="Username" value="admin" autocomplete="username" autofocus>
+      </div>
+      <div class="login-input-row">
+        <img src="login_lock.png" alt="" class="login-input-icon">
+        <input type="password" id="password" name="password" placeholder="Password" autocomplete="current-password">
+      </div>
+      <button type="submit">Login</button>
+    </form>
+  </div>
+</body>
+</html>

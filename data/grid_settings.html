@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>InnoCharge Grid Settings</title>
+  <link rel="stylesheet" type="text/css" href="styles.css">
+</head>
+<body>
+  <div class="sidebar" id="navbar"></div>
+
+  <div class="main-content">
+    <h1>Grid Settings</h1>
+
+    <div id="gridPinPanel" class="container grid-pin-panel">
+      <h2>Protected Area</h2>
+      <table>
+        <tr>
+          <td><label for="gridPin">PIN:</label></td>
+          <td><input type="password" id="gridPin" inputmode="numeric" maxlength="8" autocomplete="off"></td>
+          <td><button id="unlockGridSettings" type="button">Unlock</button></td>
+        </tr>
+      </table>
+      <div id="gridAuthStatus" class="grid-inline-status"></div>
+    </div>
+
+    <div id="gridSettingsPanel" style="display: none;">
+      <div class="container">
+        <h2>Regional Rules</h2>
+        <table class="grid-settings-table">
+	          <tr>
+	            <td class="grid-label"><label for="gridProfile">Regional rules:</label></td>
+	            <td>
+	              <select id="gridProfile">
+	                <option value="0">Disable</option>
+	                <option value="1">AT - TOR V 1.2</option>
+	              </select>
+	            </td>
+	          </tr>
+	          <tr id="gridMeterWarning" style="display: none;">
+	            <td></td>
+	            <td>
+	              <div class="grid-warning">
+	                AT - TOR V 1.2 requires an enabled energy meter. Without valid meter values, unwanted behavior may occur.
+	              </div>
+	            </td>
+	          </tr>
+	          <tr>
+            <td class="grid-label"><label for="gridNominalVoltage">Nominal voltage (V):</label></td>
+            <td><input type="number" id="gridNominalVoltage" min="230" max="230" step="1" value="230"></td>
+          </tr>
+          <tr>
+            <td class="grid-label"><label for="gridUndervoltagePercent">Undervoltage trip threshold (%):</label></td>
+            <td><input type="number" id="gridUndervoltagePercent" min="70" max="90" step="1" value="80"></td>
+          </tr>
+          <tr>
+            <td class="grid-label"><label for="gridUndervoltageTripSeconds">Undervoltage trip delay (s):</label></td>
+            <td><input type="number" id="gridUndervoltageTripSeconds" min="1" max="30" step="1" value="3"></td>
+          </tr>
+          <tr>
+            <td class="grid-label"><label for="gridReconnectDelaySeconds">Reconnect delay (s):</label></td>
+            <td><input type="number" id="gridReconnectDelaySeconds" min="0" max="300" step="1" value="60"></td>
+          </tr>
+          <tr>
+            <td class="grid-label">Calculated trip voltage:</td>
+            <td><span id="gridUndervoltageVolts" class="grid-strong-text"></span></td>
+          </tr>
+          <tr>
+            <td class="grid-label">Grid protection status:</td>
+            <td><span id="gridProtectionStatus" class="grid-strong-text"></span></td>
+          </tr>
+        </table>
+        <div id="gridSaveStatus" class="grid-inline-status"></div>
+      </div>
+
+      <div class="container">
+        <h2>Energy Meter Values</h2>
+        <table>
+          <tr>
+            <td class="grid-label">Energy Meter:</td>
+            <td><span id="gridEnergyMeterInfo" class="grid-strong-text"></span></td>
+          </tr>
+          <tr>
+            <td class="grid-label">State:</td>
+            <td><span id="gridEnergyMeterState" class="status"></span></td>
+          </tr>
+          <tr>
+            <td class="grid-label">L1 Voltage (V):</td>
+            <td><span id="gridL1Voltage" class="grid-strong-text"></span></td>
+          </tr>
+          <tr>
+            <td class="grid-label">L2 Voltage (V):</td>
+            <td><span id="gridL2Voltage" class="grid-strong-text"></span></td>
+          </tr>
+          <tr>
+            <td class="grid-label">L3 Voltage (V):</td>
+            <td><span id="gridL3Voltage" class="grid-strong-text"></span></td>
+          </tr>
+          <tr>
+            <td class="grid-label">Frequency (Hz):</td>
+            <td><span id="gridFrequency" class="grid-strong-text"></span></td>
+          </tr>
+          <tr>
+            <td class="grid-label">Minimum Voltage (V):</td>
+            <td><span id="gridMinVoltage" class="grid-strong-text"></span></td>
+          </tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script src="common.js"></script>
+  <script src="grid_settings.js"></script>
+</body>
+</html>

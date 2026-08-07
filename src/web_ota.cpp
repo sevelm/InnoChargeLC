@@ -12,6 +12,12 @@
 static const char* TAG_OTA_MAIN = "OTA Main";
 static const char* TAG_OTA_UI   = "OTA Ui";
 
+static bool is_recovery_upload(AsyncWebServerRequest *req)
+{
+    return req->hasParam("recovery", true) &&
+           req->getParam("recovery", true)->value() == "1";
+}
+
 
 
 
@@ -28,6 +34,11 @@ void setupUploadMain()
     /* ---------- (1) Antwort nach Abschluss ---------- */
     [](AsyncWebServerRequest *req)
     {
+        if (!web_request_has_session(req)) {
+            req->send(403, "text/plain", "login required");
+            return;
+        }
+
         bool err = Update.hasError();
         req->send(err ? 500 : 200, "text/plain",
                   err ? "flash error" : "flash ok");
@@ -60,6 +71,13 @@ void setupUploadMain()
         static size_t totalLen   = 0;      // Gesamtgröße der BIN
 
         if (idx == 0) {                    // erster Block
+            if (!web_request_has_session(req)) {
+                mainFailed = true;
+                otaMain.code = -5;
+                otaMain.message = "login required";
+                return;
+            }
+
             totalLen = req->contentLength();
 
             /* Progress‑Callback erst jetzt registrieren */
@@ -105,6 +123,11 @@ void setupUploadUi()
     /* ---------- (1) Antwort nach Abschluss ---------- */
     [](AsyncWebServerRequest *req)
     {
+        if (!web_request_has_session(req) && !is_recovery_upload(req)) {
+            req->send(403, "text/plain", "login required");
+            return;
+        }
+
         bool err = Update.hasError();
         req->send(err ? 500 : 200, "text/plain",
                   err ? "fs flash error" : "fs flash ok");
@@ -137,6 +160,13 @@ void setupUploadUi()
         static size_t totalLen  = 0;       // Gesamtgröße des SPIFFS‑Images
 
         if (idx == 0) {                    // erster Block
+            if (!web_request_has_session(req) && !is_recovery_upload(req)) {
+                uiFailed = true;
+                otaUi.code = -5;
+                otaUi.message = "login required";
+                return;
+            }
+
             if (SPIFFS.begin()) SPIFFS.end();          // unmount
             totalLen = req->contentLength();
 
