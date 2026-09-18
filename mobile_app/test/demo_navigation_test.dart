@@ -48,12 +48,18 @@ class DemoPlatform extends WebViewPlatform {
 class DemoController extends PlatformWebViewController {
   DemoController(super.params) : super.implementation();
   final documents = <String>[];
+  WebViewOverScrollMode? overScrollMode;
   late DemoDelegate delegate;
 
   @override
   Future<void> setBackgroundColor(Color color) async {}
   @override
   Future<void> setJavaScriptMode(JavaScriptMode mode) async {}
+  @override
+  Future<void> setOverScrollMode(WebViewOverScrollMode mode) async {
+    overScrollMode = mode;
+  }
+
   @override
   Future<void> setPlatformNavigationDelegate(
     PlatformNavigationDelegate handler,
@@ -63,6 +69,7 @@ class DemoController extends PlatformWebViewController {
 
   @override
   Future<void> loadHtmlString(String html, {String? baseUrl}) async {
+    expect(overScrollMode, WebViewOverScrollMode.never);
     expect(baseUrl, isNull);
     documents.add(html);
     delegate.progress(100);
@@ -96,6 +103,28 @@ class DemoDelegate extends PlatformNavigationDelegate {
   Future<void> setOnWebResourceError(WebResourceErrorCallback callback) async {}
 }
 
+class DevicePlatform extends DemoPlatform {
+  @override
+  PlatformWebViewController createPlatformWebViewController(
+    PlatformWebViewControllerCreationParams params,
+  ) => controller = DeviceController(params);
+}
+
+class DeviceController extends DemoController {
+  DeviceController(super.params);
+  Uri? loadedUri;
+
+  @override
+  Future<void> addJavaScriptChannel(JavaScriptChannelParams params) async {}
+
+  @override
+  Future<void> loadRequest(LoadRequestParams params) async {
+    expect(overScrollMode, WebViewOverScrollMode.never);
+    loadedUri = params.uri;
+    delegate.progress(100);
+  }
+}
+
 class DemoWidget extends PlatformWebViewWidget {
   DemoWidget(super.params) : super.implementation();
   @override
@@ -103,15 +132,40 @@ class DemoWidget extends PlatformWebViewWidget {
 }
 
 void main() {
+  testWidgets('device page disables overscroll before loading the wallbox', (
+    tester,
+  ) async {
+    final previous = WebViewPlatform.instance;
+    final platform = DevicePlatform();
+    WebViewPlatform.instance = platform;
+    if (previous != null) {
+      addTearDown(() => WebViewPlatform.instance = previous);
+    }
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: WebAppPage(
+          device: InnoChargeDevice(name: 'Garage', url: 'http://192.168.0.85/'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      (platform.controller as DeviceController).loadedUri,
+      Uri.parse('http://192.168.0.85/app.html'),
+    );
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets(
     'demo opens offline, blocks remote navigation, resets and closes without changing preferences',
     (tester) async {
       final previous = WebViewPlatform.instance;
       final platform = DemoPlatform();
       WebViewPlatform.instance = platform;
-    if (previous != null) {
-      addTearDown(() => WebViewPlatform.instance = previous);
-    }
+      if (previous != null) {
+        addTearDown(() => WebViewPlatform.instance = previous);
+      }
       SharedPreferences.setMockInitialValues({
         'last_device_url': 'http://192.168.0.85/',
         'last_device_name': 'Garage',

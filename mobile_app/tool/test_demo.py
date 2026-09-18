@@ -40,7 +40,7 @@ def main():
             logo = Image.open(BytesIO(page.locator('.brand svg').screenshot())).convert('RGB')
             colors = {color: count for count, color in logo.getcolors(logo.width * logo.height)}
             assert colors.get((88, 143, 199), 0) > 30
-            assert colors.get((255, 255, 255), 0) > 30
+            assert colors.get((176, 190, 197), 0) > 30
             page.screenshot(path=str(screenshots / f'demo-{width}x{height}.png'), full_page=True)
 
         page.set_viewport_size({'width': 390, 'height': 844})

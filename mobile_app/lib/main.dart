@@ -14,8 +14,9 @@ const surface = Color(0xff37474f);
 const accent = Color(0xff588fc7);
 const muted = Color(0xffb0bec5);
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
@@ -497,6 +498,8 @@ class _WebAppPageState extends State<WebAppPage> with WidgetsBindingObserver {
   Future<void> _loadContent() async {
     if (mounted) setState(() => _failed = false);
     try {
+      await _controller.setOverScrollMode(WebViewOverScrollMode.never);
+      if (!mounted) return;
       if (widget.isDemo) {
         final html = await rootBundle.loadString('assets/generated/demo.html');
         if (mounted) await _controller.loadHtmlString(html);

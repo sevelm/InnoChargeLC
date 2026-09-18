@@ -82,7 +82,8 @@ def main():
             assert colors.get((88, 143, 199), 0) > 50, 'Missing logo blue'
             assert colors.get(ink, 0) > 50, 'Missing themed logo lettering'
 
-        check_logo(page.locator('.brand svg'), (255, 255, 255))
+        check_logo(page.locator('.brand svg'), (176, 190, 197))
+        assert page.evaluate("getComputedStyle(document.documentElement).overscrollBehaviorY") == 'none'
         assert page.locator('#powerRing').get_attribute('data-power-percent') == '50'
         assert page.locator('#ringProgress').get_attribute('stroke-dasharray') == '50 50'
         for maximum in (11, 22):
