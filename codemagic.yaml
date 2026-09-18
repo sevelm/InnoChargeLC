@@ -49,9 +49,17 @@ workflows:
           flutter build ipa --release --no-pub \
             --build-number="$PROJECT_BUILD_NUMBER" \
             --export-options-plist="$HOME/export_options.plist"
+          # Flutter can exit successfully even when the IPA export failed.
+          shopt -s nullglob
+          ipa_files=(build/ios/ipa/*.ipa)
+          if (( ${#ipa_files[@]} != 1 )) || [[ ! -s "${ipa_files[0]}" ]]; then
+            echo "ERROR: Expected one non-empty IPA in $PWD/build/ios/ipa. Check the export errors above." >&2
+            exit 1
+          fi
+          echo "IPA ready for publishing: ${ipa_files[0]}"
     artifacts:
-      - mobile_app/build/ios/ipa/*.ipa
-      - mobile_app/build/ios/archive/*.xcarchive/dSYMs/**/*.dSYM
+      - $CM_BUILD_DIR/mobile_app/build/ios/ipa/*.ipa
+      - $CM_BUILD_DIR/mobile_app/build/ios/archive/*.xcarchive/dSYMs/**/*.dSYM
       - /tmp/xcodebuild_logs/*.log
     publishing:
       app_store_connect:

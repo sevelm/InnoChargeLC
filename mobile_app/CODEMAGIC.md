@@ -69,6 +69,14 @@ beantworten, eine interne Testgruppe anlegen und den eigenen berechtigten
 App-Store-Connect-Nutzer hinzufuegen. Den Build der Gruppe zuweisen und auf dem
 iPhone ueber TestFlight installieren.
 
+Der Workflow prueft nach `flutter build ipa`, ob genau eine nicht leere IPA
+vorliegt: Flutter kann trotz fehlgeschlagenem IPA-Export Exit-Code 0 liefern.
+Die Artefakt-Pfade beginnen mit `$CM_BUILD_DIR`, damit die Sammlung unabhaengig
+vom Arbeitsverzeichnis auf den Flutter-Buildordner im Repository zugreift.
+Bei "No artifacts were found" zuerst das Protokoll "Build signed IPA" pruefen,
+insbesondere Export- und Signierungsfehler; ein gruener Build allein belegt
+keinen erfolgreichen Upload zu Apple.
+
 Die Versionsnummer kommt aus `pubspec.yaml`. Nur die iOS-Buildnummer wird durch
 den Codemagic-Projektzaehler ersetzt. Beim Neu-Anlegen der Codemagic-Anwendung
 oder bei parallelen anderen Build-Diensten muss eine bereits benutzte Nummer
