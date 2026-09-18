@@ -273,15 +273,15 @@ void set_charging_power(float power){
     }
 
     if (phaseSwitchAllowed && !gridReconnectRampActive && gridProtectionStatus == 0) {
-        if ((powerToApply > 0.0f) && (powerToApply < PHASE_SWITCH_TO_1P_DEFAULT) && ((stateRelayL1N && stateRelayL2L3) || (!stateRelayL1N && !stateRelayL2L3))) {
+        if (threePhaseActive && (powerToApply > 0.0f) && (powerToApply < PHASE_SWITCH_TO_1P_DEFAULT) && ((stateRelayL1N && stateRelayL2L3) || (!stateRelayL1N && !stateRelayL2L3))) {
             switchToL1N = true;
             switchToL2L3 = false;
-            if (stateRelayL1N || stateRelayL2L3) set_control_pilot_100();  // Status B (WAIT)
+            if (stateRelayL1N || stateRelayL2L3 || currentCpState.vehicleConnected) set_control_pilot_100();  // Status B (WAIT)
         }
-        if ((powerToApply > 0.0f) && (powerToApply >= PHASE_SWITCH_TO_3P_DEFAULT) && ((stateRelayL1N && !stateRelayL2L3) || (!stateRelayL1N && !stateRelayL2L3))) {
+        if (!threePhaseActive && (powerToApply > 0.0f) && (powerToApply >= PHASE_SWITCH_TO_3P_DEFAULT) && ((stateRelayL1N && !stateRelayL2L3) || (!stateRelayL1N && !stateRelayL2L3))) {
             switchToL2L3 = true;
             switchToL1N = false;
-            if (stateRelayL1N || stateRelayL2L3) set_control_pilot_100();  // Status B (WAIT)
+            if (stateRelayL1N || stateRelayL2L3 || currentCpState.vehicleConnected) set_control_pilot_100();  // Status B (WAIT)
         }
     }
     
@@ -290,12 +290,14 @@ void set_charging_power(float power){
         return;
     }
 
-    // Active 3-phase charging must not drop below 6 A (~4.2 kW).
-    if (!gridReconnectRampActive && stateRelayL1N && stateRelayL2L3 && powerToApply > 0.0f && powerToApply < 42.0f) {
+    // In the selected 3-phase mode, do not advertise less than 6 A (~4.2 kW),
+    // even while the power relays are still off during a state transition.
+    if (!gridReconnectRampActive && threePhaseActive && powerToApply > 0.0f && powerToApply < 42.0f) {
         powerToApply = 42.0f;
     }
-    // Active 1-phase charging must not exceed 16 A (~3.7 kW).
-    if (stateRelayL1N && !stateRelayL2L3 && powerToApply > 37.0f) {
+    // In the selected 1-phase mode, do not advertise more than 16 A (~3.7 kW),
+    // even while the power relays are still off during a state transition.
+    if (!threePhaseActive && powerToApply > 37.0f) {
         powerToApply = 37.0f;
     }
     float duty = get_duty_from_power(powerToApply);
@@ -331,8 +333,12 @@ float get_current_from_duty(float duty) {
 
 */
 void turn_on_cp_relay(){
-    //set_charging_current(16);
-    set_charging_power((digitalRead(DIP_SWITCH_1) == LOW) ? 220 : 110);
+    // Preserve an existing setpoint when the CP cutoff is released.
+    // Use the DIP-dependent rated power only if no setpoint is available yet.
+    const float powerToRestore = (g_setChargingPower_kW > 0.0f)
+                                     ? g_setChargingPower_kW
+                                     : ((digitalRead(DIP_SWITCH_1) == LOW) ? 220.0f : 110.0f);
+    set_charging_power(powerToRestore);
     digitalWrite(cp_relay_pin, HIGH);
     cp_relay_status = true;
 }

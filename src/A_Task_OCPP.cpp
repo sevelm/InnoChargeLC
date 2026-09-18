@@ -1,298 +1,585 @@
 #include "A_Task_OCPP.hpp"
 
+#include <math.h>
 #include <string.h>
 
 #include "Arduino.h"
+#include "MicroOcpp.h"
 #include "esp_log.h"
 #include "freertos/queue.h"
-#include "freertos/semphr.h"
 
-#include "ArduinoJson.h"
-#include "WebSocketsClient.h"
+/*
+ * ================= INNOCHARGE EVSE <-> OCPP ADAPTER =================
+ *
+ * This file is the only place in the firmware allowed to call MicroOCPP.
+ * The public interface in A_Task_OCPP.hpp transports copied POD data only.
+ * It deliberately does not expose MicroOCPP types, Arduino String instances
+ * or pointers owned by CP, RFID, meter, network or UI tasks.
+ *
+ * Phase 1 (this implementation)
+ * --------------------------------
+ * - removes the handwritten partial OCPP/WebSocket implementation
+ * - compiles the pinned MicroOCPP dependency with the real target toolchain
+ * - validates and copies future UI configuration
+ * - keeps a coalesced latest-value snapshot plus separate event/command queues
+ * - keeps all charging-control and UI modules unchanged
+ *
+ * Phase 2
+ * -------
+ * - initialize MicroOCPP after network and UTC are valid
+ * - map snapshots to connector, readiness, meter and error callbacks
+ * - map RFID/local-stop events to MicroOCPP transactions
+ * - expose protocol state and asynchronous remote commands
+ *
+ * Production blockers are listed next to the public contract in the header.
+ * In particular, transaction permission and Smart-Charging limits must be
+ * consumed by owner APIs in charging control; writing shared globals here
+ * would create races and unsafe last-writer-wins behaviour.
+ * =====================================================================
+ */
 
 namespace {
 
-static const char* TAG = "Task_OCPP";
+constexpr uint8_t OCPP_EVENT_QUEUE_DEPTH = 8;
+constexpr uint8_t OCPP_COMMAND_QUEUE_DEPTH = 8;
+constexpr TickType_t OCPP_TASK_IDLE_TICKS = pdMS_TO_TICKS(25);
+constexpr int64_t EARLIEST_REASONABLE_UTC = 1577836800LL; // 2020-01-01
 
-constexpr uint8_t OCPP_QUEUE_DEPTH = 16;
-constexpr uint32_t OCPP_HEARTBEAT_MS = 60000;
-constexpr uint32_t OCPP_RETRY_CONFIG_CHECK_MS = 3000;
+const char* const TAG = "Task_OCPP";
 
-QueueHandle_t s_eventQueue = nullptr;
-SemaphoreHandle_t s_mutex = nullptr;
-
-ocpp_server_config_t s_cfg{};
-ocpp_runtime_stats_t s_stats{};
-
-WebSocketsClient s_wsClient;
-bool s_wsConfigured = false;
-bool s_bootNotificationSent = false;
-bool s_bootAccepted = false;
-
-String s_lastMsgId;
-uint32_t s_lastHeartbeatMs = 0;
-uint32_t s_lastConfigRetryMs = 0;
-
-struct ws_url_parts_t {
-    bool valid;
-    bool secure;
-    String host;
-    uint16_t port;
-    String path;
+enum class input_event_type_t : uint8_t {
+    IdTagPresented = 0,
+    LocalStop,
+    CommandFeedback,
 };
 
-static ws_url_parts_t parse_ws_url(const char* url) {
-    ws_url_parts_t out{};
-    out.valid = false;
-    out.secure = false;
-    out.port = 0;
+/* Discrete events never share capacity with the replaceable EVSE snapshot. */
+struct input_event_t {
+    input_event_type_t type;
+    ocpp_stop_reason_t stopReason;
+    ocpp_command_feedback_t commandFeedback;
+    char idTag[OCPP_ID_TAG_MAX_LEN + 1];
+};
 
-    if (url == nullptr || url[0] == '\0') return out;
+portMUX_TYPE s_stateMux = portMUX_INITIALIZER_UNLOCKED;
+QueueHandle_t s_eventQueue = nullptr;
+QueueHandle_t s_commandQueue = nullptr;
 
-    String s(url);
-    int schemePos = s.indexOf("://");
-    if (schemePos <= 0) return out;
+bool s_taskClaimed = false;
+bool s_configAvailable = false;
+ocpp_config_t s_config{};
 
-    String scheme = s.substring(0, schemePos);
-    String rest = s.substring(schemePos + 3);
-    if (scheme == "ws") {
-        out.secure = false;
-    } else if (scheme == "wss") {
-        out.secure = true;
-    } else {
-        return out;
+bool s_haveInputs = false;
+ocpp_evse_inputs_t s_latestInputs{};
+
+ocpp_charge_control_t s_chargeControl{
+    false, // authoritative
+    false, // transactionActive
+    false, // transactionRunning
+    false, // chargePermitted
+    false, // smartLimitCurrentValid
+    false, // smartLimitPowerValid
+    false, // smartLimitPhasesValid
+    -1.0F,
+    -1.0F,
+    -1,
+};
+
+ocpp_runtime_status_t s_status{
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    ocpp_connection_state_t::Disabled,
+    0,
+    0,
+    0,
+    0,
+    {},
+};
+
+template <size_t N>
+bool has_terminator(const char (&value)[N]) {
+    return memchr(value, '\0', N) != nullptr;
+}
+
+bool starts_with(const char* value, const char* prefix) {
+    if (value == nullptr || prefix == nullptr) {
+        return false;
+    }
+    return strncmp(value, prefix, strlen(prefix)) == 0;
+}
+
+bool is_printable_ascii(const char* value, bool allowSpaces) {
+    if (value == nullptr) {
+        return false;
     }
 
-    int slashPos = rest.indexOf('/');
-    String hostPort = (slashPos >= 0) ? rest.substring(0, slashPos) : rest;
-    out.path = (slashPos >= 0) ? rest.substring(slashPos) : "/";
-    if (out.path.length() == 0) out.path = "/";
-
-    int colonPos = hostPort.lastIndexOf(':');
-    if (colonPos > 0) {
-        out.host = hostPort.substring(0, colonPos);
-        out.port = static_cast<uint16_t>(hostPort.substring(colonPos + 1).toInt());
-    } else {
-        out.host = hostPort;
-        out.port = out.secure ? 443 : 80;
-    }
-
-    if (out.host.length() == 0 || out.port == 0) return out;
-
-    out.valid = true;
-    return out;
-}
-
-static void ws_send_text(const String& payload) {
-    String out = payload;
-    s_wsClient.sendTXT(out);
-    if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
-        s_stats.sentFrames++;
-        xSemaphoreGive(s_mutex);
-    }
-}
-
-static void send_boot_notification() {
-    // OCPP 1.6J Frame: [2, "<id>", "BootNotification", { ... }]
-    JsonDocument doc;
-    const uint32_t id = static_cast<uint32_t>(esp_random());
-    s_lastMsgId = String(id, HEX);
-
-    JsonArray root = doc.to<JsonArray>();
-    root.add(2);
-    root.add(s_lastMsgId);
-    root.add("BootNotification");
-
-    JsonObject payload = root.add<JsonObject>();
-    payload["chargePointVendor"] = "InnoCharge";
-    payload["chargePointModel"] = "InnoChargeLC";
-    payload["chargePointSerialNumber"] = s_cfg.chargePointId;
-    payload["firmwareVersion"] = "scaffold";
-
-    String msg;
-    serializeJson(doc, msg);
-    ws_send_text(msg);
-
-    s_bootNotificationSent = true;
-}
-
-static void send_heartbeat() {
-    // OCPP 1.6J Frame: [2, "<id>", "Heartbeat", {}]
-    JsonDocument doc;
-    const uint32_t id = static_cast<uint32_t>(esp_random());
-    const String msgId = String(id, HEX);
-
-    JsonArray root = doc.to<JsonArray>();
-    root.add(2);
-    root.add(msgId);
-    root.add("Heartbeat");
-    root.add(JsonObject());
-
-    String msg;
-    serializeJson(doc, msg);
-    ws_send_text(msg);
-}
-
-static void process_event(const ocpp_evse_event_t& ev) {
-    // Platzhalter fuer spaeteres Mapping EVSE -> OCPP:
-    // - CP-Status -> StatusNotification
-    // - RFID -> Authorize / StartTransaction
-    // - Meter -> MeterValues
-    // Derzeit nur Logging, um Taskfluss sichtbar zu halten.
-    ESP_LOGI(TAG, "Event type=%u value=%ld ts=%lu",
-             static_cast<unsigned>(ev.type),
-             static_cast<long>(ev.value),
-             static_cast<unsigned long>(ev.tsMs));
-}
-
-static void ws_event_handler(WStype_t type, uint8_t* payload, size_t length) {
-    switch (type) {
-        case WStype_DISCONNECTED:
-            ESP_LOGW(TAG, "WebSocket disconnected");
-            s_wsConfigured = false;
-            s_bootNotificationSent = false;
-            s_bootAccepted = false;
-            if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
-                s_stats.wsConnected = false;
-                s_stats.bootAccepted = false;
-                xSemaphoreGive(s_mutex);
-            }
-            break;
-        case WStype_CONNECTED:
-            ESP_LOGI(TAG, "WebSocket connected");
-            if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
-                s_stats.wsConnected = true;
-                xSemaphoreGive(s_mutex);
-            }
-            send_boot_notification();
-            s_lastHeartbeatMs = millis();
-            break;
-        case WStype_TEXT: {
-            if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
-                s_stats.recvFrames++;
-                xSemaphoreGive(s_mutex);
-            }
-
-            JsonDocument doc;
-            DeserializationError err = deserializeJson(doc, payload, length);
-            if (err) {
-                ESP_LOGW(TAG, "Invalid OCPP JSON (%s)", err.c_str());
-                return;
-            }
-
-            // Minimal: CALLRESULT fuer BootNotification erkennen.
-            // Format: [3, "<id>", {status:"Accepted", ...}]
-            JsonArray root = doc.as<JsonArray>();
-            if (root.size() >= 3 && root[0].is<int>() && root[0].as<int>() == 3) {
-                const char* msgId = root[1].as<const char*>();
-                if (msgId != nullptr && s_lastMsgId == msgId) {
-                    JsonObject result = root[2].as<JsonObject>();
-                    const char* status = result["status"] | "";
-                    if (strcmp(status, "Accepted") == 0) {
-                        s_bootAccepted = true;
-                        if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
-                            s_stats.bootAccepted = true;
-                            xSemaphoreGive(s_mutex);
-                        }
-                        ESP_LOGI(TAG, "BootNotification accepted by CSMS");
-                    } else {
-                        ESP_LOGW(TAG, "BootNotification status: %s", status);
-                    }
-                }
-            }
-            break;
+    for (const unsigned char* p =
+             reinterpret_cast<const unsigned char*>(value);
+         *p != '\0'; ++p) {
+        if (*p < 0x20U || *p > 0x7eU || (!allowSpaces && *p == ' ')) {
+            return false;
         }
-        default:
-            break;
     }
+    return true;
 }
 
-static void try_configure_websocket() {
-    ws_url_parts_t p = parse_ws_url(s_cfg.wsUrl);
-    if (!p.valid) return;
+bool is_valid_endpoint(const char* url, const char* scheme) {
+    if (!starts_with(url, scheme) || !is_printable_ascii(url, false) ||
+        strchr(url, '@') != nullptr || strchr(url, '#') != nullptr) {
+        return false;
+    }
 
-    if (p.secure) {
-        // Fuer "wss://" folgt spaeter Zertifikats-/TLS-Handling.
-        ESP_LOGW(TAG, "wss:// not active in scaffold yet. Use ws:// for now.");
+    const char* authority = url + strlen(scheme);
+    if (*authority == '\0') {
+        return false;
+    }
+
+    const char* authorityEnd = strpbrk(authority, "/?");
+    return authorityEnd == nullptr || authorityEnd != authority;
+}
+
+bool is_valid_charge_point_id(const char* id) {
+    return id != nullptr && id[0] != '\0' &&
+           is_printable_ascii(id, false) && strpbrk(id, "/?#") == nullptr;
+}
+
+void copy_text(char* destination, size_t destinationSize, const char* source) {
+    if (destination == nullptr || destinationSize == 0) {
         return;
     }
 
-    ESP_LOGI(TAG, "Connecting WS host=%s port=%u path=%s",
-             p.host.c_str(), p.port, p.path.c_str());
-    s_wsClient.begin(p.host.c_str(), p.port, p.path.c_str());
-    s_wsClient.onEvent(ws_event_handler);
-    s_wsClient.setReconnectInterval(5000);
-    s_wsConfigured = true;
+    if (source == nullptr) {
+        destination[0] = '\0';
+        return;
+    }
+
+    const size_t length = strnlen(source, destinationSize - 1);
+    memcpy(destination, source, length);
+    destination[length] = '\0';
+}
+
+void set_last_error_locked(const char* message) {
+    copy_text(s_status.lastError, sizeof(s_status.lastError), message);
+}
+
+void set_last_error(const char* message) {
+    portENTER_CRITICAL(&s_stateMux);
+    set_last_error_locked(message);
+    portEXIT_CRITICAL(&s_stateMux);
+}
+
+void increment_dropped_input() {
+    portENTER_CRITICAL(&s_stateMux);
+    if (s_status.droppedInputEvents != UINT32_MAX) {
+        ++s_status.droppedInputEvents;
+    }
+    portEXIT_CRITICAL(&s_stateMux);
+}
+
+bool validate_config(const ocpp_config_t& config, const char** error) {
+    if (!has_terminator(config.backendUrl) ||
+        !has_terminator(config.chargePointId) ||
+        !has_terminator(config.authorizationKey) ||
+        !has_terminator(config.caCertificatePath) ||
+        !has_terminator(config.chargePointVendor) ||
+        !has_terminator(config.chargePointModel) ||
+        !has_terminator(config.chargePointSerialNumber) ||
+        !has_terminator(config.firmwareVersion)) {
+        *error = "OCPP config contains an unterminated text field";
+        return false;
+    }
+
+    if (!config.enabled) {
+        return true;
+    }
+
+    if (!is_valid_charge_point_id(config.chargePointId)) {
+        *error = "Charge Point ID is empty or contains invalid characters";
+        return false;
+    }
+
+    if (config.chargePointVendor[0] == '\0' ||
+        config.chargePointModel[0] == '\0' ||
+        !is_printable_ascii(config.chargePointVendor, true) ||
+        !is_printable_ascii(config.chargePointModel, true) ||
+        !is_printable_ascii(config.chargePointSerialNumber, true) ||
+        !is_printable_ascii(config.firmwareVersion, true)) {
+        *error = "OCPP BootNotification identity is invalid";
+        return false;
+    }
+
+    switch (config.securityProfile) {
+        case ocpp_security_profile_t::TlsBasicAuthentication:
+            if (!is_valid_endpoint(config.backendUrl, "wss://")) {
+                *error = "Security Profile 2 requires a valid wss:// URL";
+                return false;
+            }
+            if (config.authorizationKey[0] == '\0' ||
+                !is_printable_ascii(config.authorizationKey, false)) {
+                *error = "Security Profile 2 authorization key is invalid";
+                return false;
+            }
+            if (config.caCertificatePath[0] != '/' ||
+                strstr(config.caCertificatePath, "..") != nullptr ||
+                !is_printable_ascii(config.caCertificatePath, false)) {
+                *error = "Security Profile 2 CA path is invalid";
+                return false;
+            }
+            return true;
+
+        case ocpp_security_profile_t::UnsecuredDevelopment:
+            if (!config.allowUnsecuredDevelopment ||
+                !is_valid_endpoint(config.backendUrl, "ws://")) {
+                *error = "Unsecured OCPP is allowed only for explicit ws:// tests";
+                return false;
+            }
+            return true;
+
+        default:
+            *error = "Unsupported OCPP security profile";
+            return false;
+    }
+}
+
+bool validate_inputs(const ocpp_evse_inputs_t& inputs, const char** error) {
+    if (!has_terminator(inputs.vendorErrorCode)) {
+        *error = "EVSE vendor error code is not terminated";
+        return false;
+    }
+
+    if (static_cast<uint8_t>(inputs.cpState) >
+            static_cast<uint8_t>(ocpp_cp_state_t::Unavailable) ||
+        inputs.activePhases > 3U) {
+        *error = "EVSE snapshot contains an invalid state or phase count";
+        return false;
+    }
+
+    constexpr uint32_t allKnownFaults =
+        (1UL << (static_cast<uint8_t>(ocpp_fault_code_t::WeakSignal) + 1U)) -
+        2U;
+    if ((inputs.activeFaultMask & ~allKnownFaults) != 0U) {
+        *error = "EVSE snapshot contains an unknown fault bit";
+        return false;
+    }
+
+    if (inputs.utcTimeValid && inputs.timestampUtc < EARLIEST_REASONABLE_UTC) {
+        *error = "EVSE snapshot marks an implausible UTC value as valid";
+        return false;
+    }
+
+    if (inputs.evReady && !inputs.vehiclePlugged) {
+        *error = "EV cannot be ready while the connector is unplugged";
+        return false;
+    }
+
+    if (inputs.meterValid) {
+        if (inputs.energyImportWh < 0 || inputs.energyExportWh < 0 ||
+            !isfinite(inputs.activePowerTotalW) ||
+            !isfinite(inputs.frequencyHz)) {
+            *error = "EVSE snapshot contains an invalid meter total";
+            return false;
+        }
+
+        for (uint8_t phase = 0; phase < 3; ++phase) {
+            if (!isfinite(inputs.activePowerW[phase]) ||
+                !isfinite(inputs.voltageV[phase]) ||
+                !isfinite(inputs.currentA[phase])) {
+                *error = "EVSE snapshot contains an invalid phase value";
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
+bool stack_is_authoritative() {
+    bool initialized = false;
+    portENTER_CRITICAL(&s_stateMux);
+    initialized = s_status.stackInitialized;
+    portEXIT_CRITICAL(&s_stateMux);
+    return initialized;
+}
+
+bool enqueue_event(const input_event_t& event, TickType_t timeoutTicks) {
+    QueueHandle_t queue = nullptr;
+    portENTER_CRITICAL(&s_stateMux);
+    queue = s_eventQueue;
+    portEXIT_CRITICAL(&s_stateMux);
+
+    if (queue == nullptr || xQueueSend(queue, &event, timeoutTicks) != pdPASS) {
+        increment_dropped_input();
+        return false;
+    }
+    return true;
+}
+
+void update_pre_stack_state(bool enabled,
+                            ocpp_security_profile_t securityProfile) {
+    const uint32_t nowMs = millis();
+
+    portENTER_CRITICAL(&s_stateMux);
+    if (s_status.stackInitialized) {
+        portEXIT_CRITICAL(&s_stateMux);
+        return;
+    }
+
+    const bool fresh =
+        s_haveInputs &&
+        static_cast<uint32_t>(nowMs - s_latestInputs.capturedAtMs) <=
+            OCPP_INPUT_STALE_AFTER_MS;
+    s_status.networkReady = fresh && s_latestInputs.networkReady;
+    s_status.timeValid = fresh && s_latestInputs.utcTimeValid;
+
+    if (!enabled) {
+        s_status.connectionState = ocpp_connection_state_t::Disabled;
+    } else if (!s_status.networkReady) {
+        s_status.connectionState = ocpp_connection_state_t::WaitingForNetwork;
+    } else if (securityProfile ==
+                   ocpp_security_profile_t::TlsBasicAuthentication &&
+               !s_status.timeValid) {
+        s_status.connectionState = ocpp_connection_state_t::WaitingForTime;
+    } else {
+        s_status.connectionState = ocpp_connection_state_t::InterfaceReady;
+    }
+    portEXIT_CRITICAL(&s_stateMux);
+}
+
+void process_unexpected_phase1_event(const input_event_t& /*event*/) {
+    increment_dropped_input();
+    set_last_error("Unexpected discrete event before OCPP phase 2");
+    ESP_LOGE(TAG, "Unexpected discrete event before OCPP phase 2");
 }
 
 } // namespace
 
-void ocpp_set_server_config(const ocpp_server_config_t* cfg) {
-    if (cfg == nullptr || s_mutex == nullptr) return;
-
-    if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
-        memcpy(&s_cfg, cfg, sizeof(s_cfg));
-        xSemaphoreGive(s_mutex);
+bool ocpp_set_config(const ocpp_config_t& config) {
+    const char* error = nullptr;
+    if (!validate_config(config, &error)) {
+        set_last_error(error);
+        return false;
     }
+
+    portENTER_CRITICAL(&s_stateMux);
+    memset(s_config.authorizationKey, 0, sizeof(s_config.authorizationKey));
+    s_config = config;
+    if (!config.enabled) {
+        memset(s_config.authorizationKey, 0,
+               sizeof(s_config.authorizationKey));
+    }
+    s_configAvailable = true;
+    set_last_error_locked("");
+    if (!config.enabled) {
+        s_status.connectionState = ocpp_connection_state_t::Disabled;
+    } else if (!s_status.taskInitialized) {
+        s_status.connectionState =
+            ocpp_connection_state_t::ConfiguredNotStarted;
+    }
+    portEXIT_CRITICAL(&s_stateMux);
+    return true;
 }
 
-bool ocpp_enqueue_event(const ocpp_evse_event_t& ev, TickType_t timeoutTicks) {
-    if (s_eventQueue == nullptr) return false;
-    return xQueueSend(s_eventQueue, &ev, timeoutTicks) == pdPASS;
+bool ocpp_publish_evse_inputs(const ocpp_evse_inputs_t& inputs) {
+    const char* error = nullptr;
+    if (!validate_inputs(inputs, &error)) {
+        set_last_error(error);
+        return false;
+    }
+
+    portENTER_CRITICAL(&s_stateMux);
+    s_latestInputs = inputs;
+    s_haveInputs = true;
+    portEXIT_CRITICAL(&s_stateMux);
+    return true;
 }
 
-bool ocpp_get_runtime_stats(ocpp_runtime_stats_t* outStats) {
-    if (outStats == nullptr || s_mutex == nullptr) return false;
-
-    if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
-        *outStats = s_stats;
-        xSemaphoreGive(s_mutex);
-        return true;
+bool ocpp_present_id_tag(const char* idTag, TickType_t timeoutTicks) {
+    if (idTag == nullptr) {
+        set_last_error("ID tag is null");
+        return false;
     }
-    return false;
+
+    const size_t length = strnlen(idTag, OCPP_ID_TAG_MAX_LEN + 1);
+    if (length == 0 || length > OCPP_ID_TAG_MAX_LEN ||
+        !is_printable_ascii(idTag, false)) {
+        set_last_error("ID tag is outside the OCPP 1.6 character/length limit");
+        return false;
+    }
+
+    if (!stack_is_authoritative()) {
+        set_last_error("ID tag rejected because the OCPP stack is not active");
+        return false;
+    }
+
+    input_event_t event{};
+    event.type = input_event_type_t::IdTagPresented;
+    memcpy(event.idTag, idTag, length);
+    event.idTag[length] = '\0';
+    return enqueue_event(event, timeoutTicks);
+}
+
+bool ocpp_request_local_stop(ocpp_stop_reason_t reason,
+                             TickType_t timeoutTicks) {
+    if (static_cast<uint8_t>(reason) >
+        static_cast<uint8_t>(ocpp_stop_reason_t::UnlockCommand)) {
+        set_last_error("Invalid OCPP stop reason");
+        return false;
+    }
+
+    if (!stack_is_authoritative()) {
+        set_last_error("Local stop rejected because the OCPP stack is not active");
+        return false;
+    }
+
+    input_event_t event{};
+    event.type = input_event_type_t::LocalStop;
+    event.stopReason = reason;
+    return enqueue_event(event, timeoutTicks);
+}
+
+bool ocpp_report_command_feedback(const ocpp_command_feedback_t& feedback,
+                                  TickType_t timeoutTicks) {
+    const uint8_t result = static_cast<uint8_t>(feedback.result);
+    const bool resultValid =
+        result <= static_cast<uint8_t>(ocpp_command_result_t::Failed);
+    const bool progressValid =
+        feedback.progressPercent <= 100U &&
+        (feedback.result != ocpp_command_result_t::Succeeded ||
+         feedback.progressPercent == 100U) &&
+        (feedback.result == ocpp_command_result_t::InProgress ||
+         feedback.result == ocpp_command_result_t::Succeeded ||
+         feedback.progressPercent == 0U);
+
+    if (feedback.requestId == 0U || !resultValid || !progressValid ||
+        !has_terminator(feedback.detail)) {
+        set_last_error("Invalid OCPP command feedback");
+        return false;
+    }
+
+    if (!stack_is_authoritative()) {
+        set_last_error(
+            "Command feedback rejected because the OCPP stack is not active");
+        return false;
+    }
+
+    input_event_t event{};
+    event.type = input_event_type_t::CommandFeedback;
+    event.commandFeedback = feedback;
+    return enqueue_event(event, timeoutTicks);
+}
+
+bool ocpp_get_charge_control(ocpp_charge_control_t* outControl) {
+    if (outControl == nullptr) {
+        return false;
+    }
+
+    portENTER_CRITICAL(&s_stateMux);
+    *outControl = s_chargeControl;
+    portEXIT_CRITICAL(&s_stateMux);
+    return outControl->authoritative;
+}
+
+bool ocpp_take_command(ocpp_command_t* outCommand, TickType_t timeoutTicks) {
+    if (outCommand == nullptr) {
+        return false;
+    }
+
+    QueueHandle_t queue = nullptr;
+    portENTER_CRITICAL(&s_stateMux);
+    queue = s_commandQueue;
+    portEXIT_CRITICAL(&s_stateMux);
+
+    return queue != nullptr &&
+           xQueueReceive(queue, outCommand, timeoutTicks) == pdPASS;
+}
+
+bool ocpp_get_runtime_status(ocpp_runtime_status_t* outStatus) {
+    if (outStatus == nullptr) {
+        return false;
+    }
+
+    portENTER_CRITICAL(&s_stateMux);
+    *outStatus = s_status;
+    portEXIT_CRITICAL(&s_stateMux);
+    return true;
 }
 
 void A_Task_OCPP(void* /*pvParameter*/) {
-    s_eventQueue = xQueueCreate(OCPP_QUEUE_DEPTH, sizeof(ocpp_evse_event_t));
-    s_mutex = xSemaphoreCreateMutex();
+    portENTER_CRITICAL(&s_stateMux);
+    if (s_taskClaimed) {
+        portEXIT_CRITICAL(&s_stateMux);
+        ESP_LOGE(TAG, "OCPP task may only be started once");
+        vTaskDelete(nullptr);
+        return;
+    }
+    s_taskClaimed = true;
+    portEXIT_CRITICAL(&s_stateMux);
 
-    if (s_eventQueue == nullptr || s_mutex == nullptr) {
-        ESP_LOGE(TAG, "Init failed (queue/mutex)");
+    QueueHandle_t eventQueue =
+        xQueueCreate(OCPP_EVENT_QUEUE_DEPTH, sizeof(input_event_t));
+    QueueHandle_t commandQueue =
+        xQueueCreate(OCPP_COMMAND_QUEUE_DEPTH, sizeof(ocpp_command_t));
+
+    if (eventQueue == nullptr || commandQueue == nullptr) {
+        if (eventQueue != nullptr) {
+            vQueueDelete(eventQueue);
+        }
+        if (commandQueue != nullptr) {
+            vQueueDelete(commandQueue);
+        }
+        portENTER_CRITICAL(&s_stateMux);
+        s_taskClaimed = false;
+        set_last_error_locked("Unable to allocate OCPP queues");
+        s_status.connectionState = ocpp_connection_state_t::Faulted;
+        portEXIT_CRITICAL(&s_stateMux);
+        ESP_LOGE(TAG, "Unable to allocate OCPP queues");
         vTaskDelete(nullptr);
         return;
     }
 
-    memset(&s_cfg, 0, sizeof(s_cfg));
-    memset(&s_stats, 0, sizeof(s_stats));
+    portENTER_CRITICAL(&s_stateMux);
+    s_eventQueue = eventQueue;
+    s_commandQueue = commandQueue;
+    s_status.taskInitialized = true;
+    set_last_error_locked("");
+    portEXIT_CRITICAL(&s_stateMux);
 
-    if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
-        s_stats.taskInitialized = true;
-        xSemaphoreGive(s_mutex);
-    }
-
-    ESP_LOGI(TAG, "OCPP task started (scaffold)");
+    ESP_LOGI(TAG, "OCPP adapter phase 1 ready; protocol stack not started");
 
     while (true) {
-        s_wsClient.loop();
-
-        // Konfiguration zyklisch pruefen (falls sie spaeter gesetzt wird).
-        const uint32_t now = millis();
-        if (!s_wsConfigured && (now - s_lastConfigRetryMs) >= OCPP_RETRY_CONFIG_CHECK_MS) {
-            s_lastConfigRetryMs = now;
-            try_configure_websocket();
+        input_event_t event{};
+        if (xQueueReceive(eventQueue, &event, OCPP_TASK_IDLE_TICKS) == pdPASS) {
+            process_unexpected_phase1_event(event);
         }
 
-        // Heartbeat erst nach akzeptierter BootNotification.
-        if (s_bootAccepted && (now - s_lastHeartbeatMs) >= OCPP_HEARTBEAT_MS) {
-            send_heartbeat();
-            s_lastHeartbeatMs = now;
+        bool configAvailable = false;
+        bool enabled = false;
+        ocpp_security_profile_t securityProfile =
+            ocpp_security_profile_t::UnsecuredDevelopment;
+
+        portENTER_CRITICAL(&s_stateMux);
+        configAvailable = s_configAvailable;
+        enabled = s_config.enabled;
+        securityProfile = s_config.securityProfile;
+        portEXIT_CRITICAL(&s_stateMux);
+
+        if (configAvailable) {
+            update_pre_stack_state(enabled, securityProfile);
         }
 
-        ocpp_evse_event_t ev{};
-        if (xQueueReceive(s_eventQueue, &ev, pdMS_TO_TICKS(25)) == pdPASS) {
-            process_event(ev);
-        }
-
-        vTaskDelay(pdMS_TO_TICKS(20));
+        /*
+         * No mocpp_* call belongs in phase 1. Including MicroOcpp.h above
+         * deliberately makes PlatformIO compile the pinned library sources;
+         * runtime initialization is added only after inputs, persistence and
+         * TLS certificate ownership are agreed in phase 2.
+         */
+        vTaskDelay(pdMS_TO_TICKS(1));
     }
 }

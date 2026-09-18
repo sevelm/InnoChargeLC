@@ -20,6 +20,7 @@
 #include "AA_globals.h"
 #include "A_Task_CP.hpp"
 #include "control_pilot.hpp"
+#include "ledEffect.hpp"
 #include "ethernet_manager.hpp"
 #include "wifi_manager.hpp"
 #include "rfid_db.hpp"
@@ -28,6 +29,7 @@
 #include "session_mailer.hpp"
 #include "dynamic_power_limit.hpp"
 #include "grid_protection.hpp"
+#include "cp_diagnostic_log.hpp"
 #include "esp_wifi.h"
 
 #include "esp_timer.h"
@@ -287,6 +289,11 @@ static void send_grid_settings_status(uint8_t num, const char* type, bool ok, co
     webSocket.sendTXT(num, out);
 }
 
+static void send_cp_diagnostic_log(uint8_t num) {
+    String out = cp_diagnostic_log_to_json();
+    webSocket.sendTXT(num, out);
+}
+
 static bool grid_settings_client_unlocked(uint8_t num) {
     bool unlocked = false;
     if (xSemaphoreTake(g_wsSubsMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
@@ -449,6 +456,17 @@ void webSocketEvent(byte num, WStype_t type, uint8_t * payload, size_t length) {
                             xSemaphoreGive(g_wsSubsMutex);
                         }
                   //      ESP_LOGI(WEB_TAG, "Client %u unsubscribed from updates", num);
+                    } else if (strcmp(action, "startCpDiagnosticLog") == 0) {
+                        cp_diagnostic_log_start();
+                        send_cp_diagnostic_log(num);
+                    } else if (strcmp(action, "stopCpDiagnosticLog") == 0) {
+                        cp_diagnostic_log_stop();
+                        send_cp_diagnostic_log(num);
+                    } else if (strcmp(action, "clearCpDiagnosticLog") == 0) {
+                        cp_diagnostic_log_clear();
+                        send_cp_diagnostic_log(num);
+                    } else if (strcmp(action, "getCpDiagnosticLog") == 0) {
+                        send_cp_diagnostic_log(num);
                     } else if (strcmp(action, "setCpRelayState") == 0 && doc["state"].is<bool>()) {
                         bool state = doc["state"].as<bool>();
                         state ? turn_on_cp_relay() : turn_off_cp_relay();
@@ -974,14 +992,30 @@ ESP_LOGI(WEB_TAG,
 
         if (needApp) {
           bool cpDuty100 = (currentCpState.state == StateCustom_DutyCycle_100) || (getCpDuty >= 99.5f);
-          StaticJsonDocument<512> doc;
+          JsonDocument doc;
           doc["wallboxName"] = preferences.getString("wallboxName", "InnoCharge");
           doc["cpState"] = cpStateToName(currentCpState.state);
           doc["phaseMode"] = currentCpState.threePhaseActive ? "Three-phase" : "Single-phase";
           doc["targetChargePower"] = cpDuty100 ? 0.0f : round(get_power_from_duty(getCpDuty)) / 10.0;
           doc["vehicleConnected"] = currentCpState.vehicleConnected;
           doc["chargingActive"] = currentCpState.chargingActive;
-          jsonApp.reserve(384);
+          doc["maxChargePower"] = digitalRead(DIP_SWITCH_1) == LOW ? 22 : 11;
+          const LedVisualStatus led = getLedVisualStatus();
+          JsonObject visual = doc["ledStatus"].to<JsonObject>();
+          visual["label"] = led.label;
+          char color[8];
+          snprintf(color, sizeof(color), "#%06lx", static_cast<unsigned long>(led.color));
+          visual["color"] = color;
+          snprintf(color, sizeof(color), "#%06lx", static_cast<unsigned long>(led.waveColor));
+          visual["waveColor"] = color;
+          switch (led.animation) {
+            case LedVisualAnimation::Wave: visual["animation"] = "wave"; break;
+            case LedVisualAnimation::Charge: visual["animation"] = "charge"; break;
+            case LedVisualAnimation::Blink: visual["animation"] = "blink"; break;
+            default: visual["animation"] = "solid"; break;
+          }
+          visual["periodMs"] = led.periodMs;
+          jsonApp.reserve(768);
           serializeJson(doc, jsonApp);
         }
 

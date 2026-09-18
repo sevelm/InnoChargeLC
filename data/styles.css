@@ -27,6 +27,9 @@ body {
 }
   
 .logo {
+    display: block;
+    height: auto;
+    color: #ffffff;
     width: 100%;
     max-width: 250px; /* Set the max width of the logo */
 }
@@ -858,6 +861,8 @@ button.compact-button {
 
 .login-logo {
     display: block;
+    height: auto;
+    color: #263238;
     width: 260px;
     max-width: 100%;
     margin: 0 auto 28px auto;

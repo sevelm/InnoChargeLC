@@ -3,6 +3,8 @@
 // global WebSocket variable
 let socket = null;
 let passwordSaveTimer = null;
+let cpDiagnosticRefreshTimer = null;
+let cpDiagnosticRecording = false;
 
 /* ---------- initialize WebSocket ---------- */
 function initWebSocket() {
@@ -11,6 +13,7 @@ function initWebSocket() {
   socket.onopen = () => {
     console.log('WS open');
     socket.send(JSON.stringify({ action: 'subscribeUpdates', page: 'system' }));
+    socket.send(JSON.stringify({ action: 'getCpDiagnosticLog' }));
   };
 
   socket.onmessage = ev => processMsg(ev.data);
@@ -74,6 +77,11 @@ function processMsg(txt) {
       document.getElementById('webPassword').value = '';
       document.getElementById('webPasswordConfirm').value = '';
     }
+    return;
+  }
+
+  if (j.type === 'cpDiagnosticLog') {
+    renderCpDiagnosticLog(j);
     return;
   }
 
@@ -245,7 +253,91 @@ document.addEventListener('DOMContentLoaded', () => {
 		  document.getElementById('saveWebPassword')
 		          .addEventListener('click', saveWebPassword);
 
+		  document.getElementById('startCpDiagnosticLog')
+		          .addEventListener('click', () => sendCpDiagnosticAction('startCpDiagnosticLog'));
+		  document.getElementById('stopCpDiagnosticLog')
+		          .addEventListener('click', () => sendCpDiagnosticAction('stopCpDiagnosticLog'));
+		  document.getElementById('clearCpDiagnosticLog')
+		          .addEventListener('click', () => sendCpDiagnosticAction('clearCpDiagnosticLog'));
+		  document.getElementById('refreshCpDiagnosticLog')
+		          .addEventListener('click', requestCpDiagnosticLog);
+
 });
+
+function sendCpDiagnosticAction(action) {
+  if (socket?.readyState !== WebSocket.OPEN) return;
+  socket.send(JSON.stringify({ action }));
+}
+
+function requestCpDiagnosticLog() {
+  sendCpDiagnosticAction('getCpDiagnosticLog');
+}
+
+function formatCpDiagnosticTime(milliseconds) {
+  const minutes = Math.floor(milliseconds / 60000);
+  const seconds = Math.floor((milliseconds % 60000) / 1000);
+  const millisPart = milliseconds % 1000;
+  return String(minutes).padStart(2, '0') + ':' +
+         String(seconds).padStart(2, '0') + '.' +
+         String(millisPart).padStart(3, '0');
+}
+
+function cpStateName(state) {
+  const names = [
+    'State A', 'State B', 'State C', 'State D', 'State E', 'State F',
+    'Invalid', 'Out of range', 'CP relay off', 'CP 100%', 'CP 0%'
+  ];
+  return names[state] ?? ('State ' + state);
+}
+
+function onOff(value) {
+  return value ? 'ON' : 'OFF';
+}
+
+function renderCpDiagnosticLog(data) {
+  const entries = Array.isArray(data.entries) ? data.entries : [];
+  const capacity = Number(data.capacity) || 300;
+  const tbody = document.getElementById('cpDiagnosticLogRows');
+  const status = document.getElementById('cpDiagnosticLogStatus');
+  const count = document.getElementById('cpDiagnosticLogCount');
+
+  cpDiagnosticRecording = data.recording === true;
+  status.textContent = cpDiagnosticRecording ? 'Recording' : 'Stopped';
+  status.style.color = cpDiagnosticRecording ? 'green' : '#333';
+  count.textContent = entries.length + ' / ' + capacity;
+
+  document.getElementById('startCpDiagnosticLog').disabled = cpDiagnosticRecording;
+  document.getElementById('stopCpDiagnosticLog').disabled = !cpDiagnosticRecording;
+
+  tbody.innerHTML = entries.map(entry => {
+    const flags = Number(entry[5]) || 0;
+    return '<tr>' +
+      '<td>' + formatCpDiagnosticTime(Number(entry[0]) || 0) + '</td>' +
+      '<td>' + ((Number(entry[1]) || 0) / 10).toFixed(1) + ' %</td>' +
+      '<td>' + ((Number(entry[2]) || 0) / 10).toFixed(1) + ' %</td>' +
+      '<td>' + cpStateName(Number(entry[3])) + '</td>' +
+      '<td>' + onOff(flags & 1) + '</td>' +
+      '<td>' + onOff(flags & 2) + '</td>' +
+      '<td>' + ((flags & 4) ? '3P' : '1P') + '</td>' +
+      '<td>' + ((Number(entry[4]) || 0) / 10).toFixed(1) + ' kW</td>' +
+      '<td>' + onOff(flags & 8) + '</td>' +
+      '<td>' + onOff(flags & 16) + '</td>' +
+      '<td>' + onOff(flags & 128) + '</td>' +
+      '<td>' + onOff(flags & 32) + '</td>' +
+      '<td>' + onOff(flags & 64) + '</td>' +
+      '</tr>';
+  }).join('');
+
+  if (cpDiagnosticRecording && !cpDiagnosticRefreshTimer) {
+    cpDiagnosticRefreshTimer = setInterval(requestCpDiagnosticLog, 1000);
+  } else if (!cpDiagnosticRecording && cpDiagnosticRefreshTimer) {
+    clearInterval(cpDiagnosticRefreshTimer);
+    cpDiagnosticRefreshTimer = null;
+  }
+
+  const scroll = document.getElementById('cpDiagnosticLogScroll');
+  scroll.scrollTop = scroll.scrollHeight;
+}
 
 function saveWallboxName() {
   if (socket?.readyState !== 1) return;

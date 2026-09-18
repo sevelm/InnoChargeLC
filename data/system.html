@@ -162,6 +162,41 @@
 	      </div>
 	    </div>
 	  </div>
+
+	  <div class="container">
+	    <h2>CP Diagnostic Log</h2>
+	    <p>RAM recording of Control Pilot, phase relays, phase switching and RFID authorization.</p>
+	    <div class="device-action-row" style="margin-bottom: 10px;">
+	      <button id="startCpDiagnosticLog" class="compact-button">Start</button>
+	      <button id="stopCpDiagnosticLog" class="compact-button">Stop</button>
+	      <button id="clearCpDiagnosticLog" class="compact-button">Clear</button>
+	      <button id="refreshCpDiagnosticLog" class="compact-button">Refresh</button>
+	      <span id="cpDiagnosticLogStatus" class="device-inline-status">Stopped</span>
+	      <span id="cpDiagnosticLogCount" class="device-inline-status">0 / 300</span>
+	    </div>
+	    <div id="cpDiagnosticLogScroll" style="overflow: auto; max-height: 420px; border: 1px solid #ccc;">
+	      <table style="width: 100%; white-space: nowrap; font-size: 13px;">
+	        <thead style="position: sticky; top: 0; background: #eee;">
+	          <tr>
+	            <th>Time</th>
+	            <th>Duty set</th>
+	            <th>Duty actual</th>
+	            <th>CP state</th>
+	            <th>L1/N</th>
+	            <th>L2/L3</th>
+	            <th>Phase</th>
+	            <th>Setpoint</th>
+	            <th>To 1P</th>
+	            <th>To 3P</th>
+	            <th>Switch allowed</th>
+	            <th>RFID required</th>
+	            <th>Authorized</th>
+	          </tr>
+	        </thead>
+	        <tbody id="cpDiagnosticLogRows"></tbody>
+	      </table>
+	    </div>
+	  </div>
 </div>
 
   <!-- Scripts -->

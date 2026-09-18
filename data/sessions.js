@@ -410,7 +410,7 @@ function exportSessionsCsv() {
   URL.revokeObjectURL(url);
 }
 
-function exportSessionsPdf() {
+async function exportSessionsPdf() {
   const sessions = currentRenderedSessions || [];
   const printedAt = new Date().toLocaleString();
   const rows = sessions.map(session => `
@@ -445,7 +445,7 @@ function exportSessionsPdf() {
     body { font-family: Arial, sans-serif; color: #111; margin: 0; }
     .header { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #b0bec5; padding-bottom: 8px; margin-bottom: 12px; }
     .brand { display: flex; align-items: center; gap: 16px; }
-    .brand img { width: 150px; height: auto; }
+    .brand svg { display: block; width: 150px; height: auto; color: #263238; flex-shrink: 0; }
     h1 { font-size: 22px; margin: 0 0 6px 0; color: #263238; }
     .meta { font-size: 12px; line-height: 1.5; text-align: right; }
     table { width: 100%; border-collapse: collapse; font-size: 10px; }
@@ -459,7 +459,7 @@ function exportSessionsPdf() {
 <body>
   <div class="header">
     <div class="brand">
-      <img src="/innocharge.png" alt="InnoCharge">
+      <svg id="printLogo" viewBox="0 0 1581.434 377.289" role="img" aria-label="InnoCharge"></svg>
       <div>
         <h1>Charge Sessions</h1>
         <div>Wallbox: ${escapeHtml(wallboxName)}</div>
@@ -495,8 +495,29 @@ function exportSessionsPdf() {
     printWindow.history.replaceState(null, 'Charge Sessions', '/sessions-print');
   } catch (e) {
   }
-  printWindow.focus();
-  setTimeout(() => printWindow.print(), 300);
+  // Inline the shared artwork before printing: external SVG references can be
+  // blocked in a document.write popup even though its opener has the same origin.
+  try {
+    const response = await fetch('/innocharge.svg');
+    if (!response.ok) throw new Error('Logo unavailable');
+    const svg = new DOMParser().parseFromString(await response.text(), 'image/svg+xml');
+    const artwork = svg.querySelector('#artwork');
+    if (!artwork || svg.querySelector('parsererror')) throw new Error('Invalid logo');
+    if (printWindow.closed) return;
+    printWindow.document.getElementById('printLogo').appendChild(
+      printWindow.document.importNode(artwork, true)
+    );
+  } catch (error) {
+    if (printWindow.closed) return;
+    console.warn('Print logo unavailable:', error);
+    const fallback = printWindow.document.createElement('strong');
+    fallback.textContent = 'InnoCharge';
+    printWindow.document.getElementById('printLogo').replaceWith(fallback);
+  }
+  if (!printWindow.closed) {
+    printWindow.focus();
+    printWindow.print();
+  }
 }
 
 function setupFilters() {

@@ -1,6 +1,21 @@
 #ifndef LEDEFFECT_HPP
 #define LEDEFFECT_HPP
 
+#include <stdint.h>
+
+enum class LedVisualAnimation : uint8_t { Solid, Wave, Charge, Blink };
+
+struct LedVisualStatus {
+    const char* label;
+    uint32_t color;
+    uint32_t waveColor;
+    LedVisualAnimation animation;
+    uint16_t periodMs;
+};
+
+// Snapshot of the effect actually selected by the LED task, including overrides.
+LedVisualStatus getLedVisualStatus();
+
 extern unsigned long prevMillisLED;
 extern int counter1[10];
 extern int counterTag1[10];

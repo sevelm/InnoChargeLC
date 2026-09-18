@@ -8,6 +8,32 @@
 unsigned long prevMillisLED       = 0;    // we use the "millis()" command for time reference and this will output an unsigned long
 static constexpr int LED_ANIM_STEP = 4;  // 20 ms task preserves the former 5 ms animation speed
 
+static portMUX_TYPE ledVisualMux = portMUX_INITIALIZER_UNLOCKED;
+static LedVisualStatus ledVisualStatus = {"Starting", 0x578fc7, 0x578fc7, LedVisualAnimation::Solid, 0};
+
+static uint32_t packedColor(const RgbColor& color)
+{
+    return (uint32_t(color.R) << 16) | (uint32_t(color.G) << 8) | color.B;
+}
+
+static void publishLedVisual(const char* label, uint32_t color,
+                             LedVisualAnimation animation = LedVisualAnimation::Solid,
+                             uint32_t waveColor = 0, uint16_t periodMs = 0)
+{
+    const LedVisualStatus next = {label, color, waveColor, animation, periodMs};
+    portENTER_CRITICAL(&ledVisualMux);
+    ledVisualStatus = next;
+    portEXIT_CRITICAL(&ledVisualMux);
+}
+
+LedVisualStatus getLedVisualStatus()
+{
+    portENTER_CRITICAL(&ledVisualMux);
+    const LedVisualStatus snapshot = ledVisualStatus;
+    portEXIT_CRITICAL(&ledVisualMux);
+    return snapshot;
+}
+
 enum rfid_led_state_t {
   RfidLed_None,
   RfidLed_Waiting,
@@ -58,6 +84,7 @@ int ledNum = 5;
 
 //################################### ??? -> Connected
 void stateB () {
+  publishLedVisual("Vehicle connected", 0xffc300);
    initStateB = 0;  
    initStateC = 0;     
   strip.SetPixelColor(0, RgbColor(255, 195, 0));
@@ -74,6 +101,7 @@ void stateB () {
 
 //################################### Blue LED -> Standby
 void stateA () {
+  publishLedVisual("Ready to connect", 0x0000ff);
    initStateB = 0;  
    initStateC = 0;     
   strip.SetPixelColor(0, RgbColor(0, 0, 255));
@@ -107,6 +135,7 @@ void stateA () {
     initStateC = 0;
     /* ---------- Sonderfall 255 ? Wei� ------------------- */
     if (val == 255) {
+        publishLedVisual("External LED control", 0xffffff);
         RgbColor white(255, 255, 255);
         for (uint8_t i = 0; i < 8; ++i)
             strip.SetPixelColor(i, white);
@@ -136,6 +165,7 @@ void stateA () {
     }
 
     RgbColor c(r, g, b);
+    publishLedVisual(mbTcpRegRead09 > 0 ? "External LED control" : "Invalid pilot signal", packedColor(c));
     for (uint8_t i = 0; i < 8; ++i)
         strip.SetPixelColor(i, c);
     strip.Show();
@@ -174,6 +204,8 @@ void stateB_1 () {
 
 //################################### Wave with Green LED -> Charge Activ
 void stateC () {
+  publishLedVisual(currentCpState.state == StateD_VentCharge ? "Charging - ventilation" : "Charging",
+                   0x00ff00, LedVisualAnimation::Charge, 0x00ff00, 2800);
 if (initStateC == 1) {
   switch (counterTag1[0]) {
     case 0: counter1[0] += LED_ANIM_STEP;
@@ -276,6 +308,7 @@ if (initStateC == 1) {
 
 //################################### ??? -> Error
 void stateE () {
+  publishLedVisual("Charging error", 0xff0000);
   initStateB = 0;  
   initStateC = 0;    
   strip.SetPixelColor(0, RgbColor(255, 0, 0));
@@ -291,6 +324,7 @@ void stateE () {
 
 void stateF()
 {
+    publishLedVisual("Charger fault", 0xff0000, LedVisualAnimation::Blink, 0, 500);
     static bool        on   = false;                // merken ob An/?Aus
     static TickType_t  next = 0;                    // n�chster Umschalt-Tick
     const  TickType_t  interval = pdMS_TO_TICKS(250);
@@ -310,6 +344,7 @@ void stateF()
 
 //################################### Switch is OFF
 void stateSwOff () {
+  publishLedVisual("Control pilot off", 0xff00ff);
   initStateB = 0;  
   initStateC = 0;    
   strip.SetPixelColor(0, RgbColor(255, 0, 255));
@@ -325,6 +360,7 @@ void stateSwOff () {
 
 //################################### PWM is OFF / 100%
 void statePwmOff () {
+  publishLedVisual("Charging paused", 0xff00ff);
   initStateB = 0;  
   initStateC = 0;    
   strip.SetPixelColor(0, RgbColor(255, 0, 255));   // Magenta
@@ -343,6 +379,7 @@ void statePwmOff () {
 //################################### true ? DIP �ON� -> Rescue-Mode
 void rescueLedBlink()
 {
+    publishLedVisual("Recovery mode", 0xff00ff, LedVisualAnimation::Blink, 0, 600);
     static bool   ledOn  = false;
     static uint32_t lastToggle = 0;
     const  uint32_t interval   = 300;           // ms
@@ -452,6 +489,15 @@ void waveEffect() {
 }
 
 static void waitingWaveEffect(RgbColor baseColor, RgbColor waveColor) {
+  const char* label = "Charging paused";
+  const uint32_t wave = packedColor(waveColor);
+  if (wave == 0xff0000) label = "Authorization denied";
+  else if (wave == 0x00ff00) {
+    label = currentCpState.state == StateA_NotConnected ? "Authorized - connect vehicle" : "Ready to charge";
+  } else if (currentRfidLedState() == RfidLed_Waiting) {
+    label = "Waiting for authorization";
+  }
+  publishLedVisual(label, packedColor(baseColor), LedVisualAnimation::Wave, wave, 2560);
   static int8_t direction = 1;
   static int8_t currentWaveCenter = -1;
   static uint8_t counter = 0;

@@ -77,6 +77,7 @@ State:   Pilot Voltage:  EV Resistance:  Description:       Analog theoretic: (i
 #include "ledEffect.hpp"
 #include "A_Task_CP.hpp"
 #include "grid_protection.hpp"
+#include "cp_diagnostic_log.hpp"
 
 volatile charging_status_t vCurrentCpState;
 volatile uint32_t lastStateChangeTimeState = 0;
@@ -461,12 +462,13 @@ while (1) {
                     lastSuccessfulPhaseSwitch = now;
                 }
 
-                float duty = get_duty_from_power(g_setChargingPower_kW);
-                set_control_pilot_duty(duty);
-
                 switchToL1N = false;
                 switchToL2L3 = false;
                 phaseSwitchDelay = 0; // reset for next time
+                phaseSwitchAllowed = false;
+
+                // Re-apply the latest requested power through the normal limits.
+                set_charging_power(g_setChargingPower_kW);
             }
         } else {
             phaseSwitchDelay = 0; // condition broke -> reset timer
@@ -785,6 +787,7 @@ while (1) {
         currentCpState.threePhaseActive = vCurrentCpState.threePhaseActive;
         updateChargeAuthSessionFromCpState(vCurrentCpState.state);
         charge_session_log_update(vCurrentCpState.state);
+        cp_diagnostic_log_sample();
 
 
         // Persistenter Boot-State nur alle 2 Sekunden schreiben, wenn sich der State geändert hat nur für TOR-Auswertung
