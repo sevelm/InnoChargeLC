@@ -2,80 +2,94 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:multicast_dns/multicast_dns.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import 'device_discovery.dart';
+
+const background = Color(0xff263238);
+const surface = Color(0xff37474f);
+const accent = Color(0xff588fc7);
+const muted = Color(0xffb0bec5);
+
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      systemNavigationBarColor: background,
+      statusBarIconBrightness: Brightness.light,
+      systemNavigationBarIconBrightness: Brightness.light,
+    ),
+  );
   runApp(const InnoChargeApp());
 }
 
 class InnoChargeApp extends StatelessWidget {
-  const InnoChargeApp({super.key});
+  const InnoChargeApp({super.key, this.discovery});
+  final DeviceDiscoveryService? discovery;
 
   @override
   Widget build(BuildContext context) {
-    const seed = Color(0xff13a085);
-
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'InnoCharge',
-      themeMode: ThemeMode.system,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: seed,
-          brightness: Brightness.light,
+        brightness: Brightness.dark,
+        scaffoldBackgroundColor: background,
+        colorScheme: const ColorScheme.dark(
+          primary: accent,
+          onPrimary: Colors.white,
+          surface: background,
+          onSurface: Color(0xfff4f4f9),
+          onSurfaceVariant: muted,
+          surfaceContainerHighest: surface,
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: surface,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
+        ),
+        filledButtonTheme: FilledButtonThemeData(
+          style: FilledButton.styleFrom(
+            minimumSize: const Size(0, 50),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(6),
+            ),
+          ),
         ),
         useMaterial3: true,
       ),
-      darkTheme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: seed,
-          brightness: Brightness.dark,
-        ),
-        useMaterial3: true,
+      home: DeviceDiscoveryPage(
+        discovery: discovery ?? DeviceDiscoveryService(),
       ),
-      home: const DeviceDiscoveryPage(),
     );
   }
 }
 
-class InnoChargeDevice {
-  const InnoChargeDevice({
-    required this.name,
-    required this.url,
-    required this.source,
-  });
-
-  final String name;
-  final String url;
-  final String source;
-}
-
 class DeviceDiscoveryPage extends StatefulWidget {
-  const DeviceDiscoveryPage({super.key});
+  const DeviceDiscoveryPage({super.key, required this.discovery});
+  final DeviceDiscoveryService discovery;
 
   @override
   State<DeviceDiscoveryPage> createState() => _DeviceDiscoveryPageState();
 }
 
 class _DeviceDiscoveryPageState extends State<DeviceDiscoveryPage> {
-  static const _serviceName = '_innocharge._tcp.local';
-  static const _lastUrlKey = 'last_device_url';
-  static const _lastNameKey = 'last_device_name';
-
   final _manualController = TextEditingController();
-  final List<InnoChargeDevice> _devices = [];
-
-  bool _isSearching = false;
-  String? _status;
-  InnoChargeDevice? _lastDevice;
+  final Map<String, InnoChargeDevice> _devices = {};
+  bool _searching = false;
+  bool _opening = false;
+  String? _lastUrl;
+  String? _error;
+  int _searchGeneration = 0;
 
   @override
   void initState() {
     super.initState();
-    _loadLastDevice();
-    _searchDevices();
+    _search();
   }
 
   @override
@@ -84,380 +98,299 @@ class _DeviceDiscoveryPageState extends State<DeviceDiscoveryPage> {
     super.dispose();
   }
 
-  Future<void> _loadLastDevice() async {
-    final prefs = await SharedPreferences.getInstance();
-    final url = prefs.getString(_lastUrlKey);
-    if (url == null || url.isEmpty || !mounted) {
-      return;
-    }
-
+  Future<void> _search() async {
+    if (_searching) return;
+    final generation = ++_searchGeneration;
+    bool current() => mounted && generation == _searchGeneration;
     setState(() {
-      _lastDevice = InnoChargeDevice(
-        name: prefs.getString(_lastNameKey) ?? 'Zuletzt verbunden',
-        url: url,
-        source: 'Gespeichert',
-      );
-    });
-  }
-
-  Future<void> _searchDevices() async {
-    if (_isSearching) {
-      return;
-    }
-
-    setState(() {
-      _isSearching = true;
-      _status = 'Suche per Bonjour...';
+      _searching = true;
+      _error = null;
       _devices.clear();
     });
-
-    final found = <String, InnoChargeDevice>{};
-    for (final device in await _discoverWithMdns()) {
-      found[device.url] = device;
-    }
-
-    if (mounted) {
-      setState(() {
-        _devices
-          ..clear()
-          ..addAll(found.values);
-        _status = found.isEmpty
-            ? 'Kein Bonjour-Treffer. Suche im lokalen Netzwerk...'
-            : 'Bonjour-Suche abgeschlossen.';
-      });
-    }
-
-    if (found.isEmpty) {
-      for (final device in await _scanLocalNetwork()) {
-        found[device.url] = device;
-      }
-    }
-
-    if (!mounted) {
-      return;
-    }
-
-    setState(() {
-      _devices
-        ..clear()
-        ..addAll(found.values);
-      _isSearching = false;
-      _status = found.isEmpty
-          ? 'Keine Wallbox gefunden. IP manuell eingeben.'
-          : '${found.length} Geraet(e) gefunden.';
-    });
-  }
-
-  Future<List<InnoChargeDevice>> _discoverWithMdns() async {
-    final client = MDnsClient();
-    final devices = <InnoChargeDevice>[];
-
     try {
-      await client.start();
-      await for (final ptr in client.lookup<PtrResourceRecord>(
-        ResourceRecordQuery.serverPointer(_serviceName),
-      ).timeout(const Duration(seconds: 4), onTimeout: (sink) => sink.close())) {
-        await for (final srv in client.lookup<SrvResourceRecord>(
-          ResourceRecordQuery.service(ptr.domainName),
-        ).timeout(const Duration(seconds: 2), onTimeout: (sink) => sink.close())) {
-          final addresses = await client
-              .lookup<IPAddressResourceRecord>(
-                ResourceRecordQuery.addressIPv4(srv.target),
-              )
-              .timeout(
-                const Duration(seconds: 2),
-                onTimeout: (sink) => sink.close(),
-              )
-              .toList();
-
-          for (final address in addresses) {
-            devices.add(
-              InnoChargeDevice(
-                name: _cleanDeviceName(ptr.domainName),
-                url: 'http://${address.address.address}:${srv.port}/',
-                source: 'Bonjour',
-              ),
-            );
-          }
+      final prefs = await SharedPreferences.getInstance();
+      if (!current()) return;
+      _lastUrl = prefs.getString('last_device_url');
+      // Previously saved generic HTTP results must pass the same identity check.
+      final last = _lastUrl == null
+          ? null
+          : DeviceDiscoveryService.parseAddress(_lastUrl!);
+      if (last != null) {
+        final device = await widget.discovery.probe(last);
+        if (!current()) return;
+        if (device != null) {
+          setState(() => _devices[device.url] = device);
         }
       }
+      await widget.discovery.discover(
+        shouldContinue: current,
+        onDevice: (device) {
+          if (current()) setState(() => _devices[device.url] = device);
+        },
+      );
     } catch (_) {
-      // Some networks block multicast discovery; the IP scan below is the fallback.
-    } finally {
-      client.stop();
-    }
-
-    return devices;
-  }
-
-  Future<List<InnoChargeDevice>> _scanLocalNetwork() async {
-    final prefixes = await _localIpv4Prefixes();
-    final devices = <InnoChargeDevice>[];
-
-    for (final prefix in prefixes.take(2)) {
-      final futures = <Future<InnoChargeDevice?>>[];
-      for (var host = 1; host <= 254; host++) {
-        futures.add(_probeHost('$prefix.$host'));
-      }
-
-      final results = await Future.wait(futures);
-      devices.addAll(results.whereType<InnoChargeDevice>());
-    }
-
-    return devices;
-  }
-
-  Future<Set<String>> _localIpv4Prefixes() async {
-    final prefixes = <String>{};
-    final interfaces = await NetworkInterface.list(
-      includeLoopback: false,
-      type: InternetAddressType.IPv4,
-    );
-
-    for (final interface in interfaces) {
-      for (final address in interface.addresses) {
-        final parts = address.address.split('.');
-        if (parts.length == 4 &&
-            parts.first != '127' &&
-            parts.first != '169' &&
-            parts.first != '0') {
-          prefixes.add('${parts[0]}.${parts[1]}.${parts[2]}');
-        }
-      }
-    }
-
-    return prefixes;
-  }
-
-  Future<InnoChargeDevice?> _probeHost(String host) async {
-    final client = HttpClient()..connectionTimeout = const Duration(milliseconds: 450);
-    try {
-      final request = await client
-          .getUrl(Uri.parse('http://$host/'))
-          .timeout(const Duration(milliseconds: 700));
-      final response = await request.close().timeout(const Duration(milliseconds: 700));
-      final server = response.headers.value(HttpHeaders.serverHeader) ?? '';
-      await response.drain<void>();
-
-      if (response.statusCode < 500) {
-        return InnoChargeDevice(
-          name: server.toLowerCase().contains('innocharge')
-              ? 'InnoCharge $host'
-              : 'Weboberflaeche $host',
-          url: 'http://$host/',
-          source: 'IP-Scan',
+      if (current()) {
+        setState(
+          () =>
+              _error = 'Netzwerksuche nicht moeglich. WLAN-Verbindung pruefen.',
         );
       }
-    } catch (_) {
-      return null;
     } finally {
-      client.close(force: true);
+      if (current()) setState(() => _searching = false);
     }
-
-    return null;
   }
 
-  String _cleanDeviceName(String domainName) {
-    return domainName
-        .replaceAll('._innocharge._tcp.local', '')
-        .replaceAll('.local', '')
-        .replaceAll(r'\032', ' ')
-        .trim()
-        .isEmpty
-        ? 'InnoCharge'
-        : domainName
-            .replaceAll('._innocharge._tcp.local', '')
-            .replaceAll('.local', '')
-            .replaceAll(r'\032', ' ')
-            .trim();
+  Future<void> _openDemo() async {
+    if (_opening) return;
+    FocusScope.of(context).unfocus();
+    setState(() {
+      ++_searchGeneration;
+      _searching = false;
+      _opening = true;
+    });
+    try {
+      await Navigator.of(
+        context,
+      ).push(MaterialPageRoute<void>(builder: (_) => const WebAppPage.demo()));
+    } finally {
+      if (mounted) setState(() => _opening = false);
+    }
   }
 
-  Future<void> _openDevice(InnoChargeDevice device) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_lastUrlKey, device.url);
-    await prefs.setString(_lastNameKey, device.name);
-
-    if (!mounted) {
-      return;
+  Future<void> _openPrivacyPolicy() async {
+    try {
+      if (await launchUrl(
+        Uri.parse('https://www.innocharge.at/kontakt/'),
+        mode: LaunchMode.externalApplication,
+      )) {
+        return;
+      }
+    } on Exception {
+      // Show the same recoverable error when the platform cannot open a browser.
     }
-
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => WebAppPage(device: device),
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Datenschutzseite konnte nicht geoeffnet werden.'),
       ),
     );
   }
 
-  void _openManualAddress() {
-    final text = _manualController.text.trim();
-    if (text.isEmpty) {
+  Future<void> _open(Uri? address) async {
+    if (_opening) return;
+    if (address == null) {
+      setState(
+        () => _error = 'Bitte eine gueltige IP oder HTTP-Adresse eingeben.',
+      );
       return;
     }
-
-    final url = text.startsWith('http://') || text.startsWith('https://')
-        ? text
-        : 'http://$text/';
-
-    _openDevice(
-      InnoChargeDevice(
-        name: 'Manuelle Adresse',
-        url: url,
-        source: 'Manuell',
-      ),
-    );
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _opening = true;
+      _error = null;
+    });
+    try {
+      final device = await widget.discovery.probe(address);
+      if (!mounted) return;
+      if (device == null) {
+        setState(
+          () => _error =
+              'Keine erreichbare InnoCharge-Wallbox an dieser Adresse.',
+        );
+        return;
+      }
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('last_device_url', device.url);
+      await prefs.setString('last_device_name', device.name);
+      if (!mounted) return;
+      _lastUrl = device.url;
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => WebAppPage(device: device)),
+      );
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _error = 'Verbindung fehlgeschlagen. Bitte erneut versuchen.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _opening = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-
     return Scaffold(
       body: SafeArea(
         child: RefreshIndicator(
-          onRefresh: _searchDevices,
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
-            children: [
-              Row(
-                children: [
-                  Container(
-                    width: 52,
-                    height: 52,
-                    decoration: BoxDecoration(
-                      color: colorScheme.primaryContainer,
-                      borderRadius: BorderRadius.circular(8),
+          onRefresh: _search,
+          child: CustomScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: [
+              SliverToBoxAdapter(
+                child: ColoredBox(
+                  color: background,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 28,
+                      vertical: 20,
                     ),
-                    child: Icon(
-                      Icons.ev_station,
-                      color: colorScheme.onPrimaryContainer,
-                      size: 30,
+                    child: Image.asset(
+                      'assets/generated/innocharge.png',
+                      height: 64,
+                      fit: BoxFit.contain,
+                      semanticLabel: 'InnoCharge',
                     ),
                   ),
-                  const SizedBox(width: 14),
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'InnoCharge',
-                          style: TextStyle(
-                            fontSize: 28,
-                            fontWeight: FontWeight.w700,
+                ),
+              ),
+              SliverToBoxAdapter(
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 560),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const Text(
+                            'Manuell verbinden',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
-                        ),
-                        SizedBox(height: 2),
-                        Text('Wallbox verbinden'),
-                      ],
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: _manualController,
+                            keyboardType: TextInputType.url,
+                            textInputAction: TextInputAction.go,
+                            autocorrect: false,
+                            onSubmitted: (_) => _open(
+                              DeviceDiscoveryService.parseAddress(
+                                _manualController.text,
+                              ),
+                            ),
+                            decoration: const InputDecoration(
+                              labelText: 'IP oder Adresse',
+                              hintText: '192.168.0.85',
+                              prefixIcon: Icon(Icons.link),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          FilledButton.icon(
+                            onPressed: _opening
+                                ? null
+                                : () => _open(
+                                    DeviceDiscoveryService.parseAddress(
+                                      _manualController.text,
+                                    ),
+                                  ),
+                            icon: _opening
+                                ? const SizedBox.square(
+                                    dimension: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.login),
+                            label: Text(
+                              _opening ? 'Verbinde ...' : 'Verbinden',
+                            ),
+                          ),
+                          if (_error != null)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 14),
+                              child: Text(
+                                _error!,
+                                style: TextStyle(
+                                  color: Theme.of(context).colorScheme.error,
+                                ),
+                              ),
+                            ),
+                          const SizedBox(height: 8),
+                          TextButton.icon(
+                            onPressed: _opening ? null : _openDemo,
+                            icon: const Icon(Icons.play_circle_outline),
+                            label: const Text('Demo ansehen'),
+                          ),
+                          const SizedBox(height: 28),
+                          Row(
+                            children: [
+                              const Expanded(
+                                child: Text(
+                                  'Wallboxen im Netzwerk',
+                                  style: TextStyle(fontWeight: FontWeight.w600),
+                                ),
+                              ),
+                              if (_searching)
+                                const SizedBox.square(
+                                  dimension: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                ),
+                              IconButton(
+                                tooltip: 'Netzwerk erneut durchsuchen',
+                                onPressed: _searching ? null : _search,
+                                icon: const Icon(Icons.refresh),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            _searching
+                                ? 'Suche InnoCharge ...'
+                                : _devices.isEmpty
+                                ? 'Keine Wallbox gefunden.'
+                                : '${_devices.length} InnoCharge gefunden.',
+                            style: const TextStyle(color: muted),
+                          ),
+                          const SizedBox(height: 14),
+                          for (final device in _devices.values)
+                            ListTile(
+                              contentPadding: const EdgeInsets.symmetric(
+                                vertical: 8,
+                              ),
+                              leading: const Icon(
+                                Icons.ev_station_outlined,
+                                color: accent,
+                              ),
+                              title: Text(
+                                device.name,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              subtitle: Text(
+                                '${Uri.parse(device.url).authority}${device.url == _lastUrl ? '  |  Zuletzt verbunden' : ''}',
+                              ),
+                              trailing: const Icon(Icons.chevron_right),
+                              onTap: _opening
+                                  ? null
+                                  : () => _open(Uri.parse(device.url)),
+                              shape: const Border(
+                                bottom: BorderSide(color: surface),
+                              ),
+                            ),
+                          const SizedBox(height: 24),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: TextButton(
+                              onPressed: _openPrivacyPolicy,
+                              style: TextButton.styleFrom(
+                                foregroundColor: muted,
+                                textStyle: const TextStyle(fontSize: 12),
+                              ),
+                              child: const Text('Datenschutz'),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                  IconButton(
-                    tooltip: 'Aktualisieren',
-                    onPressed: _isSearching ? null : _searchDevices,
-                    icon: const Icon(Icons.refresh),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 28),
-              if (_isSearching) ...[
-                const LinearProgressIndicator(),
-                const SizedBox(height: 12),
-              ],
-              Text(
-                _status ?? 'Bereit.',
-                style: TextStyle(color: colorScheme.onSurfaceVariant),
-              ),
-              const SizedBox(height: 24),
-              if (_lastDevice != null) ...[
-                _DeviceTile(
-                  device: _lastDevice!,
-                  icon: Icons.history,
-                  onTap: () => _openDevice(_lastDevice!),
-                ),
-                const SizedBox(height: 12),
-              ],
-              for (final device in _devices) ...[
-                _DeviceTile(
-                  device: device,
-                  icon: Icons.electrical_services,
-                  onTap: () => _openDevice(device),
-                ),
-                const SizedBox(height: 12),
-              ],
-              const SizedBox(height: 12),
-              TextField(
-                controller: _manualController,
-                keyboardType: TextInputType.url,
-                textInputAction: TextInputAction.go,
-                onSubmitted: (_) => _openManualAddress(),
-                decoration: const InputDecoration(
-                  labelText: 'IP oder Adresse',
-                  hintText: '192.168.1.34',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.link),
                 ),
               ),
-              const SizedBox(height: 12),
-              FilledButton.icon(
-                onPressed: _openManualAddress,
-                icon: const Icon(Icons.login),
-                label: const Text('Verbinden'),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _DeviceTile extends StatelessWidget {
-  const _DeviceTile({
-    required this.device,
-    required this.icon,
-    required this.onTap,
-  });
-
-  final InnoChargeDevice device;
-  final IconData icon;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-
-    return Material(
-      color: colorScheme.surfaceContainerHighest,
-      borderRadius: BorderRadius.circular(8),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Row(
-            children: [
-              Icon(icon, color: colorScheme.primary),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      device.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      '${device.url}  ${device.source}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: colorScheme.onSurfaceVariant),
-                    ),
-                  ],
-                ),
-              ),
-              const Icon(Icons.chevron_right),
             ],
           ),
         ),
@@ -468,50 +401,221 @@ class _DeviceTile extends StatelessWidget {
 
 class WebAppPage extends StatefulWidget {
   const WebAppPage({super.key, required this.device});
-
-  final InnoChargeDevice device;
-
+  const WebAppPage.demo({super.key}) : device = null;
+  final InnoChargeDevice? device;
+  bool get isDemo => device == null;
   @override
   State<WebAppPage> createState() => _WebAppPageState();
 }
 
-class _WebAppPageState extends State<WebAppPage> {
+class _WebAppPageState extends State<WebAppPage> with WidgetsBindingObserver {
+  static const _display = MethodChannel('at.innocharge/display');
   late final WebViewController _controller;
-  var _progress = 0;
+  bool _failed = false;
+  bool _menuInPage = false;
+  int _progress = 0;
+
+  Future<void> _fullscreen(bool enabled) async {
+    if (Platform.isAndroid) {
+      await _display.invokeMethod<void>('fullscreen', enabled);
+    } else {
+      await SystemChrome.setEnabledSystemUIMode(
+        enabled ? SystemUiMode.immersiveSticky : SystemUiMode.edgeToEdge,
+      );
+    }
+  }
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    unawaited(_fullscreen(true));
     _controller = WebViewController()
+      ..setBackgroundColor(background)
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setNavigationDelegate(
         NavigationDelegate(
-          onProgress: (progress) => setState(() => _progress = progress),
+          onNavigationRequest: (request) {
+            if (widget.isDemo) {
+              return request.url == 'about:blank'
+                  ? NavigationDecision.navigate
+                  : NavigationDecision.prevent;
+            }
+            final uri = Uri.tryParse(request.url);
+            return uri != null &&
+                    ['http', 'https'].contains(uri.scheme) &&
+                    uri.origin == widget.device!.appUri.origin
+                ? NavigationDecision.navigate
+                : NavigationDecision.prevent;
+          },
+          onProgress: (progress) {
+            if (mounted) setState(() => _progress = progress);
+          },
+          onPageStarted: (_) {
+            if (mounted) {
+              setState(() {
+                _failed = false;
+                _menuInPage = false;
+              });
+            }
+          },
+          onPageFinished: (_) async {
+            if (!mounted) return;
+            if (widget.isDemo) return;
+            // Older wallbox UIs have no app menu yet; retain a native menu for those.
+            try {
+              final result = await _controller.runJavaScriptReturningResult(
+                "Boolean(document.getElementById('nativeMenu') && window.InnoChargeHost)",
+              );
+              if (mounted) {
+                setState(
+                  () => _menuInPage = result == true || result == 'true',
+                );
+              }
+            } on PlatformException {
+              // Keep the native menu available if the page is no longer loaded.
+            }
+          },
+          onWebResourceError: (error) {
+            if (error.isForMainFrame == true && mounted) {
+              setState(() => _failed = true);
+            }
+          },
         ),
-      )
-      ..loadRequest(Uri.parse(widget.device.url));
+      );
+    if (!widget.isDemo) {
+      _controller.addJavaScriptChannel(
+        'InnoChargeHost',
+        onMessageReceived: (message) {
+          if (message.message == 'menu' && mounted) _showMenu();
+        },
+      );
+    }
+    unawaited(_loadContent());
+  }
+
+  Future<void> _loadContent() async {
+    if (mounted) setState(() => _failed = false);
+    try {
+      if (widget.isDemo) {
+        final html = await rootBundle.loadString('assets/generated/demo.html');
+        if (mounted) await _controller.loadHtmlString(html);
+      } else {
+        await _controller.loadRequest(widget.device!.appUri);
+      }
+    } catch (_) {
+      if (mounted) setState(() => _failed = true);
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) unawaited(_fullscreen(true));
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    unawaited(_fullscreen(false));
+    super.dispose();
+  }
+
+  Future<void> _showMenu() async {
+    if (widget.isDemo) return;
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              title: Text(widget.device!.name),
+              subtitle: Text(widget.device!.url),
+            ),
+            ListTile(
+              leading: const Icon(Icons.refresh),
+              title: const Text('Neu laden'),
+              onTap: () => Navigator.pop(context, 'reload'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.swap_horiz),
+              title: const Text('Wallbox wechseln'),
+              onTap: () => Navigator.pop(context, 'back'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted) return;
+    if (action == 'reload') await _controller.reload();
+    if (action == 'back' && mounted) Navigator.pop(context);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.device.name),
-        actions: [
-          IconButton(
-            tooltip: 'Neu laden',
-            onPressed: _controller.reload,
-            icon: const Icon(Icons.refresh),
-          ),
-        ],
-        bottom: _progress < 100
-            ? PreferredSize(
-                preferredSize: const Size.fromHeight(3),
-                child: LinearProgressIndicator(value: _progress / 100),
-              )
-            : null,
+      body: SafeArea(
+        child: Column(
+          children: [
+            if (widget.isDemo)
+              Row(
+                children: [
+                  IconButton(
+                    tooltip: 'Demo beenden',
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close),
+                  ),
+                  const Expanded(
+                    child: Text('DEMO', style: TextStyle(color: accent)),
+                  ),
+                  IconButton(
+                    tooltip: 'Demo zuruecksetzen',
+                    onPressed: _loadContent,
+                    icon: const Icon(Icons.restart_alt),
+                  ),
+                ],
+              ),
+            if (!widget.isDemo && !_menuInPage)
+              Align(
+                alignment: Alignment.centerRight,
+                child: IconButton(
+                  tooltip: 'Wallbox-Menue',
+                  onPressed: _showMenu,
+                  icon: const Icon(Icons.more_horiz),
+                ),
+              ),
+            if (_progress < 100 && !_failed)
+              LinearProgressIndicator(value: _progress / 100, minHeight: 2),
+            Expanded(
+              child: _failed
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.wifi_off, size: 36, color: muted),
+                            const SizedBox(height: 16),
+                            Text(
+                              widget.isDemo
+                                  ? 'Demo konnte nicht geladen werden.'
+                                  : 'Wallbox nicht erreichbar.',
+                            ),
+                            const SizedBox(height: 16),
+                            FilledButton.icon(
+                              onPressed: _loadContent,
+                              icon: const Icon(Icons.refresh),
+                              label: const Text('Erneut laden'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  : WebViewWidget(controller: _controller),
+            ),
+          ],
+        ),
       ),
-      body: WebViewWidget(controller: _controller),
     );
   }
 }

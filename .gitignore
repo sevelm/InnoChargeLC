@@ -1,2 +1,8 @@
 .pio
 platformio.ini
+
+# Apple signing material may be downloaded while configuring Codemagic.
+*.p8
+*.p12
+*.pfx
+*.mobileprovision

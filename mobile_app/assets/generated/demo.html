@@ -1,0 +1,608 @@
+<!DOCTYPE html><html lang="de"><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#263238">
+  
+  <title>InnoCharge Demo</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Arial, Helvetica, sans-serif;
+      --background: #263238;
+      --surface: #37474f;
+      --blue: #588fc7;
+      --text: #f4f4f9;
+      --muted: #b0bec5;
+      --line: #46575f;
+    }
+    * { box-sizing: border-box; letter-spacing: 0; }
+    body { margin: 0; background: var(--background); color: var(--text); }
+    button, input { font: inherit; }
+    main {
+      width: 100%; max-width: 520px; margin: 0 auto;
+      padding: max(12px, env(safe-area-inset-top)) 20px max(12px, env(safe-area-inset-bottom));
+    }
+    header { display: flex; align-items: center; gap: 10px; padding: 10px 0 16px; border-bottom: 1px solid var(--line); }
+    .brand { flex: 1; min-width: 0; }
+    .brand svg { display: block; width: 176px; max-width: 100%; height: 48px; color: #ffffff; }
+    h1 { margin: 14px 0 0; font-size: 16px; line-height: 1.25; overflow-wrap: anywhere; }
+    #nativeMenu { flex-shrink: 0; width: 44px; height: 44px; border: 0; padding: 0; background: transparent; color: var(--text); font-size: 26px; cursor: pointer; }
+    [hidden] { display: none !important; }
+    .connection { display: flex; align-items: center; gap: 7px; flex-shrink: 0; font-size: 12px; color: var(--muted); }
+    .connection::before, .boolean::before {
+      content: ""; display: inline-block; width: 8px; height: 8px;
+      border-radius: 50%; background: var(--muted); flex-shrink: 0;
+    }
+    .connection.online::before, .boolean.active::before { background: var(--blue); }
+    .power-display { display: flex; justify-content: center; padding: 16px 0; }
+    .power-ring {
+      --state-color: #588fc7; --wave-color: #588fc7; --period: 2800ms;
+      position: relative; width: 232px; max-width: 100%; aspect-ratio: 1;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+    }
+    .ring-graphic { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+    .ring-graphic circle { fill: none; stroke-width: 7; }
+    .ring-track { stroke: var(--line); }
+    .has-data .ring-track { stroke: var(--state-color); opacity: 0.28; }
+    .ring-progress { stroke: var(--state-color); }
+    .ring-wave { stroke: var(--wave-color); opacity: 0; stroke-dasharray: 18 82; }
+    .power-ring[data-animation="charge"] .ring-progress { opacity: 0.65; }
+    .power-ring[data-animation="charge"] .ring-wave { opacity: 1; animation: charge-flow var(--period) linear infinite; mask: url(#powerMask); }
+    .power-ring[data-animation="wave"] .ring-wave { opacity: 1; animation: waiting-wave var(--period) ease-in-out infinite alternate; }
+    .power-ring[data-animation="blink"] .ring-graphic { animation: fault-blink var(--period) step-end infinite; }
+    @keyframes charge-flow { from { stroke-dashoffset: 0; } to { stroke-dashoffset: -100; } }
+    @keyframes waiting-wave { from { stroke-dashoffset: 0; } to { stroke-dashoffset: -82; } }
+    @keyframes fault-blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0.12; } }
+    .power-number { font-size: 58px; line-height: 1.1; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .power-unit { margin-top: 6px; font-size: 21px; color: var(--muted); }
+    .power-caption { margin: 14px 0 0; min-height: 34px; width: 68%; display: flex; align-items: center; justify-content: center; font-size: 14px; line-height: 1.2; text-align: center; color: var(--text); }
+    .status { margin: 0; border-top: 1px solid var(--line); }
+    .status-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+    dt { color: var(--muted); font-size: 14px; line-height: 1.4; }
+    dd { margin: 0; text-align: right; font-size: 15px; line-height: 1.4; font-weight: 600; overflow-wrap: anywhere; }
+    .boolean { display: inline-flex; justify-content: flex-end; align-items: center; gap: 9px; }
+    .controls { margin: 0; padding: 17px 0 0; border: 0; min-width: 0; }
+    .control-label { display: block; margin-bottom: 14px; font-size: 16px; font-weight: 600; }
+    .stepper { display: grid; grid-template-columns: 52px minmax(0, 1fr) 52px; gap: 12px; }
+    .stepper button, .stepper input {
+      height: 56px; min-width: 0; width: 100%; border: 1px solid var(--line);
+      border-radius: 6px; background: var(--surface); color: var(--text); text-align: center;
+    }
+    .stepper button { padding: 0; font-size: 30px; cursor: pointer; touch-action: manipulation; }
+    .stepper input { font-size: 28px; font-weight: 600; font-variant-numeric: tabular-nums; appearance: textfield; -moz-appearance: textfield; }
+    .stepper input::-webkit-inner-spin-button, .stepper input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    button:hover:not(:disabled) { background: #465b66; border-color: var(--blue); }
+    button:active:not(:disabled) { background: var(--blue); }
+    :focus-visible { outline: 2px solid var(--blue); outline-offset: 4px; }
+    input[aria-invalid="true"] { border-color: #edaaaa; }
+    :disabled { opacity: 0.45; cursor: not-allowed; }
+    fieldset:disabled { opacity: 1; }
+    .range { display: block; width: 100%; height: 44px; margin: 15px 0 0; padding: 0; background: transparent; appearance: none; -webkit-appearance: none; cursor: pointer; }
+    .range::-webkit-slider-runnable-track { height: 6px; background: var(--line); border-radius: 3px; }
+    .range::-webkit-slider-thumb { appearance: none; -webkit-appearance: none; width: 24px; height: 24px; margin-top: -9px; border-radius: 50%; border: 3px solid var(--text); background: var(--blue); }
+    .range::-moz-range-track { height: 6px; background: var(--line); border-radius: 3px; }
+    .range::-moz-range-progress { height: 6px; background: var(--blue); border-radius: 3px; }
+    .range::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; border: 3px solid var(--text); background: var(--blue); }
+    .range-labels { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
+    .message { min-height: 20px; margin: 8px 0 0; color: var(--muted); font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
+    .message.error { color: #edaaaa; }
+    @media (max-width: 360px) {
+      .brand svg { width: 148px; }
+      .stepper { grid-template-columns: 48px minmax(0, 1fr) 48px; gap: 8px; }
+      .power-ring { width: 216px; }
+    }
+    @media (max-height: 760px) {
+      .power-ring { width: 194px; }
+      .power-number { font-size: 48px; }
+      .power-unit { font-size: 18px; margin-top: 3px; }
+      .power-caption { margin-top: 10px; font-size: 12px; }
+      .power-display { padding: 12px 0; }
+      .status-row { padding: 9px 0; }
+      .control-label { margin-bottom: 10px; }
+      .controls { padding-top: 12px; }
+      .stepper button, .stepper input { height: 48px; }
+      .range { margin-top: 6px; }
+    }
+    @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } .ring-wave { display: none; } }
+  </style>
+<script>(() => {
+  'use strict';
+  let state = 'C';
+  let maximum = 11;
+  let power = 5.5;
+  let phase = 'Three-phase';
+  const sockets = new Set();
+  const visuals = {
+    A: ['Ready to connect', '#0000ff', 'solid'],
+    B: ['Vehicle connected', '#ffc300', 'solid'],
+    C: ['Charging', '#00ff00', 'charge'],
+    D: ['Charging - ventilation', '#00ff00', 'charge'],
+    E: ['Charging error', '#ff0000', 'solid'],
+    F: ['Charger fault', '#ff0000', 'blink'],
+    paused: ['Charging paused', '#ff00ff', 'solid'],
+    authorization: ['Waiting for authorization', '#ffc300', 'wave']
+  };
+
+  function snapshot() {
+    const paused = power === 0 && ['C', 'D'].includes(state);
+    const [label, color, animation] = visuals[paused ? 'paused' : state];
+    return {
+      wallboxName: 'InnoCharge',
+      cpState: 'State ' + ({paused: 'B', authorization: 'B'}[state] || state),
+      phaseMode: phase,
+      vehicleConnected: !['A', 'E', 'F'].includes(state),
+      chargingActive: ['C', 'D'].includes(state) && !paused,
+      targetChargePower: power === 0 ? 0 : Math.max(1.4, power),
+      maxChargePower: maximum,
+      ledStatus: {
+        label, color, waveColor: animation === 'wave' ? '#ffffff' : color,
+        animation, periodMs: animation === 'blink' ? 500 : 2800
+      }
+    };
+  }
+
+  function publish() {
+    const data = JSON.stringify(snapshot());
+    for (const socket of sockets) {
+      if (socket.readyState === 1 && socket.subscribed) {
+        socket.onmessage?.({data});
+      }
+    }
+    const connection = document.getElementById('connection');
+    if (connection) connection.textContent = 'simulation';
+  }
+
+  // Never instantiate or retain the platform WebSocket. CSP also denies network I/O.
+  class DemoSocket {
+    static CONNECTING = 0;
+    static OPEN = 1;
+    static CLOSING = 2;
+    static CLOSED = 3;
+    readyState = 0;
+    subscribed = false;
+
+    constructor() {
+      sockets.add(this);
+      setTimeout(() => {
+        if (this.readyState !== 0) return;
+        this.readyState = 1;
+        this.onopen?.();
+      }, 0);
+    }
+
+    send(text) {
+      if (this.readyState !== 1) return;
+      const command = JSON.parse(text);
+      if (command.action === 'subscribeUpdates') this.subscribed = true;
+      if (command.action === 'unsubscribeUpdates') this.subscribed = false;
+      if (command.action === 'setChargeParameters' &&
+          Number.isFinite(command.power) && command.power >= 0 && command.power <= maximum) {
+        power = Math.round(command.power * 10) / 10;
+      }
+      setTimeout(publish, 0);
+    }
+
+    close() {
+      if (this.readyState === 3) return;
+      this.readyState = 3;
+      sockets.delete(this);
+      this.onclose?.();
+    }
+  }
+  Object.defineProperty(window, 'WebSocket', {value: DemoSocket, writable: false, configurable: false});
+
+  let heartbeat;
+  window.addEventListener('DOMContentLoaded', () => {
+    const style = document.createElement('style');
+    style.textContent = `
+      .demo-settings { margin: 0 0 16px; padding: 12px 0; border: 0; border-bottom: 1px solid var(--line); min-width: 0; }
+      .demo-settings legend { padding: 0; color: var(--blue); font-size: 13px; font-weight: 700; }
+      .demo-options { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+      .demo-options label:first-child { grid-column: 1 / -1; }
+      .demo-options label { display: grid; gap: 5px; min-width: 0; font-size: 12px; color: var(--muted); }
+      .demo-options select { width: 100%; min-width: 0; height: 44px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text); font: inherit; font-size: 14px; }
+    `;
+    document.head.append(style);
+    const settings = document.createElement('fieldset');
+    settings.className = 'demo-settings';
+    settings.innerHTML = `
+      <legend>DEMO / Simulated data</legend>
+      <div class="demo-options">
+        <label>Simulated state<select id="demoState">
+          <option value="A">A - Ready to connect</option>
+          <option value="B">B - Vehicle connected</option>
+          <option value="C" selected>C - Charging</option>
+          <option value="D">D - Charging with ventilation</option>
+          <option value="paused">Charging paused</option>
+          <option value="authorization">Waiting for authorization</option>
+          <option value="E">E - Charging error</option>
+          <option value="F">F - Charger fault</option>
+        </select></label>
+        <label>Wallbox limit<select id="demoMaximum"><option value="11">11 kW</option><option value="22">22 kW</option></select></label>
+        <label>Phase mode<select id="demoPhase"><option>Three-phase</option><option>Single-phase</option></select></label>
+      </div>
+    `;
+    document.querySelector('header').after(settings);
+    document.getElementById('demoState').addEventListener('change', event => {
+      state = event.target.value;
+      publish();
+    });
+    document.getElementById('demoMaximum').addEventListener('change', event => {
+      maximum = Number(event.target.value);
+      power = Math.min(power, maximum);
+      publish();
+    });
+    document.getElementById('demoPhase').addEventListener('change', event => {
+      phase = event.target.value;
+      publish();
+    });
+    heartbeat = setInterval(publish, 4000);
+  });
+  window.addEventListener('pagehide', () => clearInterval(heartbeat));
+  window.addEventListener('pageshow', event => {
+    if (event.persisted) heartbeat = setInterval(publish, 4000);
+  });
+})();
+</script></head>
+<body>
+  <main id="app">
+    <header>
+      <div class="brand"><svg width="1581.434" height="377.289" color="#ffffff" viewBox="0 0 1581.434 377.289" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" role="img" aria-label="InnoCharge">
+<g id="artwork">
+<g>
+	<g>
+		<defs>
+			<path id="XMLID_1_" d="M33,87.786 M23.363,149.877L0,134.599V0l247.802,163.265l-101.581,66.932l-22.125-14.465l80.189-52.421
+				L23.363,45.044V149.877z"></path>
+		</defs>
+		<use fill-rule="evenodd" clip-rule="evenodd" fill="#588FC7" xlink:href="#XMLID_1_"></use>
+		<clipPath id="XMLID_9_">
+			<use xlink:href="#XMLID_1_"></use>
+		</clipPath>
+	</g>
+</g>
+<g>
+	<g>
+		<defs>
+			<path id="XMLID_3_" d="M124.556,241.566 M124.556,241.566L0.596,323.688V159.414L124.556,241.566z"></path>
+		</defs>
+		<use fill-rule="evenodd" clip-rule="evenodd" fill="currentColor" xlink:href="#XMLID_3_"></use>
+		<clipPath id="XMLID_10_">
+			<use xlink:href="#XMLID_3_"></use>
+		</clipPath>
+	</g>
+</g>
+<g>
+	<path fill="currentColor" d="M303.567,252.34h-39.82V44.257h39.82V252.34z"></path>
+	<path fill="currentColor" d="M407.216,123.534c-13.91,0-28.641,12.083-34.642,24.472V252.34H334.66V99.374h31.64l3.001,20.335
+		c11.183-14.148,28.916-26.522,50.19-26.238c34.367,0.595,49.095,28.005,49.095,65.73v93.138h-37.913v-89.306
+		C430.674,141.812,429.583,123.534,407.216,123.534z"></path>
+	<path fill="currentColor" d="M566.511,123.534c-13.911,0-28.641,12.083-34.64,24.472V252.34h-37.918V99.374h31.646l2.996,20.335
+		c11.185-14.148,28.915-26.522,50.191-26.238c34.367,0.595,49.097,28.005,49.097,65.73v93.138h-37.914v-89.306
+		C589.969,141.812,588.878,123.534,566.511,123.534z"></path>
+	<path fill="currentColor" d="M787.995,174.819c0,46.563-23.729,80.458-69.826,80.458s-69.828-33.895-69.828-80.458
+		c0-47.454,23.73-81.348,69.828-81.348S787.995,127.366,787.995,174.819z M751.991,174.819c0-34.187-13.912-51.285-33.822-51.285
+		c-19.913,0-33.551,17.098-33.551,51.285c0,33.313,13.368,50.692,33.551,50.692S751.991,208.133,751.991,174.819z"></path>
+</g>
+<g>
+	<g>
+		<path fill="#588FC7" d="M944.263,245.682c-8.735,4.711-26.192,9.727-48.559,9.727c-51.822,0-90.831-35.668-90.831-100.805
+			c0-62.185,39.009-104.332,96.02-104.332c22.908,0,37.361,5.308,43.634,8.848l-5.724,20.925
+			c-8.999-4.718-21.817-8.252-37.091-8.252c-43.106,0-71.745,29.766-71.745,81.923c0,48.634,25.914,79.882,70.647,79.882
+			c14.458,0,29.189-3.256,38.737-8.258L944.263,245.682z"></path>
+		<path fill="#588FC7" d="M968.536,42.907h24.008v89.004h0.542c3.813-7.372,9.82-13.85,17.181-18.27
+			c7.094-4.421,15.551-7.373,24.55-7.373c17.734,0,46.097,11.792,46.097,61.007v84.876h-24.001v-81.926
+			c0-22.989-7.908-42.438-30.553-42.438c-15.551,0-27.819,11.786-32.188,25.927c-1.364,3.547-1.628,7.372-1.628,12.388v86.049
+			h-24.008V42.907z"></path>
+		<path fill="#588FC7" d="M1208.02,217.969c0,12.373,0.549,24.471,2.184,34.184h-21.824l-1.906-17.973h-0.821
+			c-7.364,11.197-21.545,21.229-40.365,21.229c-26.733,0-40.365-20.342-40.365-40.973c0-34.481,28.361-53.349,79.369-53.05v-2.945
+			c0-11.791-3.005-33.014-30.005-33.014c-12.275,0-25.092,4.13-34.371,10.615l-5.452-17.094
+			c10.912-7.663,26.735-12.679,43.37-12.679c40.367,0,50.188,29.772,50.188,58.36V217.969z M1184.838,179.365
+			c-26.185-0.59-55.923,4.414-55.923,32.117c0,16.809,10.37,24.762,22.646,24.762c17.185,0,28.097-11.791,31.907-23.875
+			c0.822-2.646,1.37-5.598,1.37-8.244V179.365z"></path>
+		<path fill="#588FC7" d="M1242.112,154.021c0-16.809-0.277-31.249-1.084-44.509h21.004l0.808,28.005h1.098
+			c5.996-19.158,20.454-31.249,36.547-31.249c2.734,0,4.64,0.298,6.823,0.888v24.463c-2.461-0.588-4.91-0.886-8.191-0.886
+			c-16.901,0-28.905,13.85-32.181,33.306c-0.542,3.533-1.093,7.663-1.093,12.084v76.029h-23.73V154.021z"></path>
+		<path fill="#588FC7" d="M1439.325,231.533c0,32.705-6.001,52.754-18.82,65.129c-12.823,12.971-31.366,17.1-48.002,17.1
+			c-15.829,0-33.286-4.129-43.926-11.793l6.008-19.746c8.728,5.891,22.366,11.197,38.726,11.197
+			c24.557,0,42.556-13.844,42.556-49.803v-15.922h-0.549c-7.358,13.262-21.546,23.875-42.007,23.875
+			c-32.723,0-56.183-30.055-56.183-69.551c0-48.34,29.183-75.75,59.465-75.75c22.909,0,35.455,12.97,41.188,24.763h0.542
+			l1.099-21.52h20.99c-0.544,10.317-1.086,21.812-1.086,39.202V231.533z M1415.594,165.807c0-4.421-0.277-8.253-1.361-11.786
+			c-4.369-15.035-16.095-27.41-33.552-27.41c-22.915,0-39.281,20.925-39.281,53.933c0,28.002,13.09,51.281,39.004,51.281
+			c14.729,0,28.097-10.018,33.285-26.521c1.356-4.422,1.905-9.438,1.905-13.857V165.807z"></path>
+		<path fill="#588FC7" d="M1487.876,185.552c0.544,35.077,21.275,49.514,45.271,49.514c17.192,0,27.555-3.242,36.554-7.371
+			l4.098,18.568c-8.457,4.129-22.917,9.145-43.921,9.145c-40.645,0-64.917-29.182-64.917-72.211
+			c0-43.033,23.46-76.928,61.919-76.928c43.1,0,54.555,40.969,54.555,67.201c0,5.306-0.549,9.429-0.821,12.083H1487.876z
+			 M1558.248,166.991c0.271-16.504-6.274-42.146-33.28-42.146c-24.272,0-34.913,24.167-36.818,42.146H1558.248z"></path>
+	</g>
+</g>
+<g>
+	<g>
+		<polygon fill-rule="evenodd" clip-rule="evenodd" fill="currentColor" points="1256.618,333.891 1199.708,333.891 1199.708,303.238 
+			1256.618,303.238 1259.106,285.691 1199.708,285.691 1199.708,258.055 1128.654,305.133 65.642,305.133 26.926,330.783 
+			1129.532,330.783 1199.708,377.289 1199.708,351.455 1259.125,351.455 		"></polygon>
+	</g>
+</g>
+</g>
+</svg></div>
+      <span id="connection" class="connection" role="status">offline</span>
+      <button type="button" id="nativeMenu" title="Wallbox-Menü" aria-label="Wallbox-Menü" hidden="">⋮</button>
+    </header>
+    <h1 id="wallboxName" hidden=""></h1>
+    <section class="power-display" aria-label="Charging status and power setpoint">
+      <div class="power-ring" id="powerRing" data-animation="solid">
+        <svg class="ring-graphic" aria-hidden="true" viewBox="0 0 240 240">
+          <defs><mask id="powerMask" x="0" y="0" width="240" height="240" maskUnits="userSpaceOnUse"><circle id="ringMaskArc" cx="120" cy="120" r="108" stroke="white" stroke-width="10" stroke-dasharray="0 100" pathLength="100"></circle></mask></defs>
+          <circle class="ring-track" cx="120" cy="120" r="108"></circle>
+          <g transform="rotate(90 120 120)">
+            <circle class="ring-progress" id="ringProgress" cx="120" cy="120" r="108" stroke-dasharray="0 100" pathLength="100"></circle>
+            <circle class="ring-wave" cx="120" cy="120" r="108" pathLength="100"></circle>
+          </g>
+        </svg>
+        <span class="power-number" id="targetChargePower">–</span>
+        <span class="power-unit">kW</span>
+        <p class="power-caption" id="chargeStatus" role="status">Offline</p>
+      </div>
+    </section>
+    <dl class="status">
+      <div class="status-row"><dt>CP State</dt><dd id="cpState">–</dd></div>
+      <div class="status-row"><dt>Phase Mode</dt><dd id="phaseMode">–</dd></div>
+      <div class="status-row"><dt>Vehicle Connected</dt><dd><span class="boolean" id="vehicleConnected">–</span></dd></div>
+      <div class="status-row"><dt>Charging Active</dt><dd><span class="boolean" id="chargingActive">–</span></dd></div>
+    </dl>
+    <fieldset class="controls" id="powerControls" disabled="" aria-label="Charge Power">
+      <label class="control-label" for="setChargePower">Charge Power (kW)</label>
+      <div class="stepper">
+        <button type="button" id="decreasePower" aria-label="Ladeleistung um 0,1 kW reduzieren" title="0,1 kW weniger">−</button>
+        <input type="number" id="setChargePower" min="0" max="0" step="0.1" inputmode="decimal" placeholder="–" aria-describedby="message">
+        <button type="button" id="increasePower" aria-label="Ladeleistung um 0,1 kW erhöhen" title="0,1 kW mehr">+</button>
+      </div>
+      <input class="range" type="range" id="powerRange" min="0" max="0" step="0.1" value="0" aria-label="Charge Power (kW)">
+      <div class="range-labels" aria-hidden="true"><span>0</span><span id="maxPowerLabel">– kW</span></div>
+    </fieldset>
+    <p class="message" id="message" role="status" aria-live="polite"></p>
+  </main>
+  <script>
+    'use strict';
+    const APP_CLIENT = 'innocharge-public-app';
+    const byId = id => document.getElementById(id);
+    const field = byId('setChargePower');
+    const range = byId('powerRange');
+    const controls = byId('powerControls');
+    if (window.InnoChargeHost) {
+      byId('nativeMenu').hidden = false;
+      byId('nativeMenu').addEventListener('click', () => window.InnoChargeHost.postMessage('menu'));
+    }
+    const numberFormat = new Intl.NumberFormat('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    let socket;
+    let reconnectTimer;
+    let staleTimer;
+    let stopped = false;
+    let initialized = false;
+    let maxPower = null;
+    let reportedPower = 0;
+    let hasVisual = false;
+
+    function drawPowerArc() {
+      const percent = maxPower ? Math.max(0, Math.min(100, reportedPower / maxPower * 100)) : 0;
+      const dash = percent + ' ' + (100 - percent);
+      byId('ringProgress').setAttribute('stroke-dasharray', dash);
+      byId('ringMaskArc').setAttribute('stroke-dasharray', dash);
+      byId('powerRing').dataset.powerPercent = String(percent);
+    }
+
+    // Hardware colors remain unchanged; only the display uses this softer palette.
+    function displayLedColor(color) {
+      const palette = {
+        '#0000ff': '#588fc7', '#578fc7': '#588fc7', '#588fc7': '#588fc7',
+        '#00ff00': '#75b995', '#ffc300': '#d5ad70', '#ff0000': '#d77e83',
+        '#ff00ff': '#ad91c9', '#ffffff': '#dce5eb', '#000000': '#263238'
+      };
+      const key = color.toLowerCase();
+      if (palette[key]) return palette[key];
+      // Preserve the hue of custom Modbus colors while reducing saturation.
+      return '#' + key.slice(1).match(/../g).map(channel =>
+        Math.round(parseInt(channel, 16) * 0.55 + 144 * 0.45).toString(16).padStart(2, '0')
+      ).join('');
+    }
+
+    function applyLedStatus(status) {
+      if (!status || typeof status.label !== 'string' || !/^#[0-9a-f]{6}$/i.test(status.color) ||
+          !/^#[0-9a-f]{6}$/i.test(status.waveColor) || !['solid', 'wave', 'charge', 'blink'].includes(status.animation)) return false;
+      const ring = byId('powerRing');
+      ring.style.setProperty('--state-color', displayLedColor(status.color));
+      ring.style.setProperty('--wave-color', displayLedColor(status.waveColor));
+      const period = Number.isFinite(status.periodMs) && status.periodMs >= 200 && status.periodMs <= 10000 ? status.periodMs : 2800;
+      ring.style.setProperty('--period', period + 'ms');
+      ring.dataset.animation = status.animation;
+      byId('chargeStatus').textContent = status.label;
+      return true;
+    }
+
+    function showMessage(text, error = false) {
+      byId('message').textContent = text;
+      byId('message').classList.toggle('error', error);
+    }
+
+    function clearStatus() {
+      initialized = false;
+      maxPower = null;
+      reportedPower = 0;
+      hasVisual = false;
+      controls.disabled = true;
+      field.max = range.max = '0';
+      byId('maxPowerLabel').textContent = '\u2013 kW';
+      byId('chargeStatus').textContent = 'Offline';
+      byId('powerRing').dataset.animation = 'solid';
+      byId('powerRing').style.setProperty('--state-color', '#588fc7');
+      drawPowerArc();
+      byId('app').classList.remove('has-data');
+      ['targetChargePower', 'cpState', 'phaseMode', 'vehicleConnected', 'chargingActive'].forEach(id => {
+        byId(id).textContent = '\u2013';
+        byId(id).classList.remove('active');
+      });
+      field.value = '';
+      range.value = '0';
+    }
+
+    function setConnection(online) {
+      byId('connection').textContent = online ? 'online' : 'offline';
+      byId('connection').classList.toggle('online', online);
+      if (!online) {
+        clearTimeout(staleTimer);
+        clearStatus();
+      }
+    }
+
+    function sendMessage(message) {
+      if (!socket || socket.readyState !== WebSocket.OPEN) return false;
+      try {
+        socket.send(JSON.stringify({ client: APP_CLIENT, ...message }));
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    function setInput(value) {
+      value = Math.max(0, Math.min(maxPower ?? 0, value));
+      field.value = value.toFixed(1);
+      range.value = String(value);
+      field.removeAttribute('aria-invalid');
+      byId('decreasePower').disabled = value <= 0;
+      byId('increasePower').disabled = maxPower === null || value >= maxPower;
+    }
+
+    function processUpdate(data) {
+      if (!data || typeof data !== 'object') return;
+      if (typeof data.wallboxName === 'string') {
+        const name = data.wallboxName.trim();
+        byId('wallboxName').textContent = name;
+        byId('wallboxName').hidden = !name || name.toLowerCase() === 'innocharge';
+      }
+      if (data.maxChargePower === 11 || data.maxChargePower === 22) {
+        const changed = maxPower !== data.maxChargePower;
+        maxPower = data.maxChargePower;
+        field.max = range.max = String(maxPower);
+        byId('maxPowerLabel').textContent = maxPower + ' kW';
+        if (changed && initialized && Number.isFinite(field.valueAsNumber)) setInput(field.valueAsNumber);
+      } else if (Object.prototype.hasOwnProperty.call(data, 'maxChargePower')) {
+        maxPower = null;
+        initialized = false;
+        controls.disabled = true;
+        field.max = range.max = '0';
+        byId('maxPowerLabel').textContent = '\u2013 kW';
+      }
+      if (Object.prototype.hasOwnProperty.call(data, 'ledStatus')) hasVisual = applyLedStatus(data.ledStatus);
+      ['cpState', 'phaseMode'].forEach(id => {
+        if (typeof data[id] === 'string') byId(id).textContent = data[id];
+      });
+      ['vehicleConnected', 'chargingActive'].forEach(id => {
+        if (typeof data[id] !== 'boolean') return;
+        byId(id).textContent = data[id] ? 'yes' : 'no';
+        byId(id).classList.toggle('active', data[id]);
+      });
+      if (typeof data.targetChargePower === 'number' && Number.isFinite(data.targetChargePower) && data.targetChargePower >= 0 && data.targetChargePower <= 22) {
+        byId('targetChargePower').textContent = numberFormat.format(data.targetChargePower);
+        reportedPower = data.targetChargePower;
+        drawPowerArc();
+        byId('app').classList.add('has-data');
+        controls.disabled = maxPower === null;
+        // The effective CP power may differ from the user's requested power.
+        if (!initialized && maxPower !== null) {
+          setInput(data.targetChargePower);
+          initialized = true;
+          showMessage('');
+        }
+        if (maxPower === null || !hasVisual) {
+          byId('chargeStatus').textContent = 'Status unavailable';
+          byId('powerRing').dataset.animation = 'solid';
+          showMessage('Firmware-Update fuer Ladegrenze und LED-Status erforderlich.', true);
+        }
+        clearTimeout(staleTimer);
+        staleTimer = setTimeout(() => {
+          clearStatus();
+          showMessage('Keine aktuellen Daten von der Wallbox.', true);
+          if (socket) socket.close();
+        }, 15000);
+      }
+    }
+
+    function commitPower() {
+      if (controls.disabled) return;
+      const value = field.valueAsNumber;
+      if (!Number.isFinite(value) || !field.validity.valid) {
+        field.setAttribute('aria-invalid', 'true');
+        showMessage('Bitte 0 bis ' + maxPower + ' kW in Schritten von 0,1 eingeben.', true);
+        return;
+      }
+      setInput(value);
+      if (sendMessage({ action: 'setChargeParameters', power: value })) {
+        showMessage('');
+      } else {
+        setConnection(false);
+        showMessage('Keine Verbindung zur Wallbox.', true);
+      }
+    }
+
+    function stepPower(delta) {
+      const value = field.valueAsNumber;
+      if (!Number.isFinite(value)) { commitPower(); return; }
+      setInput(Math.max(0, Math.min(maxPower, Math.round((value + delta) * 10) / 10)));
+      commitPower();
+    }
+
+    function connect() {
+      clearTimeout(reconnectTimer);
+      if (stopped) return;
+      if (location.protocol === 'file:') {
+        showMessage('Keine Verbindung zur Wallbox.');
+        return;
+      }
+      socket = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.hostname + ':81/');
+      socket.onopen = () => {
+        setConnection(true);
+        showMessage('Warte auf Wallbox-Daten ...');
+        sendMessage({ action: 'subscribeUpdates', page: 'app' });
+      };
+      socket.onmessage = event => {
+        try { processUpdate(JSON.parse(event.data)); }
+        catch (_) { showMessage('Ungueltige Daten empfangen.', true); }
+      };
+      socket.onerror = () => {
+        setConnection(false);
+        showMessage('Keine Verbindung zur Wallbox.', true);
+      };
+      socket.onclose = () => {
+        setConnection(false);
+        if (!stopped) {
+          showMessage('Verbindung unterbrochen. Verbinde erneut ...', true);
+          reconnectTimer = setTimeout(connect, 2500);
+        }
+      };
+    }
+
+    field.addEventListener('change', commitPower);
+    field.addEventListener('keydown', event => {
+      if (event.key === 'Enter') { event.preventDefault(); field.blur(); }
+    });
+    range.addEventListener('input', () => { setInput(Number(range.value)); showMessage(''); });
+    range.addEventListener('change', commitPower);
+    byId('decreasePower').addEventListener('click', () => stepPower(-0.1));
+    byId('increasePower').addEventListener('click', () => stepPower(0.1));
+    window.addEventListener('pagehide', () => {
+      stopped = true;
+      clearTimeout(reconnectTimer);
+      clearTimeout(staleTimer);
+      sendMessage({ action: 'unsubscribeUpdates', page: 'app' });
+      if (socket) socket.close();
+    });
+    window.addEventListener('pageshow', event => {
+      if (event.persisted) { stopped = false; setConnection(false); connect(); }
+    });
+    setConnection(false);
+    connect();
+  </script>
+
+
+</body></html>

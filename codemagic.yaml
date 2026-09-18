@@ -1,0 +1,61 @@
+# yaml-language-server: $schema=https://codemagic.io/codemagic-schema.json
+# Manual starts only. See mobile_app/CODEMAGIC.md before the first build.
+workflows:
+  ios-check:
+    name: InnoCharge iOS - Build check (unsigned)
+    instance_type: mac_mini_m2
+    max_build_duration: 30
+    working_directory: mobile_app
+    environment: &ios_environment
+      flutter: 3.44.5
+      xcode: latest
+    scripts:
+      - &dependencies
+        name: Install Flutter dependencies
+        script: flutter pub get --enforce-lockfile
+      - &analyze
+        name: Analyze Flutter code
+        script: flutter analyze --no-pub
+      - &tests
+        name: Run Flutter tests
+        script: flutter test --no-pub
+      - name: Build iOS without signing
+        script: flutter build ios --release --no-codesign --no-pub
+    artifacts:
+      - /tmp/xcodebuild_logs/*.log
+
+  ios-testflight:
+    name: InnoCharge iOS - Upload for TestFlight
+    instance_type: mac_mini_m2
+    max_build_duration: 30
+    working_directory: mobile_app
+    integrations:
+      app_store_connect: InnoCharge Codemagic
+    environment:
+      <<: *ios_environment
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: at.innocharge.innochargeMobile
+    scripts:
+      - *dependencies
+      - *analyze
+      - *tests
+      - name: Apply Apple signing profiles
+        script: xcode-project use-profiles
+      - name: Build signed IPA
+        script: |
+          set -euo pipefail
+          : "${PROJECT_BUILD_NUMBER:?Codemagic project build number is required}"
+          flutter build ipa --release --no-pub \
+            --build-number="$PROJECT_BUILD_NUMBER" \
+            --export-options-plist="$HOME/export_options.plist"
+    artifacts:
+      - mobile_app/build/ios/ipa/*.ipa
+      - mobile_app/build/ios/archive/*.xcarchive/dSYMs/**/*.dSYM
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      app_store_connect:
+        auth: integration
+        # Upload only. Select internal testers manually in App Store Connect.
+        submit_to_testflight: false
+        submit_to_app_store: false

@@ -32,6 +32,19 @@ migrate_working_dir/
 .pub/
 /build/
 /coverage/
+/android/build/
+
+# Signing credentials must never enter the repository, including for cloud builds.
+key.properties
+*.jks
+*.keystore
+*.p8
+*.p12
+*.pfx
+*.pem
+*.mobileprovision
+.env
+.env.*
 
 # Symbolication related
 app.*.symbols
