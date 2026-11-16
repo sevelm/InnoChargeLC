@@ -16,6 +16,13 @@ String buildDemoDocument(Directory app) {
     ..clear()
     ..add(logo);
   document.querySelectorAll('link').forEach((element) => element.remove());
+  for (final script in document.querySelectorAll('script[src]')) {
+    final name = script.attributes.remove('src');
+    if (name != 'app_sessions.js') {
+      throw StateError('Unexpected demo script: $name');
+    }
+    script.text = File('${data.path}/$name').readAsStringSync();
+  }
   document.head!.nodes.insert(
     0,
     Element.tag('meta')

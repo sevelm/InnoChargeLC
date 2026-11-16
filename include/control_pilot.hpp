@@ -1,11 +1,17 @@
 
 
 void init_control_pilot(void);
+extern volatile float maxChargingPower;  // 0.1 kW
+float get_max_charging_power(void);
+bool set_max_charging_power(float power);
 void set_charging_current(float current);
 void set_charging_power(float power);
 bool set_charging_current_external(float current);
 bool set_charging_power_external(float power);
 bool charging_authorization_allows_charging(void);
+// Latched until reboot. Also inhibits charging when RFID is not required.
+bool charging_reset_in_progress(void);
+void prepare_charging_reset(void);
 void apply_charging_authorization(void);
 void turn_on_cp_relay(void);
 void turn_on_cp_relay_only(void);

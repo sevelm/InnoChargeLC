@@ -1,13 +1,17 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:file_saver/file_saver.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import 'device_discovery.dart';
+import 'session_report.dart';
 
 const background = Color(0xff263238);
 const surface = Color(0xff37474f);
@@ -415,6 +419,7 @@ class _WebAppPageState extends State<WebAppPage> with WidgetsBindingObserver {
   bool _failed = false;
   bool _menuInPage = false;
   int _progress = 0;
+  bool _exporting = false;
 
   Future<void> _fullscreen(bool enabled) async {
     if (Platform.isAndroid) {
@@ -472,6 +477,9 @@ class _WebAppPageState extends State<WebAppPage> with WidgetsBindingObserver {
                 setState(
                   () => _menuInPage = result == true || result == 'true',
                 );
+                await _controller.runJavaScript(
+                  "window.InnoChargeExportSupported = true; window.dispatchEvent(new Event('innocharge-export-ready'));",
+                );
               }
             } on PlatformException {
               // Keep the native menu available if the page is no longer loaded.
@@ -488,7 +496,11 @@ class _WebAppPageState extends State<WebAppPage> with WidgetsBindingObserver {
       _controller.addJavaScriptChannel(
         'InnoChargeHost',
         onMessageReceived: (message) {
-          if (message.message == 'menu' && mounted) _showMenu();
+          if (message.message == 'menu' && mounted) {
+            _showMenu();
+          } else if (mounted && !_exporting) {
+            unawaited(_handleExport(message.message));
+          }
         },
       );
     }
@@ -508,6 +520,120 @@ class _WebAppPageState extends State<WebAppPage> with WidgetsBindingObserver {
       }
     } catch (_) {
       if (mounted) setState(() => _failed = true);
+    }
+  }
+
+  Future<void> _exportResult(String message, {bool ok = true}) async {
+    if (!mounted) return;
+    final result = jsonEncode({'ok': ok, 'message': message});
+    try {
+      await _controller.runJavaScript(
+        "window.dispatchEvent(new CustomEvent('innocharge-export-result', {detail: $result}));",
+      );
+    } on PlatformException {
+      // The user may already have left this wallbox page.
+    }
+  }
+
+  Future<void> _handleExport(String message) async {
+    if (message.length > 5 * 1024 * 1024) {
+      await _exportResult('The report is too large.', ok: false);
+      return;
+    }
+    _exporting = true;
+    try {
+      final json = jsonDecode(message);
+      if (json is! Map<String, dynamic> || json['action'] != 'exportSessions') {
+        return;
+      }
+      final report = SessionReport.fromJson(json);
+      if (!mounted) return;
+      final action = await showModalBottomSheet<String>(
+        context: context,
+        builder: (context) => SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const ListTile(title: Text('Export sessions')),
+              for (final entry in const {
+                'save-pdf': 'Save PDF',
+                'share-pdf': 'Share PDF / Send by email',
+                'save-csv': 'Save CSV',
+                'share-csv': 'Share CSV / Send by email',
+              }.entries)
+                ListTile(
+                  leading: Icon(
+                    entry.key.startsWith('save') ? Icons.download : Icons.share,
+                  ),
+                  title: Text(entry.value),
+                  onTap: () => Navigator.pop(context, entry.key),
+                ),
+            ],
+          ),
+        ),
+      );
+      if (action == null) {
+        await _exportResult('Export cancelled.');
+        return;
+      }
+      final isPdf = action.endsWith('pdf');
+      final bytes = isPdf
+          ? await report.pdf(
+              logo: (await rootBundle.load(
+                'assets/generated/innocharge.png',
+              )).buffer.asUint8List(),
+              regularFont: await rootBundle.load(
+                'assets/fonts/roboto-regular.ttf',
+              ),
+              boldFont: await rootBundle.load('assets/fonts/roboto-bold.ttf'),
+            )
+          : report.csv();
+      if (!mounted) return;
+      final stamp = DateTime.now()
+          .toIso8601String()
+          .replaceAll(RegExp(r'[^0-9]'), '')
+          .substring(0, 14);
+      final name = 'InnoCharge_sessions_$stamp';
+      final extension = isPdf ? 'pdf' : 'csv';
+      if (action.startsWith('save')) {
+        final saved = await FileSaver.instance.saveAs(
+          name: name,
+          bytes: bytes,
+          fileExtension: extension,
+          mimeType: isPdf ? MimeType.pdf : MimeType.csv,
+        );
+        await _exportResult(
+          saved == null ? 'Export cancelled.' : 'File saved.',
+        );
+      } else {
+        final box = context.findRenderObject() as RenderBox?;
+        final origin = box != null && box.hasSize
+            ? box.localToGlobal(Offset.zero) & box.size
+            : null;
+        await SharePlus.instance.share(
+          ShareParams(
+            files: [
+              XFile.fromData(
+                bytes,
+                mimeType: isPdf ? 'application/pdf' : 'text/csv',
+              ),
+            ],
+            fileNameOverrides: ['$name.$extension'],
+            subject: 'InnoCharge Sessions - ${report.wallboxName}',
+            sharePositionOrigin: origin,
+          ),
+        );
+        await _exportResult('Share dialog closed.');
+      }
+    } on FormatException {
+      await _exportResult('Invalid session data. Please Refresh.', ok: false);
+    } catch (_) {
+      await _exportResult(
+        'Could not export the file. Please try again.',
+        ok: false,
+      );
+    } finally {
+      _exporting = false;
     }
   }
 

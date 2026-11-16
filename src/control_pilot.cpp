@@ -2,6 +2,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "control_pilot.hpp"
 #include "AA_globals.h"
 #include "ledEffect.hpp"
@@ -13,6 +14,7 @@
 #include "proximity_pilot.hpp"
 #include "ethernet_manager.hpp"
 #include "A_Task_MB.hpp"
+#include <atomic>
 
 #define cp_gen_pin 8            //AO generate PWM
 #define cp_feedback_pin 37      //DI
@@ -39,15 +41,61 @@
 
 bool cp_relay_status = false; 
 static portMUX_TYPE cp_adc_spinlock = portMUX_INITIALIZER_UNLOCKED;
+static portMUX_TYPE cp_output_spinlock = portMUX_INITIALIZER_UNLOCKED;
+static bool cpCutoffActive = false; // held until explicitly switched on again
+static esp_timer_handle_t cpOffTimer = nullptr;
 
 static constexpr float PHASE_SWITCH_TO_1P_DEFAULT = 37.0f;   // 3.7 kW
 static constexpr float PHASE_SWITCH_TO_3P_DEFAULT = 42.0f;   // 4.2 kW
 
+volatile float maxChargingPower = 220.0f;  // 0.1 kW
+
+float get_max_charging_power()
+{
+    const float dipLimit = (digitalRead(DIP_SWITCH_1) == LOW) ? 220.0f : 110.0f;
+    return fminf(dipLimit, fmaxf(42.0f, maxChargingPower));
+}
+
+bool set_max_charging_power(float power)
+{
+    const float dipLimit = (digitalRead(DIP_SWITCH_1) == LOW) ? 220.0f : 110.0f;
+    if (!isfinite(power) || power < 42.0f || power > dipLimit) return false;
+    if (fabsf(power - roundf(power)) > 0.001f) return false;
+    power = roundf(power);
+    if (power != maxChargingPower || !preferences.isKey("maxChargePower")) {
+        if (preferences.putFloat("maxChargePower", power) != sizeof(float)) return false;
+        maxChargingPower = power;
+    }
+
+    // Apply a lower cap to active PWM immediately, preserving lower setpoints
+    // and standby/fault states. Future commands use the cap through both paths.
+    const float duty = get_control_pilot_duty();
+    if (duty > 0.0f && duty <= 85.0f && get_power_from_duty(duty) > get_max_charging_power()) {
+        if (gridProtectionStatus == 1) set_control_pilot_100();
+        else set_charging_current(get_current_from_duty(duty));
+    }
+    return true;
+}
+
 const char *CP_LOG = "Control Pilot: ";
+
+static std::atomic<bool> chargingResetInProgress{false};
+
+bool charging_reset_in_progress()
+{
+    return chargingResetInProgress.load();
+}
+
+void prepare_charging_reset()
+{
+    chargingResetInProgress.store(true);
+    apply_charging_authorization();
+}
 
 bool charging_authorization_allows_charging()
 {
-    return !rfidAuth.required || chargeAuthSession.authorized;
+    return !charging_reset_in_progress() &&
+        (!rfidAuth.required || chargeAuthSession.authorized);
 }
 
 void apply_charging_authorization()
@@ -68,6 +116,7 @@ void apply_charging_authorization()
     * @return void
 */
 void init_control_pilot(void){
+    maxChargingPower = preferences.getFloat("maxChargePower", 220.0f);
     ledcSetup(cp_control_channel, cp_gen_freq, 12);
     ledcWrite(cp_control_channel, 4095); // 100% Standby vor Pin-Attach
     setCpDuty = 100.0f;
@@ -76,6 +125,27 @@ void init_control_pilot(void){
     pinMode(cp_feedback_pin, INPUT);
     pinMode(cp_relay_pin, OUTPUT);
     digitalWrite(cp_relay_pin, LOW);
+
+    if (cpOffTimer == nullptr) {
+        const esp_timer_create_args_t args = {
+            .callback = [](void* arg) {
+                (void)arg;
+                portENTER_CRITICAL(&cp_output_spinlock);
+                // A cancelled callback must not cut off a newly armed pause.
+                if (cpCutoffActive && !esp_timer_is_active(cpOffTimer)) {
+                    digitalWrite(cp_relay_pin, LOW);
+                    cp_relay_status = false;
+                }
+                portEXIT_CRITICAL(&cp_output_spinlock);
+            },
+            .arg = nullptr,
+            .dispatch_method = ESP_TIMER_TASK,
+            .name = "cpOff"
+        };
+        if (esp_timer_create(&args, &cpOffTimer) != ESP_OK) {
+            ESP_LOGE(CP_LOG, "Cannot create CP cutoff timer");
+        }
+    }
 
     adc1_config_width(ADC_WIDTH_BIT_12);
     adc1_config_channel_atten(cp_measure_channel, ADC_ATTEN_DB_11);
@@ -131,9 +201,12 @@ int16_t get_cp_state_int() {
     * @return void
 */
 void set_control_pilot_duty(float duty){
+    portENTER_CRITICAL(&cp_output_spinlock);
+    if (cpCutoffActive) duty = 100.0f;
     setCpDuty = duty;
     int i_duty = 4095 * duty / 100;
     ledcWrite(cp_control_channel, i_duty);
+    portEXIT_CRITICAL(&cp_output_spinlock);
 }
 
 void set_control_pilot_duty_Error(float duty){
@@ -167,6 +240,9 @@ float get_duty_from_current(float current) {
     if (current > ((digitalRead(DIP_SWITCH_1) == LOW) ? 32.0f : 16.0f)) {
         current = (digitalRead(DIP_SWITCH_1) == LOW) ? 32.0f : 16.0f;
     }
+    const float maxCurrent = get_max_charging_power() * 100.0f /
+                             (threePhaseActive ? 692.0f : 230.0f);
+    current = fminf(current, maxCurrent);
     // Calculate duty cycle based on current
     return (current <= 51) ? current / 0.6 : current / 2.5 + 64;
 }
@@ -264,7 +340,7 @@ void set_charging_power(float power){
         return;
     }
 
-    float powerToApply = power;
+    float powerToApply = fminf(power, get_max_charging_power());
     if (gridReconnectRampActive && powerToApply > gridReconnectRampLimitPower) {
         powerToApply = gridReconnectRampLimitPower;
     }
@@ -333,6 +409,9 @@ float get_current_from_duty(float duty) {
 
 */
 void turn_on_cp_relay(){
+    portENTER_CRITICAL(&cp_output_spinlock);
+    if (cpOffTimer != nullptr) esp_timer_stop(cpOffTimer);
+    cpCutoffActive = false;
     // Preserve an existing setpoint when the CP cutoff is released.
     // Use the DIP-dependent rated power only if no setpoint is available yet.
     const float powerToRestore = (g_setChargingPower_kW > 0.0f)
@@ -341,6 +420,7 @@ void turn_on_cp_relay(){
     set_charging_power(powerToRestore);
     digitalWrite(cp_relay_pin, HIGH);
     cp_relay_status = true;
+    portEXIT_CRITICAL(&cp_output_spinlock);
 }
 
 void turn_on_cp_relay_only(){
@@ -355,25 +435,18 @@ void turn_on_cp_relay_only(){
 
 */
 void turn_off_cp_relay(void) {
-    set_control_pilot_100(); // sofort pausieren
-    // one-shot timer, created once and reused
-    static esp_timer_handle_t t = NULL;
-    if (t == NULL) {
-        const esp_timer_create_args_t args = {
-            .callback = [](void* arg) {
-                (void)arg;
-                digitalWrite(cp_relay_pin, LOW);
-                cp_relay_status = false;
-            },
-            .arg = NULL,
-            .dispatch_method = ESP_TIMER_TASK,
-            .name = "cpOff"
-        };
-        esp_timer_create(&args, &t);
+    portENTER_CRITICAL(&cp_output_spinlock);
+    if (cpCutoffActive) {
+        portEXIT_CRITICAL(&cp_output_spinlock);
+        return; // repeated OFF commands must not postpone the cutoff
     }
-    // (re)start 1s delay; repeated calls restart the delay
-    esp_timer_stop(t);
-    esp_timer_start_once(t, 1000000); // 1,000,000 µs = 1 s
+    cpCutoffActive = true;
+    set_control_pilot_100(); // hold standby before opening the CP relay
+    const esp_err_t result = esp_timer_start_once(cpOffTimer, 1000000); // 1 s
+    portEXIT_CRITICAL(&cp_output_spinlock);
+    if (result != ESP_OK) {
+        ESP_LOGE(CP_LOG, "Cannot start CP cutoff timer; CP held in standby");
+    }
 }
 
 

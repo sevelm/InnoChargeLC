@@ -23,48 +23,65 @@
  * String objects and pointers owned by another task must never cross this
  * boundary.
  *
- * REQUIRED INPUTS FROM THE CHARGER (not connected in phase 1)
- * ----------------------------------------------------------
- * [ ] Debounced CP state / vehicle plugged
- * [ ] EV ready and EVSE ready state
- * [ ] Imported energy in Wh (monotonic transaction meter)
- * [ ] Present voltage, current, active power and frequency
- * [ ] Meter validity and OCPP fault information
- * [ ] RFID/idTag presented and local stop request
- * [ ] Local availability (maintenance / grid protection)
- * [ ] Reliable UTC time and network availability
+ * STATUS / METER INTEGRATION
+ * - The original local RFID session controls charging.
+ * - OCPP reads existing CP state and debounces status/error together (250 ms).
+ * - Modbus publishes one completed meter cycle; OCPP checks freshness/units.
+ * - OCPP grants/stops use the existing MB-owned authorization session.
+ * - Local RFID grants immediately; optional reporting never gates that grant.
+ * - Local/backend IDs and delivery states are stored in the existing session log.
+ * - Reboot: replay only a durably saved original Start, then close the returned ID.
+ * - Older ambiguous starts without an original payload still require review.
  *
- * REQUIRED OUTPUTS TO THE CHARGER (not consumed in phase 1)
+ * REMAINING / EXTENDED INPUT CONTRACT
+ * ----------------------------------------------------------
+ * [x] Debounced CP state / vehicle plugged
+ * [x] EV ready and EVSE ready state (read-only status mapping)
+ * [x] Imported energy in Wh and active import power in W
+ * [ ] Present voltage, current, active power and frequency
+ * [x] Meter validity and OCPP fault information
+ * [x] RFID authorization and backend stop through existing session functions
+ * [x] Backend availability gate (local RFID deliberately remains independent)
+ * [ ] Station-wide maintenance / grid-protection availability
+ * [x] Network availability and system UTC (connection test only)
+ *
+ * OUTPUTS TO THE CHARGER
  * --------------------------------------------------------
- * [ ] OCPP transaction authorization / permission to charge
+ * [x] OCPP authorization / stop commands consumed by MB (not a second CP gate)
  * [ ] Smart-Charging limit in A and/or W plus requested phase count
- * [ ] Remote reset request
+ * [x] Remote Soft/Hard reset: owner shutdown, durable session close, then reboot
  * [ ] UnlockConnector request and completion result
  * [ ] Firmware update request and progress result
  * [ ] Diagnostics upload request and progress result
  *
  * OWNER INTERFACES STILL REQUIRED FOR PRODUCTION
  * ------------------------------------------------
- * [ ] Charging-control-owned authorization gate. OCPP must not write the
- *     RFID globals directly or race the local authorization state.
+ * [x] Reuse existing authorization session; OCPP never writes RFID globals.
  * [ ] Charging-control-owned limit arbiter. The effective limit must be the
  *     safe minimum of hardware, grid, local, Modbus/DPL and OCPP limits.
- * [ ] Asynchronous reset, connector-lock, firmware and diagnostics services
+ * [x] Asynchronous reset preparation with owner feedback and storage/output checks
+ * [ ] Asynchronous connector-lock, firmware and diagnostics services
  *     with completion feedback. OCPP callbacks must never block.
  *
- * Until those owner interfaces exist, RemoteStart/RemoteStop,
- * ChangeAvailability, Smart Charging, UnlockConnector, Reset, UpdateFirmware
- * and GetDiagnostics must not be advertised as product-ready.
+ * RemoteStart/RemoteStop use the existing session with RFID required ON.
+ * ChangeAvailability gates NEW OCPP grants/reporting only (intentional local-use policy).
+ * ChangeConfiguration permits HeartbeatInterval / MeterValueSampleInterval
+ * and TransactionMessageAttempts / TransactionMessageRetryInterval
+ * and InnoChargeMaxChargingPowerKW (existing persisted station cap, not a profile).
+ * Smart Charging, UnlockConnector, UpdateFirmware
+ * and GetDiagnostics remain blocked.
  *
- * REQUIRED UI CONFIGURATION (UI MUST NOT be changed before its own plan)
+ * UI CONFIGURATION (connection-test UI implemented; production items open)
  * ----------------------------------------------------------------------
- * [ ] OCPP enabled
- * [ ] Backend WSS URL
- * [ ] Charge Point ID
- * [ ] Authorization key (write-only; never return it to the browser)
- * [ ] Security Profile 2 for production; Profile 0 only for local tests
- * [ ] Trusted CSMS CA certificate upload / replacement
- * [ ] Read-only connection, BootNotification, transaction and TLS status
+ * [x] OCPP enabled, persisted, with runtime stop/restart
+ * [x] Backend WSS URL
+ * [x] Charge Point ID and station identity
+ * [x] Authorization key (write-only UI; NVS is not encrypted)
+ * [x] Security Profile 2 transport; Profile 0 retained for explicit tests
+ * [x] Trusted CSMS CA certificate upload / replacement (NVS)
+ * [x] Connection / BootNotification / heartbeat status and bounded event log
+ * [x] TLS verification and device-time status
+ * [x] Runtime transaction status and persistent Sessions linkage / delivery states
  *
  * Production target
  * -----------------
@@ -74,7 +91,18 @@
  */
 
 constexpr uint8_t OCPP_CONNECTOR_ID = 1;
-constexpr uint32_t OCPP_INPUT_STALE_AFTER_MS = 5000;
+
+// One completed meter cycle. The lock protects only this small data copy,
+// never Modbus I/O, CP processing or the charging sequence.
+struct ocpp_meter_sample_t {
+    bool valid;
+    uint32_t capturedAtMs;
+    float importKWh;
+    float powerW;
+};
+extern portMUX_TYPE ocppMeterMux;
+extern ocpp_meter_sample_t ocppMeterSample;
+
 constexpr size_t OCPP_BACKEND_URL_MAX_LEN = 256;
 constexpr size_t OCPP_CHARGE_POINT_ID_MAX_LEN = 64;
 constexpr size_t OCPP_AUTH_KEY_MAX_LEN = 96;
@@ -90,36 +118,6 @@ constexpr size_t OCPP_TEXT_MAX_LEN = 96;
 enum class ocpp_security_profile_t : uint8_t {
     UnsecuredDevelopment = 0,
     TlsBasicAuthentication = 2,
-};
-
-enum class ocpp_cp_state_t : uint8_t {
-    Unknown = 0,
-    A_NotConnected,
-    B_Connected,
-    C_Charging,
-    D_VentilationRequired,
-    E_Error,
-    F_Fault,
-    Unavailable,
-};
-
-enum class ocpp_fault_code_t : uint8_t {
-    NoError = 0,
-    ConnectorLockFailure,
-    EVCommunicationError,
-    GroundFailure,
-    HighTemperature,
-    InternalError,
-    LocalListConflict,
-    OtherError,
-    OverCurrentFailure,
-    OverVoltage,
-    PowerMeterFailure,
-    PowerSwitchFailure,
-    ReaderFailure,
-    ResetFailure,
-    UnderVoltage,
-    WeakSignal,
 };
 
 enum class ocpp_stop_reason_t : uint8_t {
@@ -146,12 +144,13 @@ enum class ocpp_connection_state_t : uint8_t {
     Connecting,
     Connected,
     BootPending,
+    BootRejected,
     Ready,
     Faulted,
 };
 
 /*
- * Configuration is supplied by the future UI/persistence adapter. Calling
+ * Configuration is supplied by the UI/persistence adapter. Calling
  * ocpp_set_config() does not persist secrets. The authorization key must be
  * stored write-only and protected by the platform security configuration.
  */
@@ -170,45 +169,6 @@ struct ocpp_config_t {
     char chargePointSerialNumber[OCPP_SERIAL_MAX_LEN + 1];
     char firmwareVersion[OCPP_FIRMWARE_VERSION_MAX_LEN + 1];
 };
-
-/*
- * One coherent charger snapshot. Units are deliberately explicit because
- * OCPP distinguishes W/kW, A, V and Wh/kWh.
- */
-struct ocpp_evse_inputs_t {
-    uint32_t sampleSequence;
-    uint32_t capturedAtMs; // monotonic millis(); freshness / publisher watchdog
-    int64_t timestampUtc;  // whole seconds since Unix epoch, never milliseconds
-
-    bool networkReady;
-    bool utcTimeValid;
-
-    ocpp_cp_state_t cpState;
-    bool vehiclePlugged;
-    bool evReady;
-    bool evseReady;
-    bool locallyOperative;
-
-    bool meterValid;
-    int64_t energyImportWh;
-    int64_t energyExportWh;
-    float activePowerTotalW;
-    float activePowerW[3];
-    float voltageV[3];
-    float currentA[3];
-    float frequencyHz;
-    uint8_t activePhases;
-
-    /* Multiple simultaneous faults are represented as enum-bit positions. */
-    uint32_t activeFaultMask;
-    char vendorErrorCode[32];
-};
-
-constexpr uint32_t ocpp_fault_bit(ocpp_fault_code_t fault) {
-    return fault == ocpp_fault_code_t::NoError
-               ? 0U
-               : (1UL << static_cast<uint8_t>(fault));
-}
 
 /*
  * Result that charging control must eventually consume. `authoritative` is
@@ -235,11 +195,14 @@ struct ocpp_charge_control_t {
 
 enum class ocpp_command_type_t : uint8_t {
     None = 0,
+    GrantSession,
+    StopSession,
     Reset,
     UnlockConnector,
     ChangeAvailability,
     FirmwareUpdate,
     DiagnosticsUpload,
+    SetMaxChargingPower,
 };
 
 /*
@@ -251,8 +214,17 @@ struct ocpp_command_t {
     uint32_t requestId;
     uint8_t connectorId;
 
+    // Existing MB-owned authorization session; no CP/relay commands.
+    uint32_t sessionStamp;
+    uint32_t expiresAtMs;
+    bool remoteStart;
+    bool vehicleConnectedAtRequest;
+    char idTag[OCPP_ID_TAG_MAX_LEN + 1];
+    char stopReason[16];
+
     bool hardReset;
     bool operative;
+    uint16_t maxChargingPowerTenths; // existing station cap, 0.1 kW
 
     /* UpdateFirmware: UTC seconds; -1 means that an optional value is absent. */
     int64_t retrieveDateUtc;
@@ -278,6 +250,8 @@ enum class ocpp_command_result_t : uint8_t {
 /* Charger -> OCPP completion feedback for asynchronous remote commands. */
 struct ocpp_command_feedback_t {
     uint32_t requestId;
+    ocpp_command_type_t type;
+    uint32_t sessionStamp;
     ocpp_command_result_t result;
     uint8_t progressPercent;
     char detail[64];
@@ -285,12 +259,19 @@ struct ocpp_command_feedback_t {
 
 /* Read-only values intended for diagnostics and the future UI. */
 struct ocpp_runtime_status_t {
+    bool enabled; // configured ON, also while disconnected / waiting for boot
+    bool rfidRejected; // explicit Authorize.conf rejection, never timeout/offline
+    char rfidRejectedTag[OCPP_ID_TAG_MAX_LEN + 1];
     bool taskInitialized;
     bool stackInitialized;
     bool networkReady;
     bool timeValid;
     bool websocketConnected;
+    bool tlsVerified;
     bool bootAccepted;
+    bool backendOperative = true; // Operator policy: OCPP grants blocked, local RFID stays independent.
+    uint32_t heartbeatIntervalSeconds;
+    uint32_t meterIntervalSeconds;
     bool transactionActive;
     bool transactionRunning;
     bool chargePermitted;
@@ -300,17 +281,27 @@ struct ocpp_runtime_status_t {
     uint32_t droppedInputEvents;
     uint32_t droppedCommands;
     uint32_t lastMessageTimeMs;
+    uint32_t heartbeatConfirmations;
+    uint32_t lastHeartbeatTimeMs;
     char lastError[OCPP_TEXT_MAX_LEN];
 };
 
-/* FreeRTOS task entry. It will be started from main only in a later phase. */
+/* Starts the controller with saved settings (disabled on first boot).
+ * A disabled controller waits without polling; stack/socket are released. */
+bool ocpp_start();
+void ocpp_local_settings_begin();
+bool ocpp_local_rfid_enabled();
+bool ocpp_backend_accepts_cards();
+void ocpp_prepare_session(uint32_t stamp, const char* normalizedTag, bool backendAuthorized);
+
+/* FreeRTOS task entry. All MicroOCPP functions run in this task. */
 void A_Task_OCPP(void* pvParameter);
 
-/* Configuration hand-off. Safe before or after task creation; not persistent. */
+/* Asynchronous configuration hand-off. The OCPP task alone stops/restarts
+ * the stack. Persistence and the imported CA are handled by the Web adapter. */
 bool ocpp_set_config(const ocpp_config_t& config);
 
-/* Charger -> OCPP inputs. Each call copies its argument. */
-bool ocpp_publish_evse_inputs(const ocpp_evse_inputs_t& inputs);
+/* New RFID requests need an online, boot-accepted backend. Local grants do not. */
 bool ocpp_present_id_tag(const char* idTag,
                          TickType_t timeoutTicks = pdMS_TO_TICKS(10));
 bool ocpp_request_local_stop(ocpp_stop_reason_t reason,
@@ -319,7 +310,7 @@ bool ocpp_report_command_feedback(
     const ocpp_command_feedback_t& feedback,
     TickType_t timeoutTicks = pdMS_TO_TICKS(10));
 
-/* OCPP -> charger outputs. These remain unconsumed until the adapter is wired. */
+/* OCPP -> MB commands. Charge-control snapshot is reserved; never a CP gate. */
 bool ocpp_get_charge_control(ocpp_charge_control_t* outControl);
 bool ocpp_take_command(ocpp_command_t* outCommand,
                        TickType_t timeoutTicks = 0);

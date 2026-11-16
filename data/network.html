@@ -201,6 +201,35 @@
         </div>
       </div>
     </div>
+
+    <div id="wifi-ap-section" style="display: none;">
+      <h1>WiFi Access Point</h1>
+      <div class="container">
+        <h2>Settings</h2>
+        <table>
+          <tr>
+            <td>WiFi Network:</td>
+            <td>InnoCharge</td>
+          </tr>
+          <tr>
+            <td><label for="wifi_ap_enable">Always ON:</label></td>
+            <td>
+              <label class="switch">
+                <input type="checkbox" id="wifi_ap_enable">
+                <span class="slider"></span>
+              </label>
+            </td>
+          </tr>
+          <tr id="wifi_ap_password_row" style="display: none;">
+            <td><label for="wifi_ap_password">WiFi Password:</label></td>
+            <td><input type="password" id="wifi_ap_password" minlength="8" maxlength="63" autocomplete="new-password" disabled></td>
+          </tr>
+          <tr>
+            <td colspan="2"><button id="wifi_ap_btn_save">Save</button></td>
+          </tr>
+        </table>
+      </div>
+    </div>
   </div>
 
   <!-- Include common.js and network.js at the end of the body -->

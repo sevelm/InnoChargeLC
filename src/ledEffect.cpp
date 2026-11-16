@@ -4,6 +4,8 @@
 #include <NeoPixelAnimator.h>
 #include "AA_globals.h"
 #include "ledEffect.hpp"
+#include "A_Task_OCPP.hpp"
+#include "rfid_db.hpp"
 
 unsigned long prevMillisLED       = 0;    // we use the "millis()" command for time reference and this will output an unsigned long
 static constexpr int LED_ANIM_STEP = 4;  // 20 ms task preserves the former 5 ms animation speed
@@ -39,6 +41,9 @@ enum rfid_led_state_t {
   RfidLed_Waiting,
   RfidLed_Authorized,
   RfidLed_Denied,
+  RfidLed_NoNetwork,
+  RfidLed_NoBackend,
+  RfidLed_BackendDisabled,
 };
 
 static bool isEmptyRfidTagForLed(const String& idTag)
@@ -48,24 +53,46 @@ static bool isEmptyRfidTagForLed(const String& idTag)
 
 static rfid_led_state_t currentRfidLedState()
 {
- 
-  if (!rfidAuth.required) return RfidLed_None;
-  if (!isEmptyRfidTagForLed(rfid.uidStr) && !chargeAuthSession.authorized) return RfidLed_Denied;
-  if (chargeAuthSession.authorized) return RfidLed_Authorized;
-  return RfidLed_Waiting;
+    if (!rfidAuth.required) return RfidLed_None;
+    if (chargeAuthSession.authorized) return RfidLed_Authorized;
+    if (isEmptyRfidTagForLed(rfid.uidStr)) return RfidLed_Waiting;
 
- 
- 
-  // if (!rfidAuth.required) return RfidLed_None;
- // if (chargeAuthSession.authorized) return RfidLed_Authorized;
- // if (!isEmptyRfidTagForLed(rfid.uidStr) && !chargeAuthSession.authorized) return RfidLed_Denied;
- // if (isEmptyRfidTagForLed(rfid.uidStr)) return RfidLed_Waiting;
-  //return rfidAuth.authorized ? RfidLed_Authorized : RfidLed_Denied;
-  
-  
-  //return rfidAuth.authorized ? RfidLed_Authorized : RfidLed_Denied;
+    ocpp_runtime_status_t ocpp{};
+    if (!ocpp_get_runtime_status(&ocpp)) return RfidLed_Waiting;
+    if (!ocpp.enabled) return RfidLed_Denied;
+    // Nur bei vorgehaltener Karte ohne lokale Freigabe; State-Grundfarbe bleibt erhalten.
+    if (ocpp_local_rfid_enabled() && rfid_db_is_authorized(rfid.uidStr)) return RfidLed_Waiting;
+    // Magenta-Rot: bewusste Backend-Sperre. Lokale Karten bleiben davon unberuehrt.
+    if (!ocpp.backendOperative) return RfidLed_BackendDisabled;
+    if (!ocpp.networkReady) return RfidLed_NoNetwork; // Orange: kein Netzwerk/IP
+    if (!ocpp.websocketConnected) return RfidLed_NoBackend; // Magenta: WebSocket getrennt
+
+    return ocpp.rfidRejected &&
+        rfid_db_normalize_id_tag(rfid.uidStr) == ocpp.rfidRejectedTag
+        ? RfidLed_Denied : RfidLed_Waiting;
 }
-//chargeAuthSession.authorized
+// Nur Anzeige: Rot, Orange, Magenta und Magenta-Rot laufen nach Entfernen der Karte 5 s nach.
+// Neue Karte oder Freigabe beendet den alten Nachlauf sofort; keine Aenderung der Ladefreigabe.
+static rfid_led_state_t withErrorAfterglow(rfid_led_state_t current, bool newCard)
+{
+    static rfid_led_state_t savedError = RfidLed_None;
+    static uint32_t lastErrorMs = 0;
+    const uint32_t now = millis();
+
+    if (newCard || current == RfidLed_Authorized || current == RfidLed_None) {
+        savedError = RfidLed_None;
+    }
+    if (current == RfidLed_Denied || current == RfidLed_NoNetwork ||
+        current == RfidLed_NoBackend || current == RfidLed_BackendDisabled) {
+        savedError = current;
+        lastErrorMs = now;
+    }
+    if (savedError != RfidLed_None && uint32_t(now - lastErrorMs) < 5000U) {
+        return savedError;
+    }
+    savedError = RfidLed_None;
+    return current;
+}
 
 
 ///////////////// LED Funktionen
@@ -492,6 +519,8 @@ static void waitingWaveEffect(RgbColor baseColor, RgbColor waveColor) {
   const char* label = "Charging paused";
   const uint32_t wave = packedColor(waveColor);
   if (wave == 0xff0000) label = "Authorization denied";
+  else if (wave == 0xff5000) label = "Authorization unavailable - no network/IP";
+  else if (wave == 0xff00ff) label = "Authorization unavailable - no OCPP connection";
   else if (wave == 0x00ff00) {
     label = currentCpState.state == StateA_NotConnected ? "Authorized - connect vehicle" : "Ready to charge";
   } else if (currentRfidLedState() == RfidLed_Waiting) {
@@ -558,23 +587,35 @@ void callLedEffect()
         return;                               // alles Weitere �berspringen
     }
 
+    static String previousRfidTag;
+    const bool newCard = !isEmptyRfidTagForLed(rfid.uidStr) &&
+                        previousRfidTag != rfid.uidStr;
+    previousRfidTag = rfid.uidStr;
+    const auto displayedRfidState = withErrorAfterglow(currentRfidLedState(), newCard);
+
 /* ---------- Normaler CP-Status-Animator ------------------------ */
     switch (currentCpState.state) {
         case StateA_NotConnected:
-            switch (currentRfidLedState()) {
+            switch (displayedRfidState) {
               case RfidLed_None:       stateA();               break;
               case RfidLed_Waiting:    stateA();               break;
               case RfidLed_Authorized: waitingWaveEffect(RgbColor(0, 0, 255), RgbColor(0, 255, 0)); break; // Blau mit gruener Welle
               case RfidLed_Denied:     waitingWaveEffect(RgbColor(0, 0, 255), RgbColor(255, 0, 0)); break; // Blau mit roter Welle
+              case RfidLed_NoNetwork:  waitingWaveEffect(RgbColor(0, 0, 255), RgbColor(255, 80, 0)); break; // Blau mit orangefarbener Welle: network=0
+              case RfidLed_NoBackend:  waitingWaveEffect(RgbColor(0, 0, 255), RgbColor(255, 0, 255)); break; // Blau mit Magenta-Welle: network=1, ws=0
+              case RfidLed_BackendDisabled: waitingWaveEffect(RgbColor(0, 0, 255), RgbColor(255, 0, 96)); break; // Magenta-Rot: OCPP gesperrt; 5 s Nachlauf
               default:                 stateA();               break;
           }
         break;
         case StateB_Connected:
-          switch (currentRfidLedState()) {
+          switch (displayedRfidState) {
               case RfidLed_None:       stateB();              break;
               case RfidLed_Waiting:    waitingWaveEffect(RgbColor(255, 195, 0), RgbColor(255, 255, 255)); break; // Orange mit weisser Welle
               case RfidLed_Authorized: waitingWaveEffect(RgbColor(255, 195, 0), RgbColor(0, 255, 0)); break; // Orange mit gruener Welle
               case RfidLed_Denied:     waitingWaveEffect(RgbColor(255, 195, 0), RgbColor(255, 0, 0)); break; // Orange mit roter Welle
+              case RfidLed_NoNetwork:  waitingWaveEffect(RgbColor(255, 195, 0), RgbColor(255, 80, 0)); break; // Gelb mit orangefarbener Welle: network=0
+              case RfidLed_NoBackend:  waitingWaveEffect(RgbColor(255, 195, 0), RgbColor(255, 0, 255)); break; // Gelb mit Magenta-Welle: network=1, ws=0
+              case RfidLed_BackendDisabled: waitingWaveEffect(RgbColor(255, 195, 0), RgbColor(255, 0, 96)); break; // Magenta-Rot: OCPP gesperrt; lokale Karten bleiben aktiv
               default:                 stateB();              break;
           }
         break;
@@ -582,9 +623,12 @@ void callLedEffect()
           if (setCpDuty > 0.0f && setCpDuty < 100.0f) {
               stateC();
           } else {
-              switch (currentRfidLedState()) {
+              switch (displayedRfidState) {
                   case RfidLed_Authorized: waitingWaveEffect(RgbColor(255, 195, 0), RgbColor(0, 255, 0)); break; // Orange mit gruener Welle
                   case RfidLed_Denied:     waitingWaveEffect(RgbColor(255, 195, 0), RgbColor(255, 0, 0)); break; // Orange mit roter Welle
+                  case RfidLed_NoNetwork:  waitingWaveEffect(RgbColor(255, 195, 0), RgbColor(255, 80, 0)); break; // Gelb mit orangefarbener Welle: network=0
+                  case RfidLed_NoBackend:  waitingWaveEffect(RgbColor(255, 195, 0), RgbColor(255, 0, 255)); break; // Gelb mit Magenta-Welle: network=1, ws=0
+                  case RfidLed_BackendDisabled: waitingWaveEffect(RgbColor(255, 195, 0), RgbColor(255, 0, 96)); break; // Magenta-Rot: OCPP gesperrt
                   default:                 waitingWaveEffect(RgbColor(255, 195, 0), RgbColor(255, 255, 255)); break; //Orange mit Weisser Welle
               }
           }
@@ -593,9 +637,12 @@ void callLedEffect()
           if (setCpDuty > 0.0f && setCpDuty < 100.0f) {
               stateC();
           } else {
-              switch (currentRfidLedState()) {
+              switch (displayedRfidState) {
                   case RfidLed_Authorized: waitingWaveEffect(RgbColor(255, 195, 0), RgbColor(0, 255, 0)); break; // Orange mit gruener Welle
                   case RfidLed_Denied:     waitingWaveEffect(RgbColor(255, 195, 0), RgbColor(255, 0, 0)); break; // Orange mit roter Welle
+                  case RfidLed_NoNetwork:  waitingWaveEffect(RgbColor(255, 195, 0), RgbColor(255, 80, 0)); break; // Gelb mit orangefarbener Welle: network=0
+                  case RfidLed_NoBackend:  waitingWaveEffect(RgbColor(255, 195, 0), RgbColor(255, 0, 255)); break; // Gelb mit Magenta-Welle: network=1, ws=0
+                  case RfidLed_BackendDisabled: waitingWaveEffect(RgbColor(255, 195, 0), RgbColor(255, 0, 96)); break; // Magenta-Rot: OCPP gesperrt
                   default:                 waitingWaveEffect(RgbColor(255, 195, 0), RgbColor(255, 255, 255)); break; //Orange mit Weisser Welle
               }
           }
@@ -605,11 +652,14 @@ void callLedEffect()
         case StateCustom_CpRelayOff:    stateSwOff();        break;
         case StateCustom_InvalidValue:  mbColor(9);          break;
         case StateCustom_DutyCycle_100:
-          switch (currentRfidLedState()) {
+          switch (displayedRfidState) {
             //  case RfidLed_None:       stateB();              break;
            //   case RfidLed_Waiting:    waitingWaveEffect(RgbColor(255, 195, 0), RgbColor(255, 255, 255)); break; // Orange mit weisser Welle
               case RfidLed_Authorized: waitingWaveEffect(RgbColor(255, 195, 0), RgbColor(0, 255, 0)); break; // Orange mit gruener Welle
               case RfidLed_Denied:     waitingWaveEffect(RgbColor(255, 195, 0), RgbColor(255, 0, 0)); break; // Orange mit roter Welle
+              case RfidLed_NoNetwork:  waitingWaveEffect(RgbColor(255, 195, 0), RgbColor(255, 80, 0)); break; // Gelb mit orangefarbener Welle: network=0
+              case RfidLed_NoBackend:  waitingWaveEffect(RgbColor(255, 195, 0), RgbColor(255, 0, 255)); break; // Gelb mit Magenta-Welle: network=1, ws=0
+              case RfidLed_BackendDisabled: waitingWaveEffect(RgbColor(255, 195, 0), RgbColor(255, 0, 96)); break; // Magenta-Rot: OCPP gesperrt
               default:                 waitingWaveEffect(RgbColor(255, 195, 0), RgbColor(255, 255, 255)); break; //Orange mit Weißer Welle
           }
         break;          

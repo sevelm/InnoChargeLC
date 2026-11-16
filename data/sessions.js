@@ -55,7 +55,7 @@ function renderSessions(sessions) {
 
   if (!sortedSessions.length) {
     const tr = document.createElement('tr');
-    tr.innerHTML = '<td colspan="9">No charge sessions recorded.</td>';
+    tr.innerHTML = '<td colspan="13">No charge sessions recorded.</td>';
     tbody.appendChild(tr);
     updateSortHeaders();
     updateSessionPaging();
@@ -66,6 +66,10 @@ function renderSessions(sessions) {
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${escapeHtml(session.transactionId || '')}</td>
+      <td>${escapeHtml(session.ocppTransactionId ?? '')}</td>
+      <td>${escapeHtml(session.ocppIdTag || '')}</td>
+      <td>${escapeHtml(ocppDeliveryState(session.ocppStart))}</td>
+      <td>${escapeHtml(ocppDeliveryState(session.ocppStop))}</td>
       <td>${session.active ? '<span class="status ready">active</span>' : 'closed'}</td>
       <td>${escapeHtml(session.idTag || '')}</td>
       <td>${escapeHtml(session.userName || '')}</td>
@@ -87,6 +91,11 @@ function requestSessionPage(offset) {
   Socket.send(JSON.stringify({ action: 'requestSessionPage', offset: safeOffset }));
 }
 
+function ocppDeliveryState(state) {
+  return ({none: '-', pending: 'Pending', sent: 'Unconfirmed', confirmed: 'Confirmed',
+    uncertain: 'Review', failed: 'Failed'})[state] || '-';
+}
+
 function updateSessionPaging() {
   const info = document.getElementById('sessionPageInfo');
   const prev = document.getElementById('sessionPrevPage');
@@ -97,6 +106,8 @@ function updateSessionPaging() {
   const from = sessionPageTotal && visible ? sessionPageOffset + 1 : 0;
   const to = sessionPageTotal && visible ? Math.min(sessionPageOffset + visible, sessionPageTotal) : 0;
   info.textContent = from + '-' + to + ' of ' + sessionPageTotal;
+  if (lastSessionsPayload.sessionStorageFull) info.textContent += ' · Storage full';
+  else if (lastSessionsPayload.sessionStoragePending) info.textContent += ' · Storage pending';
 
   prev.disabled = sessionPageOffset <= 0;
   next.disabled = sessionPageOffset + sessionPageLimit >= sessionPageTotal;
@@ -122,6 +133,7 @@ function filteredSessionList(sessions) {
     if (!text) return true;
     const haystack = [
       session.transactionId,
+      session.ocppTransactionId, session.ocppIdTag, session.ocppStart, session.ocppStop,
       session.active ? 'active' : 'closed',
       session.idTag,
       session.userName,
@@ -138,6 +150,7 @@ function filteredSessionList(sessions) {
 function sortedSessionList(sessions) {
   const numericKeys = [
     'transactionId',
+    'ocppTransactionId',
     'startTimeEpoch',
     'stopTimeEpoch',
     'durationSeconds',
@@ -181,7 +194,7 @@ function setupSorting() {
         sessionSort.direction = sessionSort.direction === 'asc' ? 'desc' : 'asc';
       } else {
         sessionSort.key = key;
-        sessionSort.direction = ['transactionId', 'startTimeEpoch', 'stopTimeEpoch', 'durationSeconds', 'energyWh'].includes(key) ? 'desc' : 'asc';
+        sessionSort.direction = ['transactionId', 'ocppTransactionId', 'startTimeEpoch', 'stopTimeEpoch', 'durationSeconds', 'energyWh'].includes(key) ? 'desc' : 'asc';
       }
       renderSessions(lastSessionsPayload.sessions || []);
     });
@@ -373,7 +386,7 @@ function csvEscape(value) {
 
 function exportSessionsCsv() {
   const header = [
-    'Transaction',
+    'Local ID', 'OCPP ID', 'OCPP tag', 'OCPP start', 'OCPP stop',
     'Status',
     'ID Tag',
     'User',
@@ -388,6 +401,8 @@ function exportSessionsCsv() {
   for (const session of currentRenderedSessions || []) {
     lines.push([
       session.transactionId || '',
+      session.ocppTransactionId ?? '', session.ocppIdTag || '',
+      ocppDeliveryState(session.ocppStart), ocppDeliveryState(session.ocppStop),
       session.active ? 'active' : 'closed',
       session.idTag || '',
       session.userName || '',
@@ -416,6 +431,10 @@ async function exportSessionsPdf() {
   const rows = sessions.map(session => `
     <tr>
       <td>${escapeHtml(session.transactionId || '')}</td>
+      <td>${escapeHtml(session.ocppTransactionId ?? '')}</td>
+      <td>${escapeHtml(session.ocppIdTag || '')}</td>
+      <td>${escapeHtml(ocppDeliveryState(session.ocppStart))}</td>
+      <td>${escapeHtml(ocppDeliveryState(session.ocppStop))}</td>
       <td>${session.active ? 'active' : 'closed'}</td>
       <td>${escapeHtml(session.idTag || '')}</td>
       <td>${escapeHtml(session.userName || '')}</td>
@@ -475,7 +494,7 @@ async function exportSessionsPdf() {
   <table>
     <thead>
       <tr>
-        <th>Transaction</th>
+        <th>Local ID</th><th>OCPP ID</th><th>OCPP tag</th><th>OCPP start</th><th>OCPP stop</th>
         <th>Status</th>
         <th>ID Tag</th>
         <th>User</th>

@@ -3,17 +3,17 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>InnoCharge RFID</title>
+  <title>InnoCharge RFID / OCPP</title>
   <link rel="stylesheet" type="text/css" href="styles.css">
 </head>
 <body>
   <div class="sidebar" id="navbar"></div>
 
   <div class="main-content">
-    <h1>RFID</h1>
+    <h1>RFID / OCPP</h1>
 
     <div class="container">
-      <h2>RFID-Reader</h2>
+      <h2>General RFID authorization (local / OCPP)</h2>
       <div class="rfid-status-box">
         <h3>Current Tag Status</h3>
         <table>
@@ -83,8 +83,36 @@
       </div>
 	    </div>
 
-    <div class="container">
-      <h2>RFID User</h2>
+    <div class="container" id="localRfidPanel">
+      <h2>Local RFID authorization</h2>
+      <fieldset id="localRfidSettings" disabled>
+        <table class="ocpp-settings-table">
+          <tr>
+            <td><label for="localRfidEnabled">Enable local RFID:</label></td>
+            <td><label class="switch"><input type="checkbox" id="localRfidEnabled"><span class="slider"></span></label></td>
+          </tr>
+        </table>
+        <div id="localRfidOcppOptions" hidden>
+          <table class="ocpp-settings-table">
+            <tr>
+              <td><label for="localRfidOcppReporting">OCPP reporting:</label></td>
+              <td><select id="localRfidOcppReporting">
+                <option value="actual">Actual card ID</option>
+                <option value="custom">Custom ID</option>
+                <option value="none">Do not report</option>
+              </select></td>
+            </tr>
+            <tr><td></td><td><p class="ocpp-help" id="localRfidReportingHint"></p></td></tr>
+            <tr id="localRfidCustomIdRow" hidden>
+              <td><label for="localRfidCustomOcppId">Custom OCPP ID:</label></td>
+              <td><input type="text" id="localRfidCustomOcppId" maxlength="20" autocomplete="off" spellcheck="false" aria-describedby="localRfidCustomIdHelp"><p class="ocpp-help" id="localRfidCustomIdHelp">1-20 ASCII characters, no spaces. Auto-saved.</p></td>
+            </tr>
+          </table>
+        </div>
+      </fieldset>
+      <p id="localRfidSaveStatus" class="ocpp-feedback" role="status" aria-live="polite"></p>
+      <div class="rfid-status-box">
+      <h3>Local RFID User</h3>
       <table>
         <tr>
           <td><label for="idTag">ID Tag:</label></td>
@@ -96,7 +124,7 @@
           <td><input type="text" id="userName" placeholder="Max"></td>
         </tr>
         <tr>
-          <td><label for="userEnabled">Enabled:</label></td>
+          <td><label for="userEnabled">Local authorization:</label></td>
           <td><input type="checkbox" id="userEnabled" checked style="accent-color:#6ca0dc; transform:scale(1.3); cursor:pointer;"></td>
         </tr>
         <tr>
@@ -112,16 +140,15 @@
           <td><button id="saveRfidUser">Save</button></td>
         </tr>
       </table>
-    </div>
-
-    <div class="container">
-      <h2>RFID Database</h2>
+      </div>
+      <div class="rfid-status-box">
+      <h3>Local RFID Database</h3>
       <table class="rfid-table">
         <thead>
           <tr>
             <th>ID Tag</th>
             <th>Name</th>
-            <th>Enabled</th>
+            <th>Local authorization</th>
             <th>Max. charge time</th>
             <th>Note</th>
             <th></th>
@@ -129,10 +156,61 @@
         </thead>
         <tbody id="rfidUsers"></tbody>
       </table>
+      </div>
+    </div>
+
+    <div class="container" id="ocppPanel">
+      <h2>OCPP-RFID-authorization</h2>
+      <table class="ocpp-settings-table">
+        <tr>
+          <td><label for="ocppEnabled">Enable OCPP:</label></td>
+          <td><label class="switch"><input type="checkbox" id="ocppEnabled" disabled><span class="slider"></span></label></td>
+        </tr>
+      </table>
+      <p class="ocpp-help">Local cards first. OCPP authorization and remote start/stop use the same session. End OCPP sessions before changing settings.</p>
+      <form id="ocppSettingsForm">
+        <fieldset id="ocppSettingsFields" disabled>
+          <table class="ocpp-settings-table">
+            <tr><td><label for="ocppSecurityProfile">Security profile:</label></td><td><select id="ocppSecurityProfile"><option value="0">0 - Unencrypted WS</option><option value="2">2 - Verified TLS + Basic authentication</option></select></td></tr>
+            <tr><td><label for="ocppBackendUrl">Backend base URL:</label></td><td><input type="text" id="ocppBackendUrl" maxlength="255" required spellcheck="false" placeholder="wss://ocpp.example.com/ocpp"></td></tr>
+            <tr><td></td><td class="ocpp-help">Without Charge Point ID; it is appended automatically. Profile 0: ws://; Profile 2: wss://. No automatic fallback to unencrypted WS.</td></tr>
+            <tr><td><label for="ocppChargePointId">Charge Point ID:</label></td><td><input type="text" id="ocppChargePointId" maxlength="63" pattern="[A-Za-z0-9._~*\-]+" title="Use letters, digits or - . _ ~ *. Must match the Charge Point ID in the backend." required spellcheck="false"></td></tr>
+            <tr class="ocpp-tls-field"><td><label for="ocppPassword">Basic Auth password:</label></td><td><input type="password" id="ocppPassword" minlength="16" maxlength="44" autocomplete="new-password" placeholder="Leave empty to keep saved password"><p class="ocpp-help">Username = Charge Point ID. Password: 16-20 printable ASCII characters, no spaces. For a binary key, enter hex: followed by 32-40 hexadecimal digits. <span id="ocppPasswordStatus">-</span></p></td></tr>
+            <tr class="ocpp-tls-field"><td><label for="ocppCaFile">Trusted backend CA:</label></td><td><input type="file" id="ocppCaFile" accept=".pem,.crt"><p class="ocpp-help">Public CA certificates in PEM format, max. 4096 bytes / 3 certificates. Never upload a private key. No file selected = keep saved CA. Stored in NVS; retained across UI updates.</p><p class="ocpp-help" id="ocppCaSelection">No replacement selected.</p></td></tr>
+            <tr><td><label for="ocppVendor">Manufacturer:</label></td><td><input type="text" id="ocppVendor" maxlength="20" required></td></tr>
+            <tr><td><label for="ocppModel">Model:</label></td><td><input type="text" id="ocppModel" maxlength="20" required></td></tr>
+            <tr><td><label for="ocppSerialNumber">Serial number (optional):</label></td><td><input type="text" id="ocppSerialNumber" maxlength="25"></td></tr>
+            <tr><td>Firmware:</td><td id="ocppFirmware">-</td></tr>
+            <tr><td></td><td><button type="submit" id="ocppSave">Save settings</button></td></tr>
+          </table>
+        </fieldset>
+      </form>
+      <p class="ocpp-help">Saving changed settings reconnects OCPP if enabled. Unsaved input fields are not applied by the Enable switch.</p>
+      <p id="ocppSaveStatus" class="ocpp-feedback" role="status" aria-live="polite">Loading OCPP settings...</p>
+
+      <h3>Connection status</h3>
+      <table>
+        <tr><td>Controller:</td><td id="ocppControllerStatus">-</td></tr>
+        <tr><td>WebSocket / Boot:</td><td id="ocppConnectionStatus">-</td></tr>
+        <tr><td>Transport security:</td><td id="ocppTlsStatus">-</td></tr>
+        <tr><td>Device time:</td><td id="ocppTimeStatus">-</td></tr>
+        <tr><td>Saved CA:</td><td id="ocppCaStatus">-</td></tr>
+        <tr><td>Confirmed heartbeats:</td><td id="ocppHeartbeats">-</td></tr>
+        <tr><td>Reconnects:</td><td id="ocppReconnects">-</td></tr>
+        <tr><td>Last error:</td><td id="ocppError">-</td></tr>
+      </table>
+      <div class="ocpp-actions">
+        <button type="button" id="ocppRefresh" disabled>Refresh status / log</button>
+        <button type="button" id="ocppClearLog" disabled>Clear log</button>
+        <label><input type="checkbox" id="ocppAutoRefresh"> Auto refresh (3 s)</label>
+      </div>
+      <p class="ocpp-help">Auto refresh is OFF initially. Log: last 32 events in RAM, timestamps since device start. No persistent log writes.</p>
+      <div class="mail-log"><strong>OCPP log</strong><pre id="ocppLog" aria-label="OCPP log">No log loaded.</pre></div>
     </div>
   </div>
 
   <script src="common.js"></script>
   <script src="rfid.js"></script>
+  <script src="ocpp.js"></script>
 </body>
 </html>

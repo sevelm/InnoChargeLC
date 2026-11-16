@@ -223,6 +223,17 @@ table .slider:before {
     white-space: nowrap;
 }
 
+.max-charging-power-hint {
+    margin-top: 4px;
+    max-width: 260px;
+    font-size: 13px;
+    color: #607d8b;
+}
+
+.max-charging-power-hint:empty {
+    display: none;
+}
+
 .delayed-phase-switching-cell input[type="number"] {
     width: 110px;
     min-width: 110px;
@@ -907,4 +918,24 @@ button.compact-button {
 .login-box button {
     width: 100%;
     margin-top: 6px;
+}
+
+/* RFID / OCPP: keep the existing page and log styling. */
+#ocppSettingsFields, #localRfidSettings { border: 0; padding: 0; margin: 0; min-width: 0; }
+#localRfidPanel .rfid-status-box { min-width: 0; max-width: none; overflow-x: auto; }
+#localRfidSettings [hidden] { display: none; }
+.ocpp-settings-table { width: 100%; table-layout: fixed; }
+.ocpp-settings-table td:first-child { width: 215px; }
+.ocpp-settings-table input[type="text"],
+.ocpp-settings-table input[type="password"],
+.ocpp-settings-table select { width: 100%; max-width: 660px; box-sizing: border-box; }
+#ocppPanel .ocpp-tls-field[hidden] { display: none; }
+.ocpp-help { color: #555; font-size: 13px; line-height: 1.5; }
+.ocpp-feedback { min-height: 20px; overflow-wrap: anywhere; }
+#localRfidSaveStatus:empty { display: none; }
+.ocpp-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 12px; }
+#ocppPanel td { overflow-wrap: anywhere; }
+#ocppLog { min-height: 150px; max-height: 340px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+    .ocpp-settings-table td { display: block; width: auto !important; }
 }

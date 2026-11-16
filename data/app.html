@@ -89,6 +89,37 @@
     .range-labels { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
     .message { min-height: 20px; margin: 8px 0 0; color: var(--muted); font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
     .message.error { color: #edaaaa; }
+    main { padding-bottom: calc(88px + env(safe-area-inset-bottom)); }
+    .app-tabs { position: fixed; z-index: 5; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 520px; display: flex; padding: 6px 16px max(8px, env(safe-area-inset-bottom)); background: var(--background); border-top: 1px solid var(--line); }
+    .app-tabs button { flex: 1; min-height: 48px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; }
+    .app-tabs button[aria-selected="true"] { background: var(--surface); color: var(--text); box-shadow: inset 0 -2px var(--blue); }
+    .session-heading { display: flex; align-items: center; gap: 8px; margin-top: 18px; }
+    .session-heading h2 { flex: 1; margin: 0; font-size: 22px; }
+    .session-button, .session-fields input, .session-fields select, .session-sort select { min-width: 0; min-height: 44px; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; background: var(--surface); color: var(--text); font: inherit; }
+    .session-button { cursor: pointer; }
+    .session-sort { display: flex; gap: 8px; align-items: center; margin: 16px 0 12px; }
+    .session-sort label { color: var(--muted); font-size: 14px; }
+    .session-sort select { flex: 1; }
+    .session-filters { padding: 12px; border: 1px solid var(--line); border-radius: 6px; }
+    .session-filters summary { cursor: pointer; color: var(--muted); }
+    .session-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; margin-top: 14px; }
+    .session-fields label { display: grid; min-width: 0; gap: 6px; color: var(--muted); font-size: 13px; }
+    .session-fields input, .session-fields select { width: 100%; font-size: 14px; }
+    .session-count { color: var(--muted); font-size: 13px; margin: 14px 0; }
+    .session-card { margin: 0 0 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); overflow: hidden; }
+    .session-card summary { list-style: none; padding: 14px; cursor: pointer; }
+    .session-card summary::-webkit-details-marker { display: none; }
+    .session-card-title { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; font-size: 14px; }
+    .session-card-title time { overflow-wrap: anywhere; }
+    .session-badge { flex-shrink: 0; font-size: 11px; padding: 3px 7px; border: 1px solid var(--line); border-radius: 10px; color: var(--muted); }
+    .session-badge.active { color: #75b995; border-color: #75b995; }
+    .session-metrics { display: flex; gap: 16px; align-items: baseline; margin-top: 12px; font-size: 14px; color: var(--muted); }
+    .session-metrics strong { color: var(--text); font-size: 21px; }
+    .session-user { margin: 8px 0 0; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+    .session-details { padding: 0 14px 14px; }
+    .session-details .status-row { gap: 8px; padding: 8px 0; }
+    .session-details dt, .session-details dd { font-size: 12px; }
+    #sessionLoadMore { width: 100%; }
     @media (max-width: 360px) {
       .brand svg { width: 148px; }
       .stepper { grid-template-columns: 48px minmax(0, 1fr) 48px; gap: 8px; }
@@ -117,6 +148,7 @@
       <button type="button" id="nativeMenu" title="Wallbox-Men&uuml;" aria-label="Wallbox-Men&uuml;" hidden>&#8942;</button>
     </header>
     <h1 id="wallboxName" hidden></h1>
+    <div id="chargingPage" role="tabpanel" aria-labelledby="chargingTab">
     <section class="power-display" aria-label="Charging status and power setpoint">
       <div class="power-ring" id="powerRing" data-animation="solid">
         <svg class="ring-graphic" viewBox="0 0 240 240" aria-hidden="true">
@@ -149,7 +181,38 @@
       <div class="range-labels" aria-hidden="true"><span>0</span><span id="maxPowerLabel">&ndash; kW</span></div>
     </fieldset>
     <p class="message" id="message" role="status" aria-live="polite"></p>
+    </div>
+    <section id="sessionsPage" role="tabpanel" aria-labelledby="sessionsTab" hidden>
+      <div class="session-heading">
+        <h2>Sessions</h2>
+        <button type="button" class="session-button" id="sessionRefresh">Refresh</button>
+        <button type="button" class="session-button" id="sessionExport" disabled>Export</button>
+      </div>
+      <div class="session-sort">
+        <label for="appSessionSort">Sort by</label>
+        <select id="appSessionSort"><option value="startTimeEpoch">Date</option><option value="energyWh">Energy</option><option value="durationSeconds">Duration</option><option value="userName">User</option><option value="active">Status</option></select>
+        <button type="button" class="session-button" id="sessionSortDirection" aria-label="Sort descending">↓</button>
+      </div>
+      <details class="session-filters">
+        <summary>Filter</summary>
+        <div class="session-fields">
+          <label>From<input type="date" id="appSessionFrom"></label>
+          <label>To<input type="date" id="appSessionTo"></label>
+          <label>User / RFID<input type="search" id="appSessionUser" placeholder="All users" autocomplete="off"></label>
+          <label>Status<select id="appSessionStatus"><option value="all">All</option><option value="active">Active</option><option value="closed">Closed</option></select></label>
+        </div>
+        <button type="button" class="session-button" id="sessionClearFilters" style="margin-top: 12px;">Clear filters</button>
+      </details>
+      <p class="session-count" id="appSessionCount" role="status">Open Sessions to load the history.</p>
+      <div id="appSessionList"></div>
+      <button type="button" class="session-button" id="sessionLoadMore" hidden>Load more</button>
+      <p class="message" id="appSessionMessage" role="status" aria-live="polite"></p>
+    </section>
   </main>
+  <nav class="app-tabs" role="tablist" aria-label="Wallbox views">
+    <button type="button" id="chargingTab" role="tab" aria-selected="true" aria-controls="chargingPage">Charging</button>
+    <button type="button" id="sessionsTab" role="tab" aria-selected="false" aria-controls="sessionsPage">Sessions</button>
+  </nav>
   <script>
     'use strict';
     const APP_CLIENT = 'innocharge-public-app';
@@ -236,6 +299,7 @@
     function setConnection(online) {
       byId('connection').textContent = online ? 'online' : 'offline';
       byId('connection').classList.toggle('online', online);
+      window.dispatchEvent(new CustomEvent('innocharge-connection', { detail: online }));
       if (!online) {
         clearTimeout(staleTimer);
         clearStatus();
@@ -354,7 +418,14 @@
         sendMessage({ action: 'subscribeUpdates', page: 'app' });
       };
       socket.onmessage = event => {
-        try { processUpdate(JSON.parse(event.data)); }
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'appSessions') {
+            window.dispatchEvent(new CustomEvent('innocharge-sessions-page', { detail: data }));
+          } else {
+            processUpdate(data);
+          }
+        }
         catch (_) { showMessage('Ungueltige Daten empfangen.', true); }
       };
       socket.onerror = () => {
@@ -391,5 +462,6 @@
     setConnection(false);
     connect();
   </script>
+  <script src="app_sessions.js"></script>
 </body>
 </html>

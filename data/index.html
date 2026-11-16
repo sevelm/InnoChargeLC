@@ -101,6 +101,14 @@
               <input type="number" id="setChargePower" name="setChargePower">
             </td>
           </tr>
+          <tr>
+            <td><label for="setMaxChargingPower">Max. Charging Power (kW):</label></td>
+            <td>
+              <input type="number" id="setMaxChargingPower" name="setMaxChargingPower" min="4.2" step="0.1" required disabled aria-describedby="maxChargingPowerCurrent maxChargingPowerStatus">
+              <div id="maxChargingPowerStatus" class="max-charging-power-hint" role="status"></div>
+            </td>
+            <td><span id="maxChargingPowerCurrent" aria-live="polite"></span></td>
+          </tr>
         </table>
       </div>
 

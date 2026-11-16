@@ -22,6 +22,7 @@
 
 #include "A_Task_CP.hpp"
 #include "A_Task_MB.hpp"
+#include "A_Task_OCPP.hpp"
 #include "wifi_manager.hpp"
 #include "rfid_db.hpp"
 #include "time_service.hpp"
@@ -161,12 +162,17 @@ void setup() {
 
     // Schalter zum aktivieren und deaktivieren
     wifiEnabled = preferences.getBool("wifiEnable", false);
+    const bool wifiApEnabled = preferences.getBool("wifiApEnable", false);
+    const String wifiApPassword = preferences.getString("wifiApPass", "");
+    const char* apPassword = wifiApEnabled && wifi_ap_password_valid(wifiApPassword.c_str())
+                                 ? wifiApPassword.c_str() : nullptr;
     if (rescueMode) {
-        wifi_start_rescue_ap();
+        wifi_start_ap();
     } else if (wifiEnabled) {
-        wifi_init_sta(&wifi_sta_config);
+        wifi_init_sta(&wifi_sta_config, apPassword);
     } else {
         preferences.putBool("wifiStatic", false);
+        if (apPassword) wifi_start_ap(apPassword);
     }
     // RFID or Energymeter Enable
     sdm.enable  = preferences.getBool("emEnable",  false);
@@ -181,6 +187,29 @@ void setup() {
     rfid.led = preferences.getUChar("rfidLed", 0);
     if (rfid.led > 2) rfid.led = 0;
     rfidAuth.required = preferences.getBool("rfidAuthReq", false);
+    // One-time rollback compatibility: keep the latest RFID-required setting.
+    // The removed OCPP authorization layer stored it in a separate namespace.
+    if (!preferences.getBool("rfidAuthLegacy", false)) {
+        struct PreviousAuthSettings {
+            uint32_t magic;
+            bool required;
+            bool local;
+            uint8_t mode;
+            char custom[21];
+        } saved{};
+        static_assert(sizeof(PreviousAuthSettings) == 28, "Previous authorization settings layout");
+        Preferences previous;
+        if (previous.begin("chargeAuth", true)) {
+            if (previous.getBytesLength("settings") == sizeof(saved) &&
+                previous.getBytes("settings", &saved, sizeof(saved)) == sizeof(saved) &&
+                saved.magic == 0x43415501) {
+                rfidAuth.required = saved.required;
+                if (preferences.putBool("rfidAuthReq", saved.required) == sizeof(bool))
+                    preferences.putBool("rfidAuthLegacy", true);
+            }
+            previous.end();
+        }
+    }
     rfidAuth.authorized = false;
     chargeAuthSession.authorized = false;
     chargeAuthSession.vehicleWasConnected = false;
@@ -193,12 +222,17 @@ void setup() {
     chargeAuthSession.maxChargeMinutes = 0;
 
 // ######################### Create Task and Start
+    ocpp_local_settings_begin();
 
     xTaskCreatePinnedToCore(A_Task_CP, "Controlpilot Task", 8192, NULL, 1, NULL, 0);
     xTaskCreatePinnedToCore(A_Task_MB, "Task_Modbus_Operation", 8192, NULL, 10, NULL, 0);   
     xTaskCreatePinnedToCore(A_Task_Web, "Task_Web_Operation", 8192, NULL, 5, NULL, 1);
     xTaskCreatePinnedToCore(A_Task_Low, "Task_Low_Operation", 8192, NULL, 1, NULL, 1);
     xTaskCreatePinnedToCore(A_Task_LED, "Task_LED", 3072, NULL, 1, NULL, 1);
+
+    if (!rescueMode) {
+        ocpp_start();
+    }
 
     // Scan WiFi networks
    // wifi_scan();

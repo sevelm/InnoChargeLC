@@ -312,7 +312,7 @@ static void wifi_sta_event_handler(void *arg, esp_event_base_t event_base, int32
 }
 
 // Start WiFi and create network interface
-void wifi_init_sta(wifi_sta_start_config_t *config) {
+void wifi_init_sta(wifi_sta_start_config_t *config, const char* apPassword) {
     ESP_LOGI(WIFI_TAG, "Initializing WiFi station");
 
     if (!wifi_retry_timer) {
@@ -431,12 +431,32 @@ void wifi_init_sta(wifi_sta_start_config_t *config) {
 
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
-    ESP_ERROR_CHECK(esp_wifi_start());
+    if (apPassword) {
+        wifi_start_ap(apPassword);
+    } else {
+        ESP_ERROR_CHECK(esp_wifi_start());
+    }
 }
 
-void wifi_start_rescue_ap()
+bool wifi_ap_password_valid(const char* password)
 {
-    ESP_LOGI(WIFI_TAG, "Starting rescue WiFi AP");
+    if (!password) return false;
+    const size_t length = strlen(password);
+    if (length < 8 || length > 63) return false;
+    for (size_t i = 0; i < length; ++i) {
+        if (password[i] < 32 || password[i] > 126) return false;
+    }
+    return true;
+}
+
+void wifi_start_ap(const char* password)
+{
+    // Only the DIP rescue mode starts an open AP; permanent mode requires a password.
+    if (password && !wifi_ap_password_valid(password)) {
+        ESP_LOGE(WIFI_TAG, "Invalid access point password; AP not started");
+        return;
+    }
+    ESP_LOGI(WIFI_TAG, "Starting %s WiFi AP", password ? "protected" : "rescue");
 
     if (!esp_netif_get_handle_from_ifkey("WIFI_AP_DEF")) {
         esp_netif_t* apNetif = esp_netif_create_default_wifi_ap();
@@ -449,21 +469,33 @@ void wifi_start_rescue_ap()
         ESP_ERROR_CHECK(esp_netif_dhcps_start(apNetif));
     }
 
-    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    esp_err_t err = esp_wifi_init(&cfg);
-    if (err != ESP_OK && err != ESP_ERR_WIFI_INIT_STATE) {
+    wifi_mode_t mode = WIFI_MODE_NULL;
+    esp_err_t err = esp_wifi_get_mode(&mode);
+    if (err == ESP_ERR_WIFI_NOT_INIT) {
+        wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+        ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+    } else {
         ESP_ERROR_CHECK(err);
     }
 
     wifi_config_t ap_config = {};
     strcpy((char*)ap_config.ap.ssid, "InnoCharge");
     ap_config.ap.ssid_len = strlen("InnoCharge");
+    ap_config.ap.ssid_hidden = 0;
     ap_config.ap.channel = 1;
+    ap_config.ap.beacon_interval = 100;
     ap_config.ap.max_connection = 4;
-    ap_config.ap.authmode = WIFI_AUTH_OPEN;
+    ap_config.ap.authmode = password ? WIFI_AUTH_WPA2_PSK : WIFI_AUTH_OPEN;
+    if (password) {
+        strcpy((char*)ap_config.ap.password, password);
+        ap_config.ap.pairwise_cipher = WIFI_CIPHER_TYPE_CCMP;
+    }
 
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
+    // Keep the station interface off unless a router connection was explicitly enabled.
+    const bool stationEnabled = mode == WIFI_MODE_STA || mode == WIFI_MODE_APSTA;
+    ESP_ERROR_CHECK(esp_wifi_set_mode(stationEnabled ? WIFI_MODE_APSTA : WIFI_MODE_AP));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap_config));
+    ESP_ERROR_CHECK(esp_wifi_set_bandwidth(WIFI_IF_AP, WIFI_BW_HT20));
     ESP_ERROR_CHECK(esp_wifi_start());
 }
 

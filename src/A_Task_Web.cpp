@@ -30,6 +30,8 @@
 #include "dynamic_power_limit.hpp"
 #include "grid_protection.hpp"
 #include "cp_diagnostic_log.hpp"
+#include "ocpp_ui.hpp"
+#include "A_Task_OCPP.hpp"
 #include "esp_wifi.h"
 
 #include "esp_timer.h"
@@ -71,6 +73,8 @@ OtaStatus otaUi{};
 SemaphoreHandle_t g_wsSubsMutex;   // schützt subscribedClients
 static std::vector<uint8_t> g_pendingNetworkOnce;
 static std::set<uint8_t> g_gridSettingsUnlockedClients;
+// Jeder neu abonnierende Tab bekommt einmal Daten, auch wenn sie unveraendert sind.
+static std::set<uint8_t> g_wsInitialUpdateClients;
 
 std::map<uint8_t, std::string> subscribedClients;    // Client number with page
 
@@ -83,6 +87,7 @@ static constexpr size_t SESSION_PAGE_LIMIT = 100;
 static volatile bool g_rebootRequested = false;
 static volatile bool g_sessionImportPending = false;
 static volatile size_t g_sessionPageOffset = 0;
+static bool g_sessionsRefreshRequested = false;
 static constexpr const char* GRID_SETTINGS_PIN = "2026";
 static constexpr const char* GRID_PROFILE_KEY = "gridProfile";
 static constexpr const char* GRID_NOMINAL_VOLTAGE_KEY = "gridNomVolt";
@@ -333,7 +338,8 @@ static bool websocket_public_app_allowed(JsonDocument& doc) {
         return doc["page"].is<const char*>() && strcmp(doc["page"].as<const char*>(), "app") == 0;
     }
 
-    return strcmp(action, "setChargeParameters") == 0 && doc.containsKey("power");
+    return (strcmp(action, "setChargeParameters") == 0 && doc.containsKey("power")) ||
+        strcmp(action, "requestAppSessions") == 0;
 }
 
 static String build_grid_settings_json() {
@@ -400,6 +406,7 @@ void webSocketEvent(byte num, WStype_t type, uint8_t * payload, size_t length) {
 	        case WStype_DISCONNECTED:
 	            if (xSemaphoreTake(g_wsSubsMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
 	                subscribedClients.erase(num);
+	                g_wsInitialUpdateClients.erase(num);
 	                g_gridSettingsUnlockedClients.erase(num);
 	                xSemaphoreGive(g_wsSubsMutex);
 	            }
@@ -430,6 +437,24 @@ void webSocketEvent(byte num, WStype_t type, uint8_t * payload, size_t length) {
                         return;
                     }
 
+                    // Per-request paging keeps app readers independent of the configuration page.
+                    if (strcmp(action, "requestAppSessions") == 0) {
+                        JsonDocument reply;
+                        const bool valid = doc["offset"].is<uint32_t>() && doc["requestId"].is<uint32_t>();
+                        if (valid) {
+                            deserializeJson(reply, charge_session_log_to_json_page(doc["offset"].as<uint32_t>(), 20, true));
+                            reply["wallboxName"] = preferences.getString("wallboxName", "InnoCharge");
+                        }
+                        reply["type"] = "appSessions";
+                        reply["requestId"] = doc["requestId"] | 0U;
+                        reply["ok"] = valid;
+                        if (!valid) reply["message"] = "Invalid session page request.";
+                        String out;
+                        serializeJson(reply, out);
+                        webSocket.sendTXT(num, out);
+                        return;
+                    }
+
                 // NEU: One-Shot Network-Info anfordern (kein Subscribe)
                     if (strcmp(action, "requestNetworkInfo") == 0) {
                         if (xSemaphoreTake(g_wsSubsMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
@@ -443,19 +468,76 @@ void webSocketEvent(byte num, WStype_t type, uint8_t * payload, size_t length) {
                         return; // hier nichts weiter tun
                     }
 
+                    if (strcmp(action, "saveWifiApSettings") == 0) {
+                        bool ok = false;
+                        const char* message = "Invalid access point settings.";
+                        if (!rescueMode && !preferences.getBool("wifiApEnable", false)) {
+                            message = "Access point settings are only available in rescue mode.";
+                        } else if (doc["enabled"].is<bool>() && doc["password"].is<const char*>()) {
+                            const bool enabled = doc["enabled"].as<bool>();
+                            const JsonString suppliedPassword = doc["password"].as<JsonString>();
+                            String password = suppliedPassword.c_str();
+                            if (password.length() == 0) password = preferences.getString("wifiApPass", "");
+                            if (enabled && (suppliedPassword.size() != strlen(suppliedPassword.c_str()) ||
+                                            !wifi_ap_password_valid(password.c_str()))) {
+                                message = "WiFi password must contain 8 to 63 characters (letters, numbers or symbols).";
+                            } else {
+                                ok = !enabled || preferences.putString("wifiApPass", password) == password.length();
+                                if (ok) ok = preferences.putBool("wifiApEnable", enabled) == sizeof(bool);
+                                message = ok ? "Saved" : "Failed to save access point settings.";
+                            }
+                        }
+                        JsonDocument reply;
+                        reply["type"] = "wifiApSaved";
+                        reply["ok"] = ok;
+                        reply["message"] = message;
+                        String out;
+                        serializeJson(reply, out);
+                        webSocket.sendTXT(num, out);
+                        if (ok) g_rebootRequested = true;
+                        return;
+                    }
+
                     if (strcmp(action, "subscribeUpdates") == 0) {
                         const char* page = doc["page"];
                         if (xSemaphoreTake(g_wsSubsMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
                             subscribedClients[num] = std::string(page);
+                            g_wsInitialUpdateClients.insert(num);
+                            if (strcmp(page, "sessions") == 0) {
+                                g_sessionsRefreshRequested = true;
+                            }
                             xSemaphoreGive(g_wsSubsMutex);
                         }
 	                  //      ESP_LOGI(WEB_TAG, "Client %u subscribed to updates", num);
                     } else if (strcmp(action, "unsubscribeUpdates") == 0) {
                         if (xSemaphoreTake(g_wsSubsMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
                             subscribedClients.erase(num);
+                            g_wsInitialUpdateClients.erase(num);
                             xSemaphoreGive(g_wsSubsMutex);
                         }
                   //      ESP_LOGI(WEB_TAG, "Client %u unsubscribed from updates", num);
+                    } else if (strcmp(action, "getOcppState") == 0) {
+                        String out = ocpp_ui_state(doc["includeLog"] | false);
+                        webSocket.sendTXT(num, out);
+                    } else if (strcmp(action, "clearOcppLog") == 0) {
+                        ocpp_ui_clear_log();
+                        String out = ocpp_ui_state(true);
+                        webSocket.sendTXT(num, out);
+                    } else if (strcmp(action, "saveOcppSettings") == 0 ||
+                               strcmp(action, "setOcppEnabled") == 0) {
+                        String error;
+                        bool ok = ocpp_ui_save(doc["settings"].as<JsonObjectConst>(),
+                                              strcmp(action, "setOcppEnabled") == 0, error);
+                        JsonDocument reply;
+                        reply["type"] = "ocppSaved";
+                        reply["action"] = action;
+                        reply["ok"] = ok;
+                        reply["message"] = ok ? "Saved. Controller applies the settings." : error;
+                        String out;
+                        serializeJson(reply, out);
+                        webSocket.sendTXT(num, out);
+                        out = ocpp_ui_state(true);
+                        webSocket.sendTXT(num, out);
                     } else if (strcmp(action, "startCpDiagnosticLog") == 0) {
                         cp_diagnostic_log_start();
                         send_cp_diagnostic_log(num);
@@ -476,6 +558,17 @@ void webSocketEvent(byte num, WStype_t type, uint8_t * payload, size_t length) {
                         if (seconds > 3600) seconds = 3600;
                         delayedPhaseSwitchingSeconds = (uint16_t)seconds;
                         preferences.putUShort("delayed1p3pS", delayedPhaseSwitchingSeconds);
+                    } else if (strcmp(action, "setMaxChargingPower") == 0) {
+                        const bool success = doc["power"].is<float>() &&
+                            set_max_charging_power(doc["power"].as<float>() * 10.0f);
+                        JsonDocument reply;
+                        reply["type"] = "maxChargingPowerSaved";
+                        reply["success"] = success;
+                        reply["maxChargingPower"] = get_max_charging_power() / 10.0f;
+                        reply["hardwareMaxChargingPower"] = (digitalRead(DIP_SWITCH_1) == LOW) ? 22 : 11;
+                        String json;
+                        serializeJson(reply, json);
+                        webSocket.sendTXT(num, json);
 	                    } else if (strcmp(action, "setChargeParameters") == 0 && doc.containsKey("current")) {
 	                        int current = doc["current"].as<int>();
 	                        set_charging_current_external(current);
@@ -608,14 +701,37 @@ void webSocketEvent(byte num, WStype_t type, uint8_t * payload, size_t length) {
 	                        rfid_db_delete_user(idTag);
 				                    } else if (strcmp(action, "setRfidAuthorizationRequired") == 0 && doc["state"].is<bool>()) {
 				                        bool state = doc["state"].as<bool>();
-				                        preferences.putBool(RFID_AUTH_REQUIRED_KEY, state);
-				                        rfidAuth.required = state;
+				                        String error;
+                                    const bool ok = preferences.putBool(RFID_AUTH_REQUIRED_KEY, state) == sizeof(bool);
+                                    if (ok) rfidAuth.required = state;
+                                    else error = "Cannot save RFID setting.";
+                                    JsonDocument reply;
+                                    reply["type"] = "rfidSettingsSaved";
+                                    reply["ok"] = ok;
+                                    reply["message"] = ok ? String("Saved.") : error;
+                                    String output;
+                                    serializeJson(reply, output);
+                                    webSocket.sendTXT(num, output);
+                                } else if (strcmp(action, "saveLocalRfidSettings") == 0) {
+                                    String error;
+                                    const bool ok = ocpp_ui_save_local_rfid(doc.as<JsonObjectConst>(), error);
+                                    JsonDocument reply;
+                                    reply["type"] = "rfidSettingsSaved";
+                                    reply["ok"] = ok;
+                                    reply["message"] = error;
+                                    String output;
+                                    serializeJson(reply, output);
+                                    webSocket.sendTXT(num, output);
 					                    } else if (strcmp(action, "importChargeSessions") == 0 && doc["data"].is<const char*>()) {
 					                        charge_session_log_import_json(doc["data"].as<String>());
 					                    } else if (strcmp(action, "requestSessionPage") == 0) {
 					                        int offset = doc["offset"] | 0;
 					                        if (offset < 0) offset = 0;
-					                        g_sessionPageOffset = (size_t)offset;
+					                        if (xSemaphoreTake(g_wsSubsMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+					                            g_sessionPageOffset = (size_t)offset;
+					                            g_sessionsRefreshRequested = true;
+					                            xSemaphoreGive(g_wsSubsMutex);
+					                        }
 					                    } else if (strcmp(action, "saveSessionMailerSettings") == 0 && doc["settings"].is<JsonObject>()) {
 					                        session_mailer_save_settings(doc["settings"].as<JsonObjectConst>());
 				                    } else if (strcmp(action, "sendSessionReportNow") == 0) {
@@ -823,6 +939,8 @@ static void Task_WebPush(void* arg) {
 	        doc["wifi_connected"] = wifi.connected;
 	        doc["wifi_enable"]    = preferences.getBool("wifiEnable", false);
 	        doc["rescueMode"]     = rescueMode;
+        doc["wifi_ap_enable"] = preferences.getBool("wifiApEnable", false);
+        doc["wifi_ap_password_set"] = wifi_ap_password_valid(preferences.getString("wifiApPass", "").c_str());
 
 /*
 
@@ -862,8 +980,15 @@ ESP_LOGI(WEB_TAG,
 
     // --- 1) Thread-sicher Kopie der Abos ziehen ---
     std::vector<std::pair<uint8_t, std::string>> clients;
+    std::set<uint8_t> initialClients;
+    bool refreshSessions = false;
+    size_t sessionPageOffset = 0;
     if (xSemaphoreTake(g_wsSubsMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
       clients.assign(subscribedClients.begin(), subscribedClients.end());
+      initialClients.swap(g_wsInitialUpdateClients);
+      refreshSessions = g_sessionsRefreshRequested;
+      g_sessionsRefreshRequested = false;
+      sessionPageOffset = g_sessionPageOffset;
       xSemaphoreGive(g_wsSubsMutex);
     }
 
@@ -890,6 +1015,8 @@ ESP_LOGI(WEB_TAG,
       doc["cpVoltage"]           = round(highVoltage * 10) / 10.0;
       doc["espTemp"]             = round(readEspTemperatureC() * 10) / 10.0;
       doc["phaseMode"] = currentCpState.threePhaseActive ? "Three-phase" : "Single-phase";
+      doc["maxChargingPower"] = get_max_charging_power() / 10.0f;
+      doc["hardwareMaxChargingPower"] = (digitalRead(DIP_SWITCH_1) == LOW) ? 22 : 11;
       doc["targetChargeCurrent"] = cpDuty100 ? 0 : (int)round(get_current_from_duty(getCpDuty));
 	      doc["targetChargePower"]   = cpDuty100 ? 0.0f : round(get_power_from_duty(getCpDuty)) / 10.0;
 		      doc["cpRelayState"]        = get_cp_relays_status();
@@ -963,8 +1090,7 @@ ESP_LOGI(WEB_TAG,
 	      doc["lastRfidTag"]      = rfid.lastUidStr;
 	      doc["rfidError"]        = rfid.error;
 	      rfid_user_t currentUser;
-			      rfidAuth.authorized     = rfid_db_is_authorized(rfid.uidStr, &currentUser);
-			      rfidAuth.required       = preferences.getBool(RFID_AUTH_REQUIRED_KEY, false);
+			      rfidAuth.authorized = ocpp_local_rfid_enabled() && rfid_db_is_authorized(rfid.uidStr, &currentUser);
 			      doc["rfidAuthorized"]   = rfidAuth.authorized;
 			      doc["rfidUserName"]     = currentUser.name;
 			      doc["rfidAuthRequired"] = rfidAuth.required;
@@ -977,6 +1103,9 @@ ESP_LOGI(WEB_TAG,
 			      doc["chargeSessionIdTag"] = chargeAuthSession.idTag;
 			      doc["chargeSessionUserName"] = chargeAuthSession.userName;
 			      doc["chargeSessionMaxChargeMinutes"] = chargeAuthSession.maxChargeMinutes;
+              ocpp_ui_add_local_rfid(doc.as<JsonObject>());
+              doc["authorizationPending"] = false;
+              doc["authorizationStopLatched"] = false;
 		      doc["rfidDb"]           = serialized(dbJson);
 		      jsonRfid.reserve(1536);
 	      serializeJson(doc, jsonRfid);
@@ -984,7 +1113,7 @@ ESP_LOGI(WEB_TAG,
 
 		    if (needSessions) {
 		      JsonDocument doc;
-		      deserializeJson(doc, charge_session_log_to_json_page(g_sessionPageOffset, SESSION_PAGE_LIMIT));
+		      deserializeJson(doc, charge_session_log_to_json_page(sessionPageOffset, SESSION_PAGE_LIMIT));
 		      doc["wallboxName"] = preferences.getString("wallboxName", "InnoCharge");
 		      session_mailer_append_status(doc.as<JsonObject>());
 		      serializeJson(doc, jsonSessions);
@@ -1028,19 +1157,24 @@ ESP_LOGI(WEB_TAG,
 	    if (needInterfaces && jsonInterfaces == lastInterfaces) needInterfaces = false; else lastInterfaces = jsonInterfaces;
 		    if (needSystem     && jsonSystem     == lastSystem)     needSystem     = false; else lastSystem     = jsonSystem;
 		    if (needRfid       && jsonRfid       == lastRfid)       needRfid       = false; else lastRfid       = jsonRfid;
-		    if (needSessions   && jsonSessions   == lastSessions)   needSessions   = false; else lastSessions   = jsonSessions;
+		    if (needSessions && jsonSessions == lastSessions && !refreshSessions)
+		      needSessions = false;
+		    else
+		      lastSessions = jsonSessions;
 		    if (needGridSettings && jsonGridSettings == lastGridSettings) needGridSettings = false; else lastGridSettings = jsonGridSettings;
 
     // --- 5) Verteilen ---
     for (auto &c : clients) {
-			      if      (c.second == "index"      && needIndex)      webSocket.sendTXT(c.first, jsonIndex);
-		      else if (c.second == "app"        && needApp)        webSocket.sendTXT(c.first, jsonApp);
-		      else if (c.second == "interfaces" && needInterfaces) webSocket.sendTXT(c.first, jsonInterfaces);
-		      else if (c.second == "system"     && needSystem)     webSocket.sendTXT(c.first, jsonSystem);
-		      else if (c.second == "rfid"       && needRfid)       webSocket.sendTXT(c.first, jsonRfid);
-		      else if (c.second == "sessions"   && needSessions)   webSocket.sendTXT(c.first, jsonSessions);
-		      else if (c.second == "grid_settings" && needGridSettings && grid_settings_client_unlocked(c.first)) webSocket.sendTXT(c.first, jsonGridSettings);
-		    }
+      const bool initialUpdate = initialClients.count(c.first) != 0;
+      if      (c.second == "index"      && (needIndex      || initialUpdate)) webSocket.sendTXT(c.first, jsonIndex);
+      else if (c.second == "app"        && (needApp        || initialUpdate)) webSocket.sendTXT(c.first, jsonApp);
+      else if (c.second == "interfaces" && (needInterfaces || initialUpdate)) webSocket.sendTXT(c.first, jsonInterfaces);
+      else if (c.second == "system"     && (needSystem     || initialUpdate)) webSocket.sendTXT(c.first, jsonSystem);
+      else if (c.second == "rfid"       && (needRfid       || initialUpdate)) webSocket.sendTXT(c.first, jsonRfid);
+      else if (c.second == "sessions"   && (needSessions   || initialUpdate)) webSocket.sendTXT(c.first, jsonSessions);
+      else if (c.second == "grid_settings" && (needGridSettings || initialUpdate) &&
+               jsonGridSettings.length() > 0 && grid_settings_client_unlocked(c.first)) webSocket.sendTXT(c.first, jsonGridSettings);
+    }
 
     vTaskDelay(pdMS_TO_TICKS(800));  // gleiche Rate wie zuvor
   }

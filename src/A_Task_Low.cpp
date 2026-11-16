@@ -5,6 +5,7 @@
 #include "esp_event.h"
 #include "A_Task_Low.hpp"
 #include "A_Task_CP.hpp"
+#include "charge_session_log.hpp"
 #include "SPIFFS.h"
 
 
@@ -40,6 +41,7 @@ void A_Task_Low(void *pvParameter){
 //////////////////////////////////////////////////// Loop ///////////////////////////////////////////////////
 //////////////////////////////////////////////////// Loop ///////////////////////////////////////////////////
     while(1){
+        charge_session_log_flush();
         get_eth_ip(eth_ip);
         ESP_LOGI(CP_LOGI, "ETH IP : %s", eth_ip);
 	        get_wifi_ip(eth_ip);

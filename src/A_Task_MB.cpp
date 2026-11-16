@@ -16,8 +16,10 @@
 #include "AA_globals.h"
 #include "ledEffect.hpp"
 #include "A_Task_CP.hpp"
+#include "A_Task_OCPP.hpp"
 #include "control_pilot.hpp"
 #include "rfid_db.hpp"
+#include "charge_session_log.hpp"
 #include "dynamic_power_limit.hpp"
 #include <time.h>
 
@@ -82,6 +84,9 @@ rfid_auth_t rfidAuth;
 charge_auth_session_t chargeAuthSession;
 
 static bool lastRfidBuzzerWritten = false;
+static String lastGrantedTag;
+static String pendingOcppTag;
+static bool pendingOcppWasConnected = false;
 static bool rfidBuzzerStateKnown = false;
 static uint8_t lastRfidLedWritten = 255;
 static String lastRfidReaderIoTag = "";
@@ -105,14 +110,23 @@ static bool isChargeStateActive()
 static uint8_t currentRfidReaderLed()
 {
     if (!rfidAuth.required) return rfid.led;
-    if (!isEmptyRfidTag(rfid.uidStr) && !chargeAuthSession.authorized) return 2;
-    if (chargeAuthSession.authorized) return 1;
-    return 0;
+    if (chargeAuthSession.authorized) return 1; // Green
+    if (isEmptyRfidTag(rfid.uidStr)) return 0;
+
+    ocpp_runtime_status_t ocpp{};
+    if (!ocpp_get_runtime_status(&ocpp)) return 0;
+    if (!ocpp.enabled) return 2; // Local-only rejection
+
+    // Local miss while OCPP checks the card is NOT a rejection.
+    return ocpp.rfidRejected &&
+        rfid_db_normalize_id_tag(rfid.uidStr) == ocpp.rfidRejectedTag
+        ? 2 : 0;
 }
 
-static void grantChargeAuthSession(const String& idTag, const String& userName, uint16_t maxChargeMinutes)
+static void grantChargeAuthSession(const String& idTag, const String& userName, uint16_t maxChargeMinutes,
+                                  bool backendAuthorized = false)
 {
-    chargeAuthSession.authorized = true;
+    if (charging_reset_in_progress()) return;
     chargeAuthSession.vehicleWasConnected = false;
     chargeAuthSession.authorizationGrantedMillis = millis();
     chargeAuthSession.lastChargeActiveMillis = 0;
@@ -121,6 +135,12 @@ static void grantChargeAuthSession(const String& idTag, const String& userName, 
     chargeAuthSession.idTag = idTag;
     chargeAuthSession.userName = userName;
     chargeAuthSession.maxChargeMinutes = maxChargeMinutes;
+    // Preserve backend OCPP identifiers; only physical RFID UIDs need reader normalization.
+    const String ocppIdTag = backendAuthorized ? idTag : rfid_db_normalize_id_tag(idTag);
+    ocpp_prepare_session(chargeAuthSession.authorizationGrantedMillis,
+        ocppIdTag.c_str(), backendAuthorized);
+    // Publish permission only after the existing session fields are filled.
+    chargeAuthSession.authorized = true;
     apply_charging_authorization();
 }
 
@@ -140,24 +160,49 @@ static void clearChargeAuthSessionFromRfid()
 
 static void updateRfidAuthorizationFromCurrentTag()
 {
-    static String lastGrantedTag = "";
-
+    if (charging_reset_in_progress()) {
+        rfidAuth.authorized = false;
+        return;
+    }
     rfid_user_t currentUser;
-    rfidAuth.authorized = rfid_db_is_authorized(rfid.uidStr, &currentUser);
+    rfidAuth.authorized = ocpp_local_rfid_enabled() &&
+        rfid_db_is_authorized(rfid.uidStr, &currentUser);
 
     if (isEmptyRfidTag(rfid.uidStr)) {
         lastGrantedTag = "";
     } else if (rfidAuth.authorized && !chargeAuthSession.authorized && lastGrantedTag != rfid.uidStr) {
+        pendingOcppTag = "";
         grantChargeAuthSession(rfid.uidStr, currentUser.name, currentUser.maxChargeMinutes);
         lastGrantedTag = rfid.uidStr;
     } else if (!rfidAuth.authorized && rfidAuth.required && !isEmptyRfidTag(rfid.uidStr)) {
         if (chargeAuthSession.authorized &&
             !isChargeStateActive() &&
-            rfid.uidStr != chargeAuthSession.idTag) {
+            rfid_db_normalize_id_tag(rfid.uidStr) !=
+                rfid_db_normalize_id_tag(chargeAuthSession.idTag)) {
             clearChargeAuthSessionFromRfid();
             lastGrantedTag = "";
         }
+        // Local permission always wins. Only an unrecognized/disabled card
+        // needs backend authorization; never continuously retry a held card.
+        if (!chargeAuthSession.authorized && lastGrantedTag != rfid.uidStr) {
+            const String normalizedTag = rfid_db_normalize_id_tag(rfid.uidStr);
+            pendingOcppTag = normalizedTag;
+            pendingOcppWasConnected = vCurrentCpState.vehicleConnected;
+            if (ocpp_present_id_tag(normalizedTag.c_str(), 0)) lastGrantedTag = rfid.uidStr;
+        }
     }
+}
+
+static void prepareChargeAuthReset(bool hard)
+{
+    // CP bleibt fuer das Abschalten der Schuetze zustaendig.
+    charge_session_log_set_stop_reason(hard ? "HardReset" : "SoftReset");
+    prepare_charging_reset();
+    clearChargeAuthSessionFromRfid();
+    pendingOcppTag = "";
+    lastGrantedTag = rfid.uidStr;
+    charge_session_log_update(vCurrentCpState.state);
+    ESP_LOGI(TAG, "OCPP reset prepared; charging inhibited until reboot");
 }
 
 static float* const SDM_SLOT[] = {
@@ -288,6 +333,62 @@ void A_Task_MB(void*)
 
     while (true)
     {
+        // OCPP uses the existing session functions, never CP/PWM/phase outputs.
+        static ocpp_command_feedback_t feedback{};
+        static bool feedbackPending = false;
+        if (pendingOcppWasConnected && vCurrentCpState.state == StateA_NotConnected &&
+            !switchToL1N && !switchToL2L3) pendingOcppTag = "";
+        if (feedbackPending && ocpp_report_command_feedback(feedback, 0)) feedbackPending = false;
+        ocpp_command_t command{};
+        if (!feedbackPending && ocpp_take_command(&command)) {
+            feedback = {};
+            feedback.requestId = command.requestId;
+            feedback.type = command.type;
+            feedback.result = ocpp_command_result_t::Rejected;
+            if (command.type == ocpp_command_type_t::GrantSession &&
+                !charging_reset_in_progress() && ocpp_backend_accepts_cards() &&
+                rfidAuth.required && !chargeAuthSession.authorized &&
+                int32_t(command.expiresAtMs - millis()) > 0 &&
+                (command.remoteStart || pendingOcppTag == command.idTag) &&
+                (!command.vehicleConnectedAtRequest || vCurrentCpState.vehicleConnected ||
+                 switchToL1N || switchToL2L3) &&
+                (vCurrentCpState.state == StateA_NotConnected ||
+                 vCurrentCpState.state == StateB_Connected ||
+                 vCurrentCpState.state == StateC_Charge ||
+                 vCurrentCpState.state == StateD_VentCharge ||
+                 (vCurrentCpState.state == StateCustom_DutyCycle_100 &&
+                  vCurrentCpState.vehicleConnected))) {
+                grantChargeAuthSession(command.idTag, "OCPP", 0, true);
+                pendingOcppTag = "";
+                lastGrantedTag = rfid.uidStr;
+                feedback.sessionStamp = chargeAuthSession.authorizationGrantedMillis;
+                feedback.result = ocpp_command_result_t::Accepted;
+                ESP_LOGI(TAG, "OCPP session authorized");
+            } else if (command.type == ocpp_command_type_t::SetMaxChargingPower) {
+                const float previous = get_max_charging_power() / 10.0f;
+                const bool saved = !charging_reset_in_progress() &&
+                    int32_t(command.expiresAtMs - millis()) > 0 &&
+                    set_max_charging_power(command.maxChargingPowerTenths);
+                feedback.result = saved ? ocpp_command_result_t::Accepted : ocpp_command_result_t::Rejected;
+                snprintf(feedback.detail, sizeof(feedback.detail), "Max. Charging Power %.1f -> %.1f kW; %s",
+                    previous, command.maxChargingPowerTenths / 10.0f, saved ? "saved" : "rejected");
+            } else if (command.type == ocpp_command_type_t::Reset) {
+                prepareChargeAuthReset(command.hardReset);
+                feedback.result = ocpp_command_result_t::Accepted;
+            } else if (command.type == ocpp_command_type_t::StopSession) {
+                if (chargeAuthSession.authorized &&
+                    chargeAuthSession.authorizationGrantedMillis == command.sessionStamp) {
+                    charge_session_log_set_stop_reason(command.stopReason);
+                    clearChargeAuthSessionFromRfid();
+                    pendingOcppTag = "";
+                    lastGrantedTag = rfid.uidStr; // held card must not undo a stop
+                    ESP_LOGI(TAG, "OCPP session stopped: %s", command.stopReason);
+                }
+                // Idempotent: an old stop never affects a newer session.
+                feedback.result = ocpp_command_result_t::Accepted;
+            }
+            feedbackPending = !ocpp_report_command_feedback(feedback, 0);
+        }
         mbTCP.task();
 	        mbRTU.task();
 	
@@ -462,6 +563,10 @@ void A_Task_MB(void*)
                 sdm.error = true;
             }
         }
+        // Publish only after the complete meter cycle (including failed cycles).
+        portENTER_CRITICAL(&ocppMeterMux);
+        ocppMeterSample = {ok, millis(), sdm.enrImp, sdm.pwrTot};
+        portEXIT_CRITICAL(&ocppMeterMux);
     }
 
 

@@ -87,6 +87,37 @@
     .range-labels { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
     .message { min-height: 20px; margin: 8px 0 0; color: var(--muted); font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
     .message.error { color: #edaaaa; }
+    main { padding-bottom: calc(88px + env(safe-area-inset-bottom)); }
+    .app-tabs { position: fixed; z-index: 5; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 520px; display: flex; padding: 6px 16px max(8px, env(safe-area-inset-bottom)); background: var(--background); border-top: 1px solid var(--line); }
+    .app-tabs button { flex: 1; min-height: 48px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; }
+    .app-tabs button[aria-selected="true"] { background: var(--surface); color: var(--text); box-shadow: inset 0 -2px var(--blue); }
+    .session-heading { display: flex; align-items: center; gap: 8px; margin-top: 18px; }
+    .session-heading h2 { flex: 1; margin: 0; font-size: 22px; }
+    .session-button, .session-fields input, .session-fields select, .session-sort select { min-width: 0; min-height: 44px; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; background: var(--surface); color: var(--text); font: inherit; }
+    .session-button { cursor: pointer; }
+    .session-sort { display: flex; gap: 8px; align-items: center; margin: 16px 0 12px; }
+    .session-sort label { color: var(--muted); font-size: 14px; }
+    .session-sort select { flex: 1; }
+    .session-filters { padding: 12px; border: 1px solid var(--line); border-radius: 6px; }
+    .session-filters summary { cursor: pointer; color: var(--muted); }
+    .session-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; margin-top: 14px; }
+    .session-fields label { display: grid; min-width: 0; gap: 6px; color: var(--muted); font-size: 13px; }
+    .session-fields input, .session-fields select { width: 100%; font-size: 14px; }
+    .session-count { color: var(--muted); font-size: 13px; margin: 14px 0; }
+    .session-card { margin: 0 0 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); overflow: hidden; }
+    .session-card summary { list-style: none; padding: 14px; cursor: pointer; }
+    .session-card summary::-webkit-details-marker { display: none; }
+    .session-card-title { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; font-size: 14px; }
+    .session-card-title time { overflow-wrap: anywhere; }
+    .session-badge { flex-shrink: 0; font-size: 11px; padding: 3px 7px; border: 1px solid var(--line); border-radius: 10px; color: var(--muted); }
+    .session-badge.active { color: #75b995; border-color: #75b995; }
+    .session-metrics { display: flex; gap: 16px; align-items: baseline; margin-top: 12px; font-size: 14px; color: var(--muted); }
+    .session-metrics strong { color: var(--text); font-size: 21px; }
+    .session-user { margin: 8px 0 0; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+    .session-details { padding: 0 14px 14px; }
+    .session-details .status-row { gap: 8px; padding: 8px 0; }
+    .session-details dt, .session-details dd { font-size: 12px; }
+    #sessionLoadMore { width: 100%; }
     @media (max-width: 360px) {
       .brand svg { width: 148px; }
       .stepper { grid-template-columns: 48px minmax(0, 1fr) 48px; gap: 8px; }
@@ -174,6 +205,28 @@
     send(text) {
       if (this.readyState !== 1) return;
       const command = JSON.parse(text);
+      if (command.action === 'requestAppSessions') {
+        const rows = Array.from({length: 46}, (_, index) => ({
+          transactionId: 100 - index,
+          active: index === 0,
+          userName: ['Alex', 'Maria', 'Garage'][index % 3],
+          idTag: 'DEMO' + String(index % 3 + 1),
+          startTimeEpoch: 1794812400 - index * 86400,
+          startTime: new Date((1794812400 - index * 86400) * 1000).toISOString(),
+          stopTime: new Date((1794812400 - index * 86400 + 5400) * 1000).toISOString(),
+          durationSeconds: 5400 + index * 30,
+          energyWh: 8000 + index * 125,
+          ocppTransactionId: null, ocppStart: 'none', ocppStop: 'none', ocppIdTag: '',
+          stopReason: index === 0 ? '' : 'EVDisconnected'
+        }));
+        setTimeout(() => this.onmessage?.({data: JSON.stringify({
+          type: 'appSessions', ok: true, requestId: command.requestId,
+          wallboxName: 'InnoCharge DEMO', sessionRevision: 1, sessionTotal: rows.length,
+          sessionOffset: command.offset, sessionLimit: 20,
+          sessions: rows.slice(command.offset, command.offset + 20)
+        })}), 0);
+        return;
+      }
       if (command.action === 'subscribeUpdates') this.subscribed = true;
       if (command.action === 'unsubscribeUpdates') this.subscribed = false;
       if (command.action === 'setChargeParameters' &&
@@ -330,6 +383,7 @@
       <button type="button" id="nativeMenu" title="Wallbox-Menü" aria-label="Wallbox-Menü" hidden="">⋮</button>
     </header>
     <h1 id="wallboxName" hidden=""></h1>
+    <div id="chargingPage" role="tabpanel" aria-labelledby="chargingTab">
     <section class="power-display" aria-label="Charging status and power setpoint">
       <div class="power-ring" id="powerRing" data-animation="solid">
         <svg class="ring-graphic" aria-hidden="true" viewBox="0 0 240 240">
@@ -362,7 +416,38 @@
       <div class="range-labels" aria-hidden="true"><span>0</span><span id="maxPowerLabel">– kW</span></div>
     </fieldset>
     <p class="message" id="message" role="status" aria-live="polite"></p>
+    </div>
+    <section id="sessionsPage" role="tabpanel" aria-labelledby="sessionsTab" hidden="">
+      <div class="session-heading">
+        <h2>Sessions</h2>
+        <button type="button" class="session-button" id="sessionRefresh">Refresh</button>
+        <button type="button" class="session-button" id="sessionExport" disabled="">Export</button>
+      </div>
+      <div class="session-sort">
+        <label for="appSessionSort">Sort by</label>
+        <select id="appSessionSort"><option value="startTimeEpoch">Date</option><option value="energyWh">Energy</option><option value="durationSeconds">Duration</option><option value="userName">User</option><option value="active">Status</option></select>
+        <button type="button" class="session-button" id="sessionSortDirection" aria-label="Sort descending">↓</button>
+      </div>
+      <details class="session-filters">
+        <summary>Filter</summary>
+        <div class="session-fields">
+          <label>From<input type="date" id="appSessionFrom"></label>
+          <label>To<input type="date" id="appSessionTo"></label>
+          <label>User / RFID<input type="search" id="appSessionUser" placeholder="All users" autocomplete="off"></label>
+          <label>Status<select id="appSessionStatus"><option value="all">All</option><option value="active">Active</option><option value="closed">Closed</option></select></label>
+        </div>
+        <button type="button" class="session-button" id="sessionClearFilters" style="margin-top: 12px;">Clear filters</button>
+      </details>
+      <p class="session-count" id="appSessionCount" role="status">Open Sessions to load the history.</p>
+      <div id="appSessionList"></div>
+      <button type="button" class="session-button" id="sessionLoadMore" hidden="">Load more</button>
+      <p class="message" id="appSessionMessage" role="status" aria-live="polite"></p>
+    </section>
   </main>
+  <nav class="app-tabs" role="tablist" aria-label="Wallbox views">
+    <button type="button" id="chargingTab" role="tab" aria-selected="true" aria-controls="chargingPage">Charging</button>
+    <button type="button" id="sessionsTab" role="tab" aria-selected="false" aria-controls="sessionsPage">Sessions</button>
+  </nav>
   <script>
     'use strict';
     const APP_CLIENT = 'innocharge-public-app';
@@ -449,6 +534,7 @@
     function setConnection(online) {
       byId('connection').textContent = online ? 'online' : 'offline';
       byId('connection').classList.toggle('online', online);
+      window.dispatchEvent(new CustomEvent('innocharge-connection', { detail: online }));
       if (!online) {
         clearTimeout(staleTimer);
         clearStatus();
@@ -567,7 +653,14 @@
         sendMessage({ action: 'subscribeUpdates', page: 'app' });
       };
       socket.onmessage = event => {
-        try { processUpdate(JSON.parse(event.data)); }
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'appSessions') {
+            window.dispatchEvent(new CustomEvent('innocharge-sessions-page', { detail: data }));
+          } else {
+            processUpdate(data);
+          }
+        }
         catch (_) { showMessage('Ungueltige Daten empfangen.', true); }
       };
       socket.onerror = () => {
@@ -604,6 +697,255 @@
     setConnection(false);
     connect();
   </script>
+  <script>(() => {
+  'use strict';
+  const el = id => document.getElementById(id);
+  let sessions = [];
+  let complete = false;
+  let loading = false;
+  let exportBusy = false;
+  let visibleCount = 20;
+  let descending = true;
+  let generation = 0;
+  let requestId = 0;
+  let pending = null;
+  let wallboxName = 'InnoCharge';
+
+  function message(text, error = false) {
+    el('appSessionMessage').textContent = text;
+    el('appSessionMessage').classList.toggle('error', error);
+  }
+
+  function date(value) {
+    const parsed = value ? new Date(value) : null;
+    return parsed && Number.isFinite(parsed.getTime()) ? parsed : null;
+  }
+
+  function time(value) {
+    return date(value)?.toLocaleString('de-AT') || 'Time unavailable';
+  }
+
+  function duration(value) {
+    const seconds = Math.max(0, Math.floor(Number(value) || 0));
+    return [Math.floor(seconds / 3600), Math.floor(seconds % 3600 / 60), seconds % 60]
+      .map(part => String(part).padStart(2, '0')).join(':');
+  }
+
+  function energy(value) {
+    return (Math.max(0, Number(value) || 0) / 1000).toLocaleString('de-AT', { minimumFractionDigits: 3, maximumFractionDigits: 3 }) + ' kWh';
+  }
+
+  function selection() {
+    const from = el('appSessionFrom').value;
+    const to = el('appSessionTo').value;
+    const user = el('appSessionUser').value.trim().toLowerCase();
+    const status = el('appSessionStatus').value;
+    const start = from ? new Date(from + 'T00:00:00').getTime() : -Infinity;
+    const end = to ? new Date(to + 'T23:59:59.999').getTime() : Infinity;
+    const key = el('appSessionSort').value;
+    return sessions.filter(session => {
+      const stamp = date(session.startTime)?.getTime();
+      if ((from || to) && (!Number.isFinite(stamp) || stamp < start || stamp > end)) return false;
+      if (status !== 'all' && Boolean(session.active) !== (status === 'active')) return false;
+      return !user || [session.userName, session.idTag].some(value => String(value || '').toLowerCase().includes(user));
+    }).sort((a, b) => {
+      const av = key === 'userName' ? String(a[key] || '') : Number(a[key]) || 0;
+      const bv = key === 'userName' ? String(b[key] || '') : Number(b[key]) || 0;
+      const comparison = key === 'userName' ? av.localeCompare(bv) : av - bv;
+      return (comparison || Number(a.transactionId) - Number(b.transactionId)) * (descending ? -1 : 1);
+    });
+  }
+
+  function node(tag, text, className) {
+    const item = document.createElement(tag);
+    if (text !== undefined) item.textContent = text;
+    if (className) item.className = className;
+    return item;
+  }
+
+  function render() {
+    const selected = selection();
+    const list = el('appSessionList');
+    list.replaceChildren();
+    selected.slice(0, visibleCount).forEach(session => {
+      const card = node('details', undefined, 'session-card');
+      const summary = node('summary');
+      const title = node('div', undefined, 'session-card-title');
+      title.append(node('time', time(session.startTime)), node('span', session.active ? 'Active' : 'Closed', 'session-badge' + (session.active ? ' active' : '')));
+      const metrics = node('div', undefined, 'session-metrics');
+      metrics.append(node('strong', energy(session.energyWh)), node('span', duration(session.durationSeconds)));
+      summary.append(title, metrics, node('p', session.userName || session.idTag || 'Session #' + session.transactionId, 'session-user'));
+      const details = node('dl', undefined, 'session-details');
+      const delivery = value => ({ none: '-', pending: 'Pending', sent: 'Unconfirmed', confirmed: 'Confirmed', uncertain: 'Review', failed: 'Failed' })[value] || '-';
+      for (const [label, value] of [
+        ['Local ID', session.transactionId], ['User', session.userName], ['RFID', session.idTag],
+        ['Start', time(session.startTime)], ['Stop', session.active ? 'Active' : time(session.stopTime)],
+        ['Duration', duration(session.durationSeconds)], ['Energy', energy(session.energyWh)],
+        ['Stop reason', session.stopReason], ['OCPP ID', session.ocppTransactionId],
+        ['OCPP tag', session.ocppIdTag], ['OCPP start', delivery(session.ocppStart)], ['OCPP stop', delivery(session.ocppStop)]
+      ]) {
+        const row = node('div', undefined, 'status-row');
+        row.append(node('dt', label), node('dd', value === null || value === undefined || value === '' ? '-' : String(value)));
+        details.append(row);
+      }
+      card.append(summary, details);
+      list.append(card);
+    });
+    if (!selected.length && !loading) list.append(node('p', complete ? 'No sessions match this selection.' : 'No sessions loaded.', 'session-count'));
+    if (!loading) el('appSessionCount').textContent = 'Showing ' + Math.min(visibleCount, selected.length) + ' of ' + selected.length + ' sessions';
+    el('sessionLoadMore').hidden = visibleCount >= selected.length;
+    el('sessionRefresh').disabled = loading;
+    const supported = window.InnoChargeExportSupported === true;
+    el('sessionExport').disabled = !complete || !selected.length || !supported || exportBusy;
+    el('sessionExport').title = supported ? '' : 'File export is available in the updated mobile app.';
+    for (const id of ['appSessionSort', 'sessionSortDirection', 'appSessionFrom', 'appSessionTo', 'appSessionUser', 'appSessionStatus', 'sessionClearFilters']) el(id).disabled = loading;
+  }
+
+  function cancelPending(reason) {
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    pending.reject(new Error(reason));
+    pending = null;
+  }
+
+  function page(offset) {
+    return new Promise((resolve, reject) => {
+      const id = ++requestId;
+      const timer = setTimeout(() => {
+        pending = null;
+        reject(new Error('Sessions unavailable. Check the connection and MAIN firmware, then Refresh.'));
+      }, 8000);
+      pending = { id, timer, resolve, reject };
+      if (!sendMessage({ action: 'requestAppSessions', offset, requestId: id })) {
+        clearTimeout(timer);
+        pending = null;
+        reject(new Error('No connection to the wallbox.'));
+      }
+    });
+  }
+
+  async function refresh() {
+    const current = ++generation;
+    cancelPending('Refresh cancelled.');
+    complete = false;
+    loading = true;
+    visibleCount = 20;
+    message('');
+    try {
+      for (let attempt = 0; attempt < 3; ++attempt) {
+        sessions = [];
+        let revision = null;
+        let total = null;
+        let offset = 0;
+        const ids = new Set();
+        let changed = false;
+        do {
+          if (current !== generation) return;
+          const response = await page(offset);
+          if (current !== generation) return;
+          if (!Number.isInteger(response.sessionRevision) || !Number.isInteger(response.sessionTotal) || response.sessionTotal < 0 || response.sessionTotal > 10000 || response.sessionOffset !== offset || !Array.isArray(response.sessions)) throw new Error('Invalid session history received.');
+          if (revision === null) { revision = response.sessionRevision; total = response.sessionTotal; }
+          if (revision !== response.sessionRevision || total !== response.sessionTotal) { changed = true; break; }
+          wallboxName = typeof response.wallboxName === 'string' ? response.wallboxName : 'InnoCharge';
+          for (const session of response.sessions) {
+            if (!session || !Number.isInteger(session.transactionId) || ids.has(session.transactionId)) throw new Error('History changed. Please Refresh.');
+            ids.add(session.transactionId);
+            sessions.push(session);
+          }
+          offset += response.sessions.length;
+          if (offset > total || (!response.sessions.length && offset < total)) throw new Error('Incomplete history received. Please Refresh.');
+          el('appSessionCount').textContent = 'Loading sessions: ' + offset + ' / ' + total;
+          render();
+          if (offset < total) await new Promise(resolve => setTimeout(resolve, 150));
+        } while (offset < total);
+        if (!changed) {
+          complete = true;
+          message('');
+          break;
+        }
+        if (attempt === 2) throw new Error('History is changing. Please Refresh in a moment.');
+      }
+    } catch (error) {
+      if (current === generation) message(error.message || 'Could not load the sessions.', true);
+    } finally {
+      if (current === generation) { loading = false; render(); }
+    }
+  }
+
+  function showSessions(show) {
+    el('chargingPage').hidden = show;
+    el('sessionsPage').hidden = !show;
+    el('chargingTab').setAttribute('aria-selected', String(!show));
+    el('sessionsTab').setAttribute('aria-selected', String(show));
+    if (show && !complete && !loading) refresh();
+    if (!show && loading) {
+      ++generation;
+      cancelPending('Refresh cancelled.');
+      loading = false;
+      render();
+    }
+    window.scrollTo(0, 0);
+  }
+
+  window.addEventListener('innocharge-sessions-page', event => {
+    const data = event.detail;
+    if (!pending || data.requestId !== pending.id) return;
+    const request = pending;
+    pending = null;
+    clearTimeout(request.timer);
+    if (data.ok === true) request.resolve(data);
+    else request.reject(new Error(data.message || 'Could not load the sessions.'));
+  });
+  window.addEventListener('innocharge-export-ready', render);
+  window.addEventListener('innocharge-connection', event => {
+    if (!event.detail) cancelPending('Connection interrupted. Please Refresh.');
+    else if (!el('sessionsPage').hidden && !complete && !loading) refresh();
+  });
+  window.addEventListener('innocharge-export-result', event => {
+    exportBusy = false;
+    message(event.detail.message || '', event.detail.ok === false);
+    render();
+  });
+  window.addEventListener('pagehide', () => { ++generation; cancelPending('Page closed.'); });
+  el('sessionsTab').addEventListener('click', () => showSessions(true));
+  el('chargingTab').addEventListener('click', () => showSessions(false));
+  el('sessionRefresh').addEventListener('click', refresh);
+  el('sessionLoadMore').addEventListener('click', () => { visibleCount += 20; render(); });
+  for (const id of ['appSessionSort', 'appSessionFrom', 'appSessionTo', 'appSessionUser', 'appSessionStatus']) el(id).addEventListener('input', () => { visibleCount = 20; render(); });
+  el('sessionSortDirection').addEventListener('click', () => {
+    descending = !descending;
+    el('sessionSortDirection').textContent = descending ? '↓' : '↑';
+    el('sessionSortDirection').setAttribute('aria-label', descending ? 'Sort descending' : 'Sort ascending');
+    render();
+  });
+  el('sessionClearFilters').addEventListener('click', () => {
+    for (const id of ['appSessionFrom', 'appSessionTo', 'appSessionUser']) el(id).value = '';
+    el('appSessionStatus').value = 'all';
+    visibleCount = 20;
+    render();
+  });
+  el('sessionExport').addEventListener('click', () => {
+    if (!complete || exportBusy || window.InnoChargeExportSupported !== true) return;
+    const selected = selection();
+    if (!selected.length) return;
+    const filters = [
+      el('appSessionFrom').value && 'From ' + el('appSessionFrom').value,
+      el('appSessionTo').value && 'To ' + el('appSessionTo').value,
+      el('appSessionUser').value.trim() && 'User / RFID: ' + el('appSessionUser').value.trim(),
+      el('appSessionStatus').value !== 'all' && 'Status: ' + el('appSessionStatus').value
+    ].filter(Boolean);
+    const sort = el('appSessionSort').selectedOptions[0].textContent + (descending ? ' descending' : ' ascending');
+    exportBusy = true;
+    render();
+    window.InnoChargeHost.postMessage(JSON.stringify({
+      action: 'exportSessions', wallboxName,
+      selection: (filters.join(' | ') || 'All sessions') + ' | Sort: ' + sort,
+      sessions: selected
+    }));
+  });
+  render();
+})();
+</script>
 
 
 </body></html>

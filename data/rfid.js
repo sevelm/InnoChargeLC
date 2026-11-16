@@ -1,6 +1,50 @@
 var Socket;
 var lastTag = '';
 var authRequiredInitialized = false;
+var localSettingsInitialized = false;
+var localSettingsBusy = false;
+var localSettingsTimer;
+var ocppEnabledForRfid = false;
+var localRfidControlsAvailable = false;
+var savedLocalRfidSettings = { mode: 'actual', customId: '' };
+
+function updateLocalRfidOptions() {
+  const mode = document.getElementById('localRfidOcppReporting').value;
+  document.getElementById('localRfidOcppOptions').hidden =
+    !ocppEnabledForRfid || !document.getElementById('localRfidEnabled').checked;
+  document.getElementById('localRfidCustomIdRow').hidden = mode !== 'custom';
+  document.getElementById('localRfidReportingHint').textContent = !localRfidControlsAvailable
+    ? 'Reporting inactive.' : mode === 'none'
+    ? 'Status only. No card ID or remote stop.'
+    : 'Starts locally. Backend may stop. Applies to new sessions.';
+}
+
+function saveLocalRfidReporting() {
+  const mode = document.getElementById('localRfidOcppReporting').value;
+  const id = document.getElementById('localRfidCustomOcppId').value;
+  if ((mode === 'custom' || id.length) && !/^[\x21-\x7e]{1,20}$/.test(id)) {
+    document.getElementById('localRfidSaveStatus').textContent = 'Not saved. Custom OCPP ID: 1-20 printable ASCII characters, no spaces.';
+    return;
+  }
+  saveAuthorizationSettings({action: 'saveLocalRfidSettings',
+    enabled: document.getElementById('localRfidEnabled').checked, mode, customId: id});
+}
+
+function saveAuthorizationSettings(payload) {
+  if (localSettingsBusy || !Socket || Socket.readyState !== WebSocket.OPEN) return;
+  localSettingsBusy = true;
+  document.getElementById('localRfidSettings').disabled = true;
+  document.getElementById('rfidAuthRequired').disabled = true;
+  document.getElementById('localRfidSaveStatus').textContent = 'Saving...';
+  Socket.send(JSON.stringify(payload));
+  clearTimeout(localSettingsTimer);
+  localSettingsTimer = setTimeout(() => {
+    localSettingsBusy = false;
+    localSettingsInitialized = false;
+    authRequiredInitialized = false;
+    document.getElementById('localRfidSaveStatus').textContent = 'No confirmation. Reload to check saved settings.';
+  }, 6000);
+}
 
 function initWebSocket() {
   Socket = new WebSocket('ws://' + window.location.hostname + ':81/');
@@ -16,6 +60,8 @@ function initWebSocket() {
 
   Socket.onclose = function(event) {
     console.log('WebSocket connection closed:', event);
+    document.getElementById('localRfidSettings').disabled = true;
+    document.getElementById('rfidAuthRequired').disabled = true;
   };
 
   Socket.onerror = function(error) {
@@ -31,6 +77,32 @@ function initWebSocket() {
 function processCommand(txt) {
   let obj;
   try { obj = JSON.parse(txt); } catch { return; }
+
+  if (obj.type === 'ocppState' && obj.config) {
+    ocppEnabledForRfid = !!obj.config.enabled;
+    updateLocalRfidOptions();
+  }
+  if (obj.type === 'rfidSettingsSaved') {
+    clearTimeout(localSettingsTimer);
+    localSettingsBusy = false;
+    localSettingsInitialized = false;
+    authRequiredInitialized = false;
+    document.getElementById('localRfidSaveStatus').textContent = obj.ok ? '' : (obj.message || 'Save failed.');
+  }
+  if (obj.localRfidEnabled !== undefined && !localSettingsInitialized && !localSettingsBusy) {
+    localRfidControlsAvailable = obj.localRfidControlsAvailable !== false;
+    savedLocalRfidSettings = {
+      mode: obj.localRfidOcppReporting || 'actual',
+      customId: obj.localRfidCustomOcppId || ''
+    };
+    document.getElementById('localRfidEnabled').checked = obj.localRfidEnabled;
+    document.getElementById('localRfidOcppReporting').value = obj.localRfidOcppReporting || 'actual';
+    document.getElementById('localRfidCustomOcppId').value = obj.localRfidCustomOcppId || '';
+    document.getElementById('localRfidSettings').disabled = !localRfidControlsAvailable;
+    document.getElementById('rfidAuthRequired').disabled = false;
+    localSettingsInitialized = true;
+    updateLocalRfidOptions();
+  }
 
   if (obj.rfidTag !== undefined) {
     document.getElementById('rfidTag').textContent = obj.rfidTag;
@@ -52,13 +124,18 @@ function processCommand(txt) {
     }
   }
 
-  if (obj.rfidAuthRequired !== undefined && !authRequiredInitialized) {
+  if (obj.rfidAuthRequired !== undefined && !authRequiredInitialized && !localSettingsBusy) {
     document.getElementById('rfidAuthRequired').checked = obj.rfidAuthRequired;
     authRequiredInitialized = true;
   }
 
   if (obj.chargeSessionAuthorized !== undefined) {
     setStatus('chargeSessionAuthorized', obj.chargeSessionAuthorized, 'yes', 'no');
+    if (obj.authorizationPending) {
+      document.getElementById('chargeSessionAuthorized').textContent = 'pending authorization / transaction preparation';
+    } else if (obj.authorizationStopLatched) {
+      document.getElementById('chargeSessionAuthorized').textContent = 'stopped - new authorization or unplug required';
+    }
   }
 
   if (obj.chargeSessionVehicleWasConnected !== undefined) {
@@ -176,9 +253,32 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 
   document.getElementById('rfidAuthRequired').addEventListener('change', function(event) {
-    Socket.send(JSON.stringify({
+    saveAuthorizationSettings({
       action: 'setRfidAuthorizationRequired',
       state: event.target.checked
-    }));
+    });
+  });
+  document.getElementById('localRfidEnabled').addEventListener('change', function(event) {
+    // A switch change must not save an unfinished custom-ID draft.
+    saveAuthorizationSettings({action: 'saveLocalRfidSettings',
+      enabled: event.target.checked, ...savedLocalRfidSettings});
+  });
+  document.getElementById('localRfidOcppReporting').addEventListener('change', function() {
+    updateLocalRfidOptions();
+    const customId = document.getElementById('localRfidCustomOcppId');
+    if (this.value === 'custom' && !/^[\x21-\x7e]{1,20}$/.test(customId.value)) {
+      document.getElementById('localRfidSaveStatus').textContent = 'Enter a valid custom OCPP ID to save this selection.';
+      customId.focus();
+      return;
+    }
+    if (this.value !== 'custom') customId.value = savedLocalRfidSettings.customId;
+    saveLocalRfidReporting();
+  });
+  document.getElementById('localRfidCustomOcppId').addEventListener('change', saveLocalRfidReporting);
+  document.getElementById('localRfidCustomOcppId').addEventListener('keydown', function(event) {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      this.blur();
+    }
   });
 });

@@ -5,6 +5,8 @@ var Socket;
 // Flag to check if input fields have been initialized
 var inputsInitialized = false;
 var dynamicPowerLimitInitialized = false;
+var maxChargingPowerDirty = false;
+var maxChargingPowerPending = false;
 
 
 // Function to initialize the WebSocket connection
@@ -27,6 +29,9 @@ function initWebSocket() {
   // Event handler when the WebSocket connection is closed
   Socket.onclose = function(event) {
     console.log('WebSocket connection closed:', event);
+    document.getElementById('setMaxChargingPower').disabled = true;
+    document.getElementById('maxChargingPowerStatus').textContent =
+      maxChargingPowerPending ? 'Connection lost. Reload to check the saved limit.' : 'No connection.';
   };
 
   // Event handler for any errors that occur with the WebSocket
@@ -45,6 +50,7 @@ function initWebSocket() {
 function processCommand(event) {
   console.log('Received data:', event.data); // Display received data
   var obj = JSON.parse(event.data);
+  updateMaxChargingPower(obj);
 
   // Initialize only once
   if (!inputsInitialized) {
@@ -147,6 +153,22 @@ document.addEventListener('DOMContentLoaded', function() {
   initWebSocket();
 
   // Set up event listeners for inputs
+  document.getElementById('setMaxChargingPower')?.addEventListener('input', function() {
+    maxChargingPowerDirty = true;
+    document.getElementById('maxChargingPowerStatus').textContent = this.title;
+    updateMaxChargingPowerCurrent();
+  });
+  document.getElementById('setMaxChargingPower')?.addEventListener('focus', function() {
+    document.getElementById('maxChargingPowerStatus').textContent = this.title;
+  });
+  document.getElementById('setMaxChargingPower')?.addEventListener('blur', function() {
+    if (!maxChargingPowerPending && this.checkValidity()) {
+      document.getElementById('maxChargingPowerStatus').textContent = '';
+    }
+  });
+  document.getElementById('setMaxChargingPower')?.addEventListener('keydown', function(event) {
+    if (event.key === 'Enter') saveMaxChargingPower();
+  });
   document.getElementById('setChargeCurrent')?.addEventListener('keydown', function(event) {
     if (event.key === 'Enter') {
       set_charge_current();
@@ -196,6 +218,65 @@ function toggle_cp_relay() {
   };
   Socket.send(JSON.stringify(data));
   console.log('Sending CP-Relay values to server:', data);
+}
+
+function updateMaxChargingPower(obj) {
+  const field = document.getElementById('setMaxChargingPower');
+  const status = document.getElementById('maxChargingPowerStatus');
+  if (!field || !status) return;
+
+  if (obj.type === 'maxChargingPowerSaved') {
+    maxChargingPowerPending = false;
+    if (obj.success) {
+      maxChargingPowerDirty = false;
+      status.textContent = 'Saved';
+    } else {
+      status.textContent = 'Could not save. Check the allowed range and try again.';
+    }
+  }
+  if (obj.hardwareMaxChargingPower !== undefined) {
+    field.max = Number(obj.hardwareMaxChargingPower);
+    field.title = `Enter 4.2–${field.max} kW in steps of 0.1 kW. Press Enter to apply.`;
+  }
+  if (obj.maxChargingPower !== undefined) {
+    if (!maxChargingPowerDirty && !maxChargingPowerPending) {
+      field.value = Number(obj.maxChargingPower);
+    }
+    field.disabled = maxChargingPowerPending;
+  }
+  updateMaxChargingPowerCurrent();
+}
+
+function updateMaxChargingPowerCurrent() {
+  const field = document.getElementById('setMaxChargingPower');
+  const output = document.getElementById('maxChargingPowerCurrent');
+  const power = field.valueAsNumber;
+  if (!Number.isFinite(power) || power < 4.2 || power > Number(field.max)) {
+    output.textContent = '';
+    return;
+  }
+  // Same nominal three-phase conversion as the firmware.
+  output.textContent = `≈ ${Math.round(power * 1000 / 692)} A per phase (3-phase)`;
+}
+
+function saveMaxChargingPower() {
+  const field = document.getElementById('setMaxChargingPower');
+  const status = document.getElementById('maxChargingPowerStatus');
+  if (maxChargingPowerPending || field.disabled) return;
+  const power = field.valueAsNumber;
+  if (!Number.isFinite(power) || !field.checkValidity()) {
+    status.textContent = `Enter 4.2–${field.max} kW in steps of 0.1 kW.`;
+    field.reportValidity();
+    return;
+  }
+  if (!Socket || Socket.readyState !== 1) {
+    status.textContent = 'No connection. The limit has not been saved.';
+    return;
+  }
+  maxChargingPowerPending = true;
+  field.disabled = true;
+  status.textContent = 'Saving…';
+  Socket.send(JSON.stringify({ action: 'setMaxChargingPower', power: power }));
 }
 
 function set_delayed_phase_switching_seconds() {

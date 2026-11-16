@@ -66,6 +66,28 @@
     send(text) {
       if (this.readyState !== 1) return;
       const command = JSON.parse(text);
+      if (command.action === 'requestAppSessions') {
+        const rows = Array.from({length: 46}, (_, index) => ({
+          transactionId: 100 - index,
+          active: index === 0,
+          userName: ['Alex', 'Maria', 'Garage'][index % 3],
+          idTag: 'DEMO' + String(index % 3 + 1),
+          startTimeEpoch: 1794812400 - index * 86400,
+          startTime: new Date((1794812400 - index * 86400) * 1000).toISOString(),
+          stopTime: new Date((1794812400 - index * 86400 + 5400) * 1000).toISOString(),
+          durationSeconds: 5400 + index * 30,
+          energyWh: 8000 + index * 125,
+          ocppTransactionId: null, ocppStart: 'none', ocppStop: 'none', ocppIdTag: '',
+          stopReason: index === 0 ? '' : 'EVDisconnected'
+        }));
+        setTimeout(() => this.onmessage?.({data: JSON.stringify({
+          type: 'appSessions', ok: true, requestId: command.requestId,
+          wallboxName: 'InnoCharge DEMO', sessionRevision: 1, sessionTotal: rows.length,
+          sessionOffset: command.offset, sessionLimit: 20,
+          sessions: rows.slice(command.offset, command.offset + 20)
+        })}), 0);
+        return;
+      }
       if (command.action === 'subscribeUpdates') this.subscribed = true;
       if (command.action === 'unsubscribeUpdates') this.subscribed = false;
       if (command.action === 'setChargeParameters' &&

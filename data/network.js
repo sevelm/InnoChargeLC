@@ -6,6 +6,7 @@
 let currentSSID = '';
 let Socket;           // WebSocket instance
 let rescueModeActive = false;
+let apPasswordSaved = false;
 let scanInProgress = false;   // verhindert Parallel‑Scans
 
 /* ------------------------------------------------------------------
@@ -35,11 +36,27 @@ function initWebSocket() {
       return;
     }
 
+    if (d.type === 'wifiApSaved') {
+      if (d.ok) {
+        setTimeout(() => window.location.href = 'index.html', 5000);
+      } else {
+        document.getElementById('loading-indicator').style.display = 'none';
+        alert(d.message || 'Failed to save access point settings.');
+      }
+      return;
+    }
+
     // Netzwerkpaket erkannt? → UI füllen
     if (d.eth_mac || d.eth_ip || d.wifi_ssid || d.wifi_ip) {
       rescueModeActive = d.rescueMode === true;
       if (typeof setEthernetInfo === 'function') setEthernetInfo(d);
       if (typeof setWifiInfo === 'function') setWifiInfo(d);
+      document.getElementById('wifi-ap-section').style.display =
+        rescueModeActive || d.wifi_ap_enable === true ? 'block' : 'none';
+      document.getElementById('wifi_ap_enable').checked = d.wifi_ap_enable === true;
+      apPasswordSaved = d.wifi_ap_password_set === true;
+      document.getElementById('wifi_ap_password').placeholder = apPasswordSaved ? 'Unchanged' : '8 to 63 characters';
+      toggleWifiApInputFields(d.wifi_ap_enable === true);
 
       // WiFi-Scan-Bereich passend ein-/ausblenden (defensiv)
       const rescanBtn  = document.getElementById('wifi_rescan_btn');
@@ -412,6 +429,27 @@ function showNetworkSavePopup() {
     }
   }
 
+  function saveWifiApSettings() {
+    if (Socket.readyState === WebSocket.OPEN) {
+      Socket.send(JSON.stringify({
+        action: 'saveWifiApSettings',
+        enabled: document.getElementById('wifi_ap_enable').checked,
+        password: document.getElementById('wifi_ap_password').value
+      }));
+    } else {
+      document.getElementById('loading-indicator').style.display = 'none';
+      alert('Connection lost. Please try again.');
+    }
+  }
+
+  function toggleWifiApInputFields(enable) {
+    const password = document.getElementById('wifi_ap_password');
+    document.getElementById('wifi_ap_password_row').style.display = enable ? 'table-row' : 'none';
+    password.disabled = !enable;
+    password.required = enable && !apPasswordSaved;
+    password.setCustomValidity('');
+  }
+
   // Function to toggle Ethernet input fields based on DHCP setting
   function toggleETHInputFields(enable) {
     var ipFields = document.querySelectorAll('#eth_ip-address, #eth_subnet-mask, #eth_gateway, #eth_dns1, #eth_dns2');
@@ -446,14 +484,26 @@ document.addEventListener('DOMContentLoaded', () => {
   let lastBtn = null;
   document.getElementById('eth_btn_save').onclick  = () => { lastBtn = 'eth';  showNetworkSavePopup(); };
   document.getElementById('wifi_btn_save').onclick = () => { lastBtn = 'wifi'; showNetworkSavePopup(); };
+  document.getElementById('wifi_ap_btn_save').onclick = () => {
+    const password = document.getElementById('wifi_ap_password');
+    const enabled = document.getElementById('wifi_ap_enable').checked;
+    const needsPassword = enabled && (!apPasswordSaved || password.value.length > 0);
+    password.setCustomValidity(needsPassword && !/^[\x20-\x7e]{8,63}$/.test(password.value)
+      ? 'WiFi password must contain 8 to 63 characters (letters, numbers or symbols).' : '');
+    if (!password.reportValidity()) return;
+    lastBtn = 'ap';
+    showNetworkSavePopup();
+  };
+  document.getElementById('wifi_ap_enable').onchange = (e) => toggleWifiApInputFields(e.target.checked);
 
   document.getElementById('popup-yes').onclick = () => {
     document.getElementById('confirmation-popup').style.display = 'none';
     document.getElementById('loading-indicator').style.display    = 'flex';
     if (lastBtn === 'eth')  saveETHNetworkSettings();
     if (lastBtn === 'wifi') saveWifiNetworkSettings();
+    if (lastBtn === 'ap') saveWifiApSettings();
+    else setTimeout(() => window.location.href = 'index.html', 5000);
     lastBtn = null;
-    setTimeout(() => window.location.href = 'index.html', 5000);
   };
   document.getElementById('popup-no').onclick = () => {
     document.getElementById('confirmation-popup').style.display = 'none';

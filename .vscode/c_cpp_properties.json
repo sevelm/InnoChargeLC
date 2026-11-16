@@ -493,7 +493,7 @@
                 ]
             },
             "defines": [
-                "FW_VERSION_MAIN=\"V.2026.07.08-001\"",
+                "FW_VERSION_MAIN=\"V.2026.11.16-001\"",
                 "PLATFORMIO=60200",
                 "ARDUINO_ESP32S3_DEV",
                 "ARDUINO_USB_MODE=1",

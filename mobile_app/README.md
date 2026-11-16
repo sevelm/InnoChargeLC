@@ -97,6 +97,47 @@ Name: `InnoCharge demo access`. Benutzername/Passwort bleiben leer.
 Eine Store-Freigabe ist damit nicht garantiert. Datenschutzerklaerung und deren
 In-App-Zugang sowie die weiteren Store-Angaben sind separat fertigzustellen.
 
+## Sessions und Datei-Export (ab 1.0.6+7)
+
+Die Wallbox-Oberflaeche bietet unten `Charging` und `Sessions`. Die Historie kommt
+aus derselben Aufzeichnung wie auf der Konfigurationsseite. Der neue
+`requestAppSessions`-Lesezugriff liefert je Anfrage 20 Datensaetze, ohne
+Webanmeldung und ohne Mailer-Einstellungen oder interne OCPP-Wiederherstellungsdaten.
+Die Konfigurationsseiten behalten ihre Anmeldung. Wer die Wallbox im Netzwerk
+erreichen kann, kann die freigegebenen Sessiondaten lesen.
+
+Beim Oeffnen oder `Refresh` liest die App die Historie einmal vollstaendig in
+kleinen Seiten. Anschliessend sortiert und filtert sie lokal nach Datum, Energie,
+Dauer, Benutzer/RFID und Status. Angezeigt werden zuerst 20 Eintraege; `Load more`
+zeigt weitere. Der Export umfasst immer die vollstaendige gefilterte Auswahl in
+der gewaehlten Reihenfolge. Aendert sich die Historie waehrend des Lesens, wird
+der Abruf wiederholt oder ein erneutes `Refresh` angefordert. Unvollstaendige
+Daten werden nicht exportiert.
+
+`Export` bietet PDF und CSV jeweils zum Speichern oder Teilen ueber das native
+Handy-Menue. Fuer Mail waehlt der Nutzer seine Mail-App und bestaetigt dort den
+Versand. Die Wallbox-SMTP-Konfiguration wird dafuer nicht benoetigt. Die Dateien
+werden auf dem Handy erstellt; nach dem Laden der Historie geht das auch offline.
+PDF-Schriften und Logo sind in der App enthalten. Die Apache-Lizenz der
+gebuendelten Roboto-Schriften liegt unter `assets/fonts/roboto_license.txt`.
+
+Dafuer muessen MAIN-Firmware, Web-UI und die native App aktualisiert werden.
+Eine aeltere App kann die neue Sessions-Ansicht anzeigen; ihr Datei-Export bleibt
+deaktiviert, bis die native Export-Unterstuetzung vorhanden ist. Fuer die
+Offline-Demo sind Beispiel-Sessions enthalten; diese baut keine Netzwerkverbindung
+auf und bietet keine native Dateifreigabe.
+
+Pruefungen zusaetzlich zu `flutter analyze` und `flutter test`:
+
+```sh
+python tool/test_app_sessions.py --browser <Chrome-Pfad>
+```
+
+Der Test prueft mit isolierten Demo-Daten die gesamte Historie, Sortierung,
+Filter, Exportauswahl, Seitenwechsel und kleine Displays. Der native
+`session_report_test.dart` erzeugt zusaetzlich einen mehrseitigen PDF-Pruefbericht
+unter `build/verification/session-report.pdf`.
+
 ## Geraeteerkennung (Netzwerk)
 
 `lib/device_discovery.dart` sucht per `_innocharge._tcp.local` und scannt bis

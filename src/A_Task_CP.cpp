@@ -120,7 +120,7 @@ volatile TickType_t lastSuccessfulPhaseSwitch = 0;
 
 
 static const char* TAG = "Task_CP";
-static constexpr uint32_t CHARGE_AUTH_SESSION_IDLE_TIMEOUT_MS = 30000UL;
+static constexpr uint32_t CHARGE_AUTH_SESSION_IDLE_TIMEOUT_MS = 120000UL;
 
 static void clearChargeAuthSession()
 {
