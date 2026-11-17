@@ -339,6 +339,7 @@ static bool websocket_public_app_allowed(JsonDocument& doc) {
     }
 
     return (strcmp(action, "setChargeParameters") == 0 && doc.containsKey("power")) ||
+        strcmp(action, "requestAppTime") == 0 || strcmp(action, "setDeviceTime") == 0 ||
         strcmp(action, "requestAppSessions") == 0;
 }
 
@@ -468,21 +469,67 @@ void webSocketEvent(byte num, WStype_t type, uint8_t * payload, size_t length) {
                         return; // hier nichts weiter tun
                     }
 
+                    if (strcmp(action, "requestAppTime") == 0) {
+                        const time_t now = time(nullptr);
+                        struct tm local = {};
+                        char value[20] = {};
+                        localtime_r(&now, &local);
+                        strftime(value, sizeof(value), "%Y-%m-%dT%H:%M:%S", &local);
+                        JsonDocument reply;
+                        reply["type"] = "appTime";
+                        reply["epoch"] = (int64_t)now;
+                        reply["localDateTime"] = value;
+                        String out;
+                        serializeJson(reply, out);
+                        webSocket.sendTXT(num, out);
+                        return;
+                    }
+
+                    if (strcmp(action, "setDeviceTime") == 0) {
+                        bool ok = false;
+                        if (doc["epoch"].is<uint32_t>() && doc["localDateTime"].isUnbound()) {
+                            ok = time_service_set_epoch(doc["epoch"].as<uint32_t>());
+                        } else if (doc["epoch"].isUnbound() && doc["localDateTime"].is<const char*>()) {
+                            const JsonString local = doc["localDateTime"].as<JsonString>();
+                            if (local.size() == strlen(local.c_str()))
+                                ok = time_service_set_local(local.c_str());
+                        }
+                        JsonDocument reply;
+                        reply["type"] = "deviceTimeStatus";
+                        reply["ok"] = ok;
+                        reply["message"] = ok ? "Time updated." : "Failed to set time. Check the date and time.";
+                        if (ok) reply["localTime"] = time_service_local_string();
+                        String out;
+                        serializeJson(reply, out);
+                        webSocket.sendTXT(num, out);
+                        return;
+                    }
+
                     if (strcmp(action, "saveWifiApSettings") == 0) {
                         bool ok = false;
                         const char* message = "Invalid access point settings.";
                         if (!rescueMode && !preferences.getBool("wifiApEnable", false)) {
                             message = "Access point settings are only available in rescue mode.";
-                        } else if (doc["enabled"].is<bool>() && doc["password"].is<const char*>()) {
+                        } else if (doc["enabled"].is<bool>() && doc["password"].is<const char*>() &&
+                                   (doc["ssid"].isUnbound() || doc["ssid"].is<const char*>())) {
                             const bool enabled = doc["enabled"].as<bool>();
+                            // Older network pages omit ssid: retain the saved name.
+                            const bool hasSsid = !doc["ssid"].isUnbound();
+                            const JsonString suppliedSsid = doc["ssid"].as<JsonString>();
+                            const String ssid = hasSsid ? String(suppliedSsid.c_str())
+                                : preferences.getString("wifiApSsid", WIFI_AP_DEFAULT_SSID);
                             const JsonString suppliedPassword = doc["password"].as<JsonString>();
                             String password = suppliedPassword.c_str();
                             if (password.length() == 0) password = preferences.getString("wifiApPass", "");
-                            if (enabled && (suppliedPassword.size() != strlen(suppliedPassword.c_str()) ||
+                            if (!wifi_ap_ssid_valid(ssid.c_str()) ||
+                                (hasSsid && suppliedSsid.size() != strlen(suppliedSsid.c_str()))) {
+                                message = "Enter a WiFi network name (maximum 32 UTF-8 bytes; no control characters).";
+                            } else if (enabled && (suppliedPassword.size() != strlen(suppliedPassword.c_str()) ||
                                             !wifi_ap_password_valid(password.c_str()))) {
                                 message = "WiFi password must contain 8 to 63 characters (letters, numbers or symbols).";
                             } else {
                                 ok = !enabled || preferences.putString("wifiApPass", password) == password.length();
+                                if (ok) ok = preferences.putString("wifiApSsid", ssid) == ssid.length();
                                 if (ok) ok = preferences.putBool("wifiApEnable", enabled) == sizeof(bool);
                                 message = ok ? "Saved" : "Failed to save access point settings.";
                             }
@@ -940,6 +987,8 @@ static void Task_WebPush(void* arg) {
 	        doc["wifi_enable"]    = preferences.getBool("wifiEnable", false);
 	        doc["rescueMode"]     = rescueMode;
         doc["wifi_ap_enable"] = preferences.getBool("wifiApEnable", false);
+        String apSsid = preferences.getString("wifiApSsid", WIFI_AP_DEFAULT_SSID);
+        doc["wifi_ap_ssid"] = wifi_ap_ssid_valid(apSsid.c_str()) ? apSsid : String(WIFI_AP_DEFAULT_SSID);
         doc["wifi_ap_password_set"] = wifi_ap_password_valid(preferences.getString("wifiApPass", "").c_str());
 
 /*

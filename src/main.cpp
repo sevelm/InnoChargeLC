@@ -164,15 +164,17 @@ void setup() {
     wifiEnabled = preferences.getBool("wifiEnable", false);
     const bool wifiApEnabled = preferences.getBool("wifiApEnable", false);
     const String wifiApPassword = preferences.getString("wifiApPass", "");
+    String wifiApSsid = preferences.getString("wifiApSsid", WIFI_AP_DEFAULT_SSID);
+    if (!wifi_ap_ssid_valid(wifiApSsid.c_str())) wifiApSsid = WIFI_AP_DEFAULT_SSID;
     const char* apPassword = wifiApEnabled && wifi_ap_password_valid(wifiApPassword.c_str())
                                  ? wifiApPassword.c_str() : nullptr;
     if (rescueMode) {
         wifi_start_ap();
     } else if (wifiEnabled) {
-        wifi_init_sta(&wifi_sta_config, apPassword);
+        wifi_init_sta(&wifi_sta_config, apPassword, wifiApSsid.c_str());
     } else {
         preferences.putBool("wifiStatic", false);
-        if (apPassword) wifi_start_ap(apPassword);
+        if (apPassword) wifi_start_ap(apPassword, wifiApSsid.c_str());
     }
     // RFID or Energymeter Enable
     sdm.enable  = preferences.getBool("emEnable",  false);

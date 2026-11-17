@@ -18,7 +18,7 @@ String buildDemoDocument(Directory app) {
   document.querySelectorAll('link').forEach((element) => element.remove());
   for (final script in document.querySelectorAll('script[src]')) {
     final name = script.attributes.remove('src');
-    if (name != 'app_sessions.js') {
+    if (name != 'app_sessions.js' && name != 'app_settings.js') {
       throw StateError('Unexpected demo script: $name');
     }
     script.text = File('${data.path}/$name').readAsStringSync();

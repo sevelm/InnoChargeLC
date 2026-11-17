@@ -54,6 +54,7 @@ function initWebSocket() {
       document.getElementById('wifi-ap-section').style.display =
         rescueModeActive || d.wifi_ap_enable === true ? 'block' : 'none';
       document.getElementById('wifi_ap_enable').checked = d.wifi_ap_enable === true;
+      document.getElementById('wifi_ap_ssid').value = d.wifi_ap_ssid || 'InnoCharge';
       apPasswordSaved = d.wifi_ap_password_set === true;
       document.getElementById('wifi_ap_password').placeholder = apPasswordSaved ? 'Unchanged' : '8 to 63 characters';
       toggleWifiApInputFields(d.wifi_ap_enable === true);
@@ -434,6 +435,7 @@ function showNetworkSavePopup() {
       Socket.send(JSON.stringify({
         action: 'saveWifiApSettings',
         enabled: document.getElementById('wifi_ap_enable').checked,
+        ssid: document.getElementById('wifi_ap_ssid').value,
         password: document.getElementById('wifi_ap_password').value
       }));
     } else {
@@ -485,6 +487,11 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('eth_btn_save').onclick  = () => { lastBtn = 'eth';  showNetworkSavePopup(); };
   document.getElementById('wifi_btn_save').onclick = () => { lastBtn = 'wifi'; showNetworkSavePopup(); };
   document.getElementById('wifi_ap_btn_save').onclick = () => {
+    const ssid = document.getElementById('wifi_ap_ssid');
+    ssid.setCustomValidity(!ssid.value.trim() || /[\x00-\x1f\x7f]/.test(ssid.value) ||
+      new TextEncoder().encode(ssid.value).length > 32
+      ? 'Enter a WiFi network name (maximum 32 UTF-8 bytes; no control characters).' : '');
+    if (!ssid.reportValidity()) return;
     const password = document.getElementById('wifi_ap_password');
     const enabled = document.getElementById('wifi_ap_enable').checked;
     const needsPassword = enabled && (!apPasswordSaved || password.value.length > 0);

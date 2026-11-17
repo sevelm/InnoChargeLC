@@ -5,6 +5,7 @@ let socket = null;
 let passwordSaveTimer = null;
 let cpDiagnosticRefreshTimer = null;
 let cpDiagnosticRecording = false;
+let deviceTimeSaveTimer = null;
 
 /* ---------- initialize WebSocket ---------- */
 function initWebSocket() {
@@ -62,6 +63,18 @@ function validateFile(inputEl, requiredPrefix) {
 function processMsg(txt) {
   let j;
   try { j = JSON.parse(txt); } catch { return; }
+
+  if (j.type === 'deviceTimeStatus') {
+    clearTimeout(deviceTimeSaveTimer);
+    deviceTimeSaveTimer = null;
+    const status = document.getElementById('deviceTimeStatus');
+    status.textContent = j.message || '';
+    status.style.color = j.ok ? 'green' : 'red';
+    document.getElementById('saveDeviceTime').disabled = false;
+    document.getElementById('usePcTime').disabled = false;
+    if (j.ok && j.localTime !== undefined) document.getElementById('localTime').textContent = j.localTime;
+    return;
+  }
 
   if (j.type === 'webPasswordStatus') {
     if (passwordSaveTimer) {
@@ -223,6 +236,9 @@ document.addEventListener('DOMContentLoaded', () => {
     .then(t => { document.getElementById('fwUiVersion').textContent = t.trim(); })
     .catch(() => { document.getElementById('fwUiVersion').textContent = '—'; });
 
+  document.getElementById('saveDeviceTime').addEventListener('click', () => saveDeviceTime(false));
+  document.getElementById('usePcTime').addEventListener('click', () => saveDeviceTime(true));
+
   // validate immediately on file selection
   document.getElementById('fwMainFile')
           .addEventListener('change', () =>
@@ -263,6 +279,36 @@ document.addEventListener('DOMContentLoaded', () => {
 		          .addEventListener('click', requestCpDiagnosticLog);
 
 });
+
+function saveDeviceTime(usePcTime) {
+  const status = document.getElementById('deviceTimeStatus');
+  const message = { action: 'setDeviceTime' };
+  if (usePcTime) {
+    message.epoch = Math.floor(Date.now() / 1000);
+  } else {
+    const input = document.getElementById('deviceDateTime');
+    if (!input.reportValidity()) return;
+    message.localDateTime = input.value.length === 16 ? input.value + ':00' : input.value;
+  }
+  if (socket?.readyState !== WebSocket.OPEN) {
+    status.textContent = 'Connection lost. Please try again.';
+    status.style.color = 'red';
+    return;
+  }
+  status.textContent = 'Saving...';
+  status.style.color = '#333';
+  document.getElementById('saveDeviceTime').disabled = true;
+  document.getElementById('usePcTime').disabled = true;
+  clearTimeout(deviceTimeSaveTimer);
+  deviceTimeSaveTimer = setTimeout(() => {
+    deviceTimeSaveTimer = null;
+    status.textContent = 'No response. Please try again.';
+    status.style.color = 'red';
+    document.getElementById('saveDeviceTime').disabled = false;
+    document.getElementById('usePcTime').disabled = false;
+  }, 8000);
+  socket.send(JSON.stringify(message));
+}
 
 function sendCpDiagnosticAction(action) {
   if (socket?.readyState !== WebSocket.OPEN) return;

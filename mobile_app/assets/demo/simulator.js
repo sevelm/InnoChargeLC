@@ -5,6 +5,7 @@
   let power = 5.5;
   let phase = 'Three-phase';
   const sockets = new Set();
+  let clockOffset = 0;
   const visuals = {
     A: ['Ready to connect', '#0000ff', 'solid'],
     B: ['Vehicle connected', '#ffc300', 'solid'],
@@ -66,6 +67,30 @@
     send(text) {
       if (this.readyState !== 1) return;
       const command = JSON.parse(text);
+      if (command.action === 'requestAppTime' || command.action === 'setDeviceTime') {
+        let ok = true;
+        if (command.action === 'setDeviceTime') {
+          let epoch = command.epoch;
+          if (command.localDateTime) {
+            // Iterate the Vienna wall-clock offset without depending on the phone timezone.
+            const format = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Vienna', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
+            const target = Date.parse(command.localDateTime + 'Z');
+            epoch = target / 1000;
+            for (let i = 0; i < 3; ++i) {
+              const local = format.format(new Date(epoch * 1000)).replace(' ', 'T');
+              epoch += (target - Date.parse(local + 'Z')) / 1000;
+            }
+          }
+          ok = Number.isFinite(epoch) && epoch > 1700000000;
+          if (ok) clockOffset = epoch * 1000 - Date.now();
+          setTimeout(() => this.onmessage?.({data: JSON.stringify({type:'deviceTimeStatus',ok,message:ok?'Time updated.':'Failed to set time.'})}), 0);
+        } else {
+          const epoch = Math.floor((Date.now() + clockOffset) / 1000);
+          const format = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Vienna', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
+          setTimeout(() => this.onmessage?.({data: JSON.stringify({type:'appTime',epoch,localDateTime:format.format(new Date(epoch * 1000)).replace(' ', 'T')})}), 0);
+        }
+        return;
+      }
       if (command.action === 'requestAppSessions') {
         const rows = Array.from({length: 46}, (_, index) => ({
           transactionId: 100 - index,
@@ -107,6 +132,13 @@
   Object.defineProperty(window, 'WebSocket', {value: DemoSocket, writable: false, configurable: false});
 
   let heartbeat;
+  window.InnoChargeDemoReset = () => {
+    state = 'C'; maximum = 11; power = 5.5; phase = 'Three-phase'; clockOffset = 0;
+    document.getElementById('demoState').value = state;
+    document.getElementById('demoMaximum').value = String(maximum);
+    document.getElementById('demoPhase').value = phase;
+    publish();
+  };
   window.addEventListener('DOMContentLoaded', () => {
     const style = document.createElement('style');
     style.textContent = `

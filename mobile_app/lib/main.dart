@@ -478,7 +478,7 @@ class _WebAppPageState extends State<WebAppPage> with WidgetsBindingObserver {
                   () => _menuInPage = result == true || result == 'true',
                 );
                 await _controller.runJavaScript(
-                  "window.InnoChargeExportSupported = true; window.dispatchEvent(new Event('innocharge-export-ready'));",
+                  "window.InnoChargeExportSupported = true; window.InnoChargeNavigationSupported = true; window.dispatchEvent(new Event('innocharge-export-ready'));",
                 );
               }
             } on PlatformException {
@@ -498,6 +498,8 @@ class _WebAppPageState extends State<WebAppPage> with WidgetsBindingObserver {
         onMessageReceived: (message) {
           if (message.message == 'menu' && mounted) {
             _showMenu();
+          } else if (message.message == 'back' && mounted) {
+            Navigator.pop(context);
           } else if (mounted && !_exporting) {
             unawaited(_handleExport(message.message));
           }
@@ -661,15 +663,23 @@ class _WebAppPageState extends State<WebAppPage> with WidgetsBindingObserver {
               title: Text(widget.device!.name),
               subtitle: Text(widget.device!.url),
             ),
-            ListTile(
-              leading: const Icon(Icons.refresh),
-              title: const Text('Neu laden'),
-              onTap: () => Navigator.pop(context, 'reload'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.swap_horiz),
-              title: const Text('Wallbox wechseln'),
-              onTap: () => Navigator.pop(context, 'back'),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  IconButton(
+                    tooltip: 'Neu laden',
+                    icon: const Icon(Icons.refresh),
+                    onPressed: () => Navigator.pop(context, 'reload'),
+                  ),
+                  IconButton(
+                    tooltip: 'Wallbox wechseln',
+                    icon: const Icon(Icons.swap_horiz),
+                    onPressed: () => Navigator.pop(context, 'back'),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -710,7 +720,7 @@ class _WebAppPageState extends State<WebAppPage> with WidgetsBindingObserver {
                 child: IconButton(
                   tooltip: 'Wallbox-Menue',
                   onPressed: _showMenu,
-                  icon: const Icon(Icons.more_horiz),
+                  icon: const Icon(Icons.settings_outlined),
                 ),
               ),
             if (_progress < 100 && !_failed)

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:innocharge_mobile/device_discovery.dart';
 import 'package:innocharge_mobile/main.dart';
@@ -171,10 +172,16 @@ void main() {
         'last_device_name': 'Garage',
       });
       final discovery = OfflineDiscovery();
+      // Decode the large HTML asset outside the widget test's fake clock.
+      await tester.runAsync(
+        () => rootBundle.loadString('assets/generated/demo.html'),
+      );
       await tester.pumpWidget(InnoChargeApp(discovery: discovery));
       await tester.pumpAndSettle();
       expect(discovery.probes, 1);
       await tester.tap(find.text('Demo ansehen'));
+      await tester.pumpAndSettle();
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
       await tester.pumpAndSettle();
       expect(find.text('DEMO'), findsOneWidget);
       expect(platform.controller.documents, hasLength(1));
@@ -197,6 +204,9 @@ void main() {
         );
       }
       await tester.tap(find.byTooltip('Demo zuruecksetzen'));
+      await tester.pumpAndSettle();
+      // Let the cached asset future complete on its original asynchronous zone.
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
       await tester.pumpAndSettle();
       expect(platform.controller.documents, hasLength(2));
       await tester.tap(find.byTooltip('Demo beenden'));

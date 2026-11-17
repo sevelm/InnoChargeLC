@@ -133,6 +133,15 @@ int main() {
     invalid["page"] = "sessions";
     assert(!websocket_public_app_allowed(invalid));
     invalid["action"] = "requestAppSessions";
+    for (const char* action : {"requestAppTime", "setDeviceTime"}) {
+        invalid["action"] = action;
+        assert(websocket_public_app_allowed(invalid));
+    }
+    for (const char* action : {"rebootDevice", "saveWifiApSettings", "setWebPassword"}) {
+        invalid["action"] = action;
+        assert(!websocket_public_app_allowed(invalid));
+    }
+    invalid["action"] = "requestAppSessions";
     invalid.remove("client");
     assert(!websocket_public_app_allowed(invalid));
     s_sessions.clear(); s_sessionActive = false;

@@ -91,6 +91,23 @@
     .app-tabs { position: fixed; z-index: 5; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 520px; display: flex; padding: 6px 16px max(8px, env(safe-area-inset-bottom)); background: var(--background); border-top: 1px solid var(--line); }
     .app-tabs button { flex: 1; min-height: 48px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; }
     .app-tabs button[aria-selected="true"] { background: var(--surface); color: var(--text); box-shadow: inset 0 -2px var(--blue); }
+    .icon { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; vertical-align: middle; pointer-events: none; }
+    .app-tabs .icon { width: 27px; height: 27px; }
+    .settings-overlay { position: fixed; z-index: 20; inset: 0; background: #0009; display: flex; align-items: flex-end; justify-content: center; }
+    .settings-panel { width: 100%; max-width: 520px; max-height: 90vh; overflow-y: auto; padding: 20px 20px max(20px, env(safe-area-inset-bottom)); border: 1px solid var(--line); border-radius: 16px 16px 0 0; background: var(--background); }
+    .settings-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .settings-heading h2 { margin: 0; font-size: 22px; }
+    .icon-button { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text); cursor: pointer; }
+    .settings-clock { margin: 20px 0; padding: 14px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+    .settings-clock dt { margin-bottom: 8px; }
+    .settings-clock dd { text-align: left; font-variant-numeric: tabular-nums; }
+    .settings-field { display: grid; gap: 8px; min-width: 0; font-size: 14px; color: var(--muted); }
+    .settings-field input { width: 100%; min-width: 0; max-width: 100%; min-height: 44px; border: 1px solid var(--line); border-radius: 6px; padding: 8px; background: var(--surface); color: var(--text); }
+    .settings-actions { display: flex; gap: 10px; margin-top: 14px; }
+    .settings-actions .session-button { flex: 1; }
+    .settings-navigation { display: flex; justify-content: space-around; gap: 14px; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+    .settings-navigation button { flex: 1; }
+    body.settings-open { overflow: hidden; }
     .session-heading { display: flex; align-items: center; gap: 8px; margin-top: 18px; }
     .session-heading h2 { flex: 1; margin: 0; font-size: 22px; }
     .session-button, .session-fields input, .session-fields select, .session-sort select { min-width: 0; min-height: 44px; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; background: var(--surface); color: var(--text); font: inherit; }
@@ -144,6 +161,7 @@
   let power = 5.5;
   let phase = 'Three-phase';
   const sockets = new Set();
+  let clockOffset = 0;
   const visuals = {
     A: ['Ready to connect', '#0000ff', 'solid'],
     B: ['Vehicle connected', '#ffc300', 'solid'],
@@ -205,6 +223,30 @@
     send(text) {
       if (this.readyState !== 1) return;
       const command = JSON.parse(text);
+      if (command.action === 'requestAppTime' || command.action === 'setDeviceTime') {
+        let ok = true;
+        if (command.action === 'setDeviceTime') {
+          let epoch = command.epoch;
+          if (command.localDateTime) {
+            // Iterate the Vienna wall-clock offset without depending on the phone timezone.
+            const format = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Vienna', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
+            const target = Date.parse(command.localDateTime + 'Z');
+            epoch = target / 1000;
+            for (let i = 0; i < 3; ++i) {
+              const local = format.format(new Date(epoch * 1000)).replace(' ', 'T');
+              epoch += (target - Date.parse(local + 'Z')) / 1000;
+            }
+          }
+          ok = Number.isFinite(epoch) && epoch > 1700000000;
+          if (ok) clockOffset = epoch * 1000 - Date.now();
+          setTimeout(() => this.onmessage?.({data: JSON.stringify({type:'deviceTimeStatus',ok,message:ok?'Time updated.':'Failed to set time.'})}), 0);
+        } else {
+          const epoch = Math.floor((Date.now() + clockOffset) / 1000);
+          const format = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Vienna', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
+          setTimeout(() => this.onmessage?.({data: JSON.stringify({type:'appTime',epoch,localDateTime:format.format(new Date(epoch * 1000)).replace(' ', 'T')})}), 0);
+        }
+        return;
+      }
       if (command.action === 'requestAppSessions') {
         const rows = Array.from({length: 46}, (_, index) => ({
           transactionId: 100 - index,
@@ -246,6 +288,13 @@
   Object.defineProperty(window, 'WebSocket', {value: DemoSocket, writable: false, configurable: false});
 
   let heartbeat;
+  window.InnoChargeDemoReset = () => {
+    state = 'C'; maximum = 11; power = 5.5; phase = 'Three-phase'; clockOffset = 0;
+    document.getElementById('demoState').value = state;
+    document.getElementById('demoMaximum').value = String(maximum);
+    document.getElementById('demoPhase').value = phase;
+    publish();
+  };
   window.addEventListener('DOMContentLoaded', () => {
     const style = document.createElement('style');
     style.textContent = `
@@ -380,7 +429,7 @@
 </g>
 </svg></div>
       <span id="connection" class="connection" role="status">offline</span>
-      <button type="button" id="nativeMenu" title="Wallbox-Menü" aria-label="Wallbox-Menü" hidden="">⋮</button>
+      <button type="button" id="nativeMenu" title="Settings" aria-label="Settings" aria-haspopup="dialog" aria-controls="appSettings" aria-expanded="false"><svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><path d="m9 3-.5 2-2 1.2-2-.6-2 3.5L4 10.5v3l-1.5 1.4 2 3.5 2-.6 2 1.2.5 2h6l.5-2 2-1.2 2 .6 2-3.5-1.5-1.4v-3l1.5-1.4-2-3.5-2 .6-2-1.2L15 3Z"></path><circle cx="12" cy="12" r="3"></circle></svg></button>
     </header>
     <h1 id="wallboxName" hidden=""></h1>
     <div id="chargingPage" role="tabpanel" aria-labelledby="chargingTab">
@@ -445,9 +494,28 @@
     </section>
   </main>
   <nav class="app-tabs" role="tablist" aria-label="Wallbox views">
-    <button type="button" id="chargingTab" role="tab" aria-selected="true" aria-controls="chargingPage">Charging</button>
-    <button type="button" id="sessionsTab" role="tab" aria-selected="false" aria-controls="sessionsPage">Sessions</button>
+    <button type="button" id="chargingTab" role="tab" aria-label="Charging" title="Charging" aria-selected="true" aria-controls="chargingPage"><svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><path d="m13 2-9 12h7l-1 8L21 9h-8Z"></path></svg></button>
+    <button type="button" id="sessionsTab" role="tab" aria-label="Sessions" title="Sessions" aria-selected="false" aria-controls="sessionsPage"><svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2"></rect><path d="M8 8h8M8 12h8M8 16h5"></path></svg></button>
   </nav>
+  <div id="appSettings" class="settings-overlay" hidden="">
+    <section class="settings-panel" role="dialog" aria-modal="true" aria-labelledby="appSettingsTitle">
+      <div class="settings-heading">
+        <h2 id="appSettingsTitle">Settings</h2>
+        <button type="button" id="closeAppSettings" class="icon-button" aria-label="Close settings" title="Close settings"><svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"></path></svg></button>
+      </div>
+      <dl class="settings-clock"><dt>Controller time (CET / CEST)</dt><dd id="appDeviceTime">–</dd></dl>
+      <label class="settings-field" for="appDeviceDateTime">Date / Time (CET / CEST)<input type="datetime-local" id="appDeviceDateTime" step="1" min="2024-01-01T00:00:00" required=""></label>
+      <div class="settings-actions">
+        <button type="button" class="session-button" id="appSaveTime" disabled="">Save Time</button>
+        <button type="button" class="session-button" id="appUsePhoneTime" disabled="">Use Phone Time</button>
+      </div>
+      <p class="message" id="appTimeMessage" role="status" aria-live="polite"></p>
+      <div class="settings-navigation">
+        <button type="button" id="appReload" class="icon-button" title="Reload" aria-label="Reload"><svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M20 7v5h-5M19.5 12a7.5 7.5 0 1 0-1.3 4.2M20 12l-3-4"></path></svg></button>
+        <button type="button" id="appSwitchWallbox" class="icon-button" title="Switch wallbox" aria-label="Switch wallbox" hidden=""><svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M4 7h16m-4-4 4 4-4 4M20 17H4m4-4-4 4 4 4"></path></svg></button>
+      </div>
+    </section>
+  </div>
   <script>
     'use strict';
     const APP_CLIENT = 'innocharge-public-app';
@@ -455,10 +523,6 @@
     const field = byId('setChargePower');
     const range = byId('powerRange');
     const controls = byId('powerControls');
-    if (window.InnoChargeHost) {
-      byId('nativeMenu').hidden = false;
-      byId('nativeMenu').addEventListener('click', () => window.InnoChargeHost.postMessage('menu'));
-    }
     const numberFormat = new Intl.NumberFormat('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
     let socket;
     let reconnectTimer;
@@ -657,6 +721,8 @@
           const data = JSON.parse(event.data);
           if (data.type === 'appSessions') {
             window.dispatchEvent(new CustomEvent('innocharge-sessions-page', { detail: data }));
+          } else if (data.type === 'appTime' || data.type === 'deviceTimeStatus') {
+            window.dispatchEvent(new CustomEvent('innocharge-time', { detail: data }));
           } else {
             processUpdate(data);
           }
@@ -944,6 +1010,149 @@
     }));
   });
   render();
+})();
+</script>
+  <script>(() => {
+  'use strict';
+  const el = id => document.getElementById(id);
+  const overlay = el('appSettings');
+  const input = el('appDeviceDateTime');
+  let timer = null;
+  let clockTimer = null;
+  let ready = false;
+  let saving = false;
+  let inputDirty = false;
+  let deviceEpoch = null;
+  let receivedAt = 0;
+
+  function message(text, error = false) {
+    el('appTimeMessage').textContent = text;
+    el('appTimeMessage').classList.toggle('error', error);
+  }
+
+  function busy(value) {
+    saving = value;
+    el('appSaveTime').disabled = !ready || value;
+    el('appUsePhoneTime').disabled = !ready || value;
+    input.disabled = value;
+  }
+
+  function drawClock() {
+    el('appDeviceTime').textContent = deviceEpoch === null ? '–' :
+      new Date((deviceEpoch + (performance.now() - receivedAt) / 1000) * 1000)
+        .toLocaleString('de-AT', { timeZone: 'Europe/Vienna' });
+  }
+
+  function requestTime() {
+    clearTimeout(timer);
+    ready = false;
+    busy(false);
+    if (!sendMessage({ action: 'requestAppTime' })) {
+      message('Connection lost. Please try again.', true);
+      return;
+    }
+    message('Loading...');
+    timer = setTimeout(() => message('Firmware update required for time settings.', true), 8000);
+  }
+
+  function close() {
+    overlay.hidden = true;
+    document.body.classList.remove('settings-open');
+    el('nativeMenu').setAttribute('aria-expanded', 'false');
+    clearInterval(clockTimer);
+    el('nativeMenu').focus();
+  }
+
+  function open() {
+    overlay.hidden = false;
+    document.body.classList.add('settings-open');
+    el('nativeMenu').setAttribute('aria-expanded', 'true');
+    el('appSwitchWallbox').hidden = !window.InnoChargeHost;
+    inputDirty = false;
+    if (!saving) requestTime();
+    drawClock();
+    clearInterval(clockTimer);
+    clockTimer = setInterval(drawClock, 1000);
+    el('closeAppSettings').focus();
+  }
+
+  function save(usePhoneTime) {
+    if (!ready || saving) return;
+    const payload = { action: 'setDeviceTime' };
+    if (usePhoneTime) payload.epoch = Math.floor(Date.now() / 1000);
+    else {
+      if (!input.reportValidity()) return;
+      payload.localDateTime = input.value.length === 16 ? input.value + ':00' : input.value;
+    }
+    if (!sendMessage(payload)) {
+      ready = false;
+      busy(false);
+      message('Connection lost. Please try again.', true);
+      return;
+    }
+    if (usePhoneTime) inputDirty = false;
+    busy(true);
+    message('Saving...');
+    clearTimeout(timer);
+    timer = setTimeout(() => { busy(false); message('No response. Please try again.', true); }, 8000);
+  }
+
+  window.addEventListener('innocharge-time', event => {
+    const data = event.detail;
+    if (data.type === 'appTime') {
+      if (!Number.isFinite(data.epoch) || typeof data.localDateTime !== 'string') return;
+      clearTimeout(timer);
+      ready = true;
+      deviceEpoch = data.epoch;
+      receivedAt = performance.now();
+      if (!inputDirty) input.value = data.localDateTime;
+      drawClock();
+      busy(false);
+      // Preserve a successful save acknowledgement while refreshing the clock.
+      if (el('appTimeMessage').textContent === 'Loading...') message('');
+    } else if (data.type === 'deviceTimeStatus') {
+      if (!saving) return;
+      clearTimeout(timer);
+      busy(false);
+      message(data.message || (data.ok ? 'Time updated.' : 'Failed to set time.'), !data.ok);
+      if (data.ok) sendMessage({ action: 'requestAppTime' });
+    }
+  });
+  window.addEventListener('innocharge-connection', event => {
+    if (!event.detail) {
+      clearTimeout(timer);
+      ready = false;
+      busy(false);
+      if (!overlay.hidden) message('Connection lost. Please try again.', true);
+    } else if (!overlay.hidden) requestTime();
+  });
+  window.addEventListener('pagehide', () => { clearTimeout(timer); clearInterval(clockTimer); });
+  el('nativeMenu').addEventListener('click', open);
+  el('closeAppSettings').addEventListener('click', close);
+  overlay.addEventListener('click', event => { if (event.target === overlay) close(); });
+  document.addEventListener('keydown', event => {
+    if (overlay.hidden) return;
+    if (event.key === 'Escape') { event.preventDefault(); close(); }
+    if (event.key !== 'Tab') return;
+    const items = [...overlay.querySelectorAll('button:not(:disabled), input:not(:disabled)')].filter(item => !item.hidden);
+    const first = items[0], last = items[items.length - 1];
+    if (!overlay.contains(document.activeElement)) { event.preventDefault(); first.focus(); }
+    else if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+  });
+  input.addEventListener('input', () => { inputDirty = true; });
+  el('appSaveTime').addEventListener('click', () => save(false));
+  el('appUsePhoneTime').addEventListener('click', () => save(true));
+  el('appReload').addEventListener('click', () => {
+    if (typeof window.InnoChargeDemoReset === 'function') {
+      close();
+      window.InnoChargeDemoReset();
+    } else window.location.reload();
+  });
+  el('appSwitchWallbox').addEventListener('click', () => {
+    close();
+    window.InnoChargeHost?.postMessage(window.InnoChargeNavigationSupported ? 'back' : 'menu');
+  });
 })();
 </script>
 

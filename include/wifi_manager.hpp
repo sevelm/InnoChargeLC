@@ -34,9 +34,12 @@ extern wifi_scan_ap_data scanned_aps[MAXIMUM_AP];  // Storage for discovered net
 extern uint16_t scanned_ap_count;  // Number of networks found
 const char* auth_mode_type(wifi_auth_mode_t auth_mode);
 
+constexpr char WIFI_AP_DEFAULT_SSID[] = "InnoCharge";
+bool wifi_ap_ssid_valid(const char* ssid);
 bool wifi_ap_password_valid(const char* password);
-void wifi_init_sta(wifi_sta_start_config_t *config, const char* apPassword = nullptr);
-void wifi_start_ap(const char* password = nullptr);
+void wifi_init_sta(wifi_sta_start_config_t *config, const char* apPassword = nullptr,
+                   const char* apSsid = WIFI_AP_DEFAULT_SSID);
+void wifi_start_ap(const char* password = nullptr, const char* ssid = WIFI_AP_DEFAULT_SSID);
 void get_wifi_sta_state(wifi_sta_state_t *state);
 void wifi_scan();
 bool wifi_scan_start();

@@ -12,8 +12,9 @@ allerdings das gesamte freigegebene Repository lesen, nicht nur diesen Ordner.
   pauschales `git add .`: im Arbeitsverzeichnis gibt es auch Firmware-Aenderungen.
 - Flutter-Quellen, Tests, `pubspec.yaml`, `pubspec.lock`, iOS-Projekt,
   `assets/demo/`, `assets/generated/` und `tool/prepare_demo_assets.dart` mitliefern.
-- `data/app.html` und `data/innocharge.svg` muessen zur generierten Demo passen;
-  der Test prueft das auch im Cloud-Build.
+- `data/app.html`, `data/app_sessions.js`, `data/app_settings.js`,
+  `data/innocharge.svg` und die verwendeten Schriftdateien muessen zur generierten
+  Demo passen; der Test prueft das auch im Cloud-Build.
 - Android-Keystore, `key.properties`, Apple-API-Schluessel, Zertifikate und
   Passwoerter niemals committen. Ignore-Regeln schuetzen keine bereits
   versionierten Dateien. Geheimnisse auch nicht in Screenshots oder Logs teilen.

@@ -99,7 +99,8 @@ In-App-Zugang sowie die weiteren Store-Angaben sind separat fertigzustellen.
 
 ## Sessions und Datei-Export (ab 1.0.6+7)
 
-Die Wallbox-Oberflaeche bietet unten `Charging` und `Sessions`. Die Historie kommt
+Die Wallbox-Oberflaeche bietet unten ein Blitz-Symbol fuer Laden und ein Listen-Symbol
+fuer Sessions. Die Historie kommt
 aus derselben Aufzeichnung wie auf der Konfigurationsseite. Der neue
 `requestAppSessions`-Lesezugriff liefert je Anfrage 20 Datensaetze, ohne
 Webanmeldung und ohne Mailer-Einstellungen oder interne OCPP-Wiederherstellungsdaten.
@@ -159,9 +160,20 @@ Logo-Blau `#588FC7`, Dunkelgrau `#263238`, Flaechen `#37474F`, Grau `#B0BEC5`.
 Weiss/blauer Schriftzug mit transparentem Hintergrund, weisses App-Icon auf Dunkelgrau.
 Android-Vollbild verwendet WindowInsets ueber `at.innocharge/display`; die
 Systemleisten lassen sich voruebergehend per Randgeste einblenden.
-Das Menue in der neuen `app.html` bietet Neuladen und Wallbox-Wechsel.
+Ab 1.0.7+8 verwendet die Navigation ausschliesslich Symbole mit Namen fuer
+Bedienungshilfen. Das Zahnrad in `app.html` oeffnet ein kleines Einstellungsfenster
+mit Controllerzeit, manueller Zeiteingabe (CET/CEST), "Use Phone Time", Neuladen
+und Wallbox-Wechsel. Beim Oeffnen wird die Uhr nur gelesen, nicht automatisch gesetzt.
+`requestAppTime` und `setDeviceTime` verwenden den vorhandenen lokalen App-Zugang
+ohne zusaetzliches Kennwort. Andere System-/Netzwerkeinstellungen bleiben beim
+geschuetzten Web-Login. NTP bleibt aktiv; gespeicherte Sessionzeiten werden nicht
+nachtraeglich veraendert. Die Offline-Demo simuliert diese Zeiteinstellungen lokal.
+Neue Zeiteinstellungen erfordern die zugehoerige MAIN-/UI-Firmware. Bei aelterer
+Firmware zeigt das Fenster einen Update-Hinweis; Laden und Sessions bleiben bedienbar.
 Bei aelteren Seiten bleibt ein nativer Menueknopf oberhalb der WebView sichtbar.
 Die Webansicht respektiert Kameraaussparungen und bleibt bei kleinen Displays scrollbar.
+
+Browserpruefung: `python tool/test_app_settings.py --browser <Chrome-Pfad>`.
 
 ## Datenschutz-Link
 

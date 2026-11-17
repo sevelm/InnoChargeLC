@@ -143,6 +143,17 @@
 	          <span id="localTime" class="device-status-text"></span>
 	        </div>
 
+            <div class="device-row">
+              <label for="deviceDateTime">Date / Time:</label>
+              <input type="datetime-local" id="deviceDateTime" step="1" min="2024-01-01T00:00:00" required>
+            </div>
+            <div class="device-inline-status">CET / CEST</div>
+            <div class="device-action-row">
+              <button id="saveDeviceTime" class="compact-button">Save Time</button>
+              <button id="usePcTime" class="compact-button">Use PC Time</button>
+            </div>
+            <div id="deviceTimeStatus" class="device-inline-status" role="status" aria-live="polite"></div>
+
 	        <div class="device-group-title">Hardware</div>
 	        <div class="device-status-row">
 	          <span class="device-status-label">DIP Switch 2:</span>

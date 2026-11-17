@@ -27,7 +27,7 @@ def main():
         page.set_content(html)
         expect(page.locator('#targetChargePower')).to_have_text('5,5')
         expect(page.locator('#connection')).to_have_text('simulation')
-        expect(page.locator('#nativeMenu')).to_be_hidden()
+        expect(page.locator('#nativeMenu')).to_be_visible()
         expect(page.locator('#powerRing')).to_have_attribute('data-power-percent', '50')
 
         for width, height in ((320, 640), (390, 844), (720, 1600), (1440, 900)):

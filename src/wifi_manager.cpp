@@ -312,7 +312,7 @@ static void wifi_sta_event_handler(void *arg, esp_event_base_t event_base, int32
 }
 
 // Start WiFi and create network interface
-void wifi_init_sta(wifi_sta_start_config_t *config, const char* apPassword) {
+void wifi_init_sta(wifi_sta_start_config_t *config, const char* apPassword, const char* apSsid) {
     ESP_LOGI(WIFI_TAG, "Initializing WiFi station");
 
     if (!wifi_retry_timer) {
@@ -432,10 +432,24 @@ void wifi_init_sta(wifi_sta_start_config_t *config, const char* apPassword) {
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
     if (apPassword) {
-        wifi_start_ap(apPassword);
+        wifi_start_ap(apPassword, apSsid);
     } else {
         ESP_ERROR_CHECK(esp_wifi_start());
     }
+}
+
+bool wifi_ap_ssid_valid(const char* ssid)
+{
+    if (!ssid) return false;
+    const size_t length = strlen(ssid);
+    if (length == 0 || length > 32) return false;
+    bool hasText = false;
+    for (size_t i = 0; i < length; ++i) {
+        const unsigned char c = static_cast<unsigned char>(ssid[i]);
+        if (c < 32 || c == 127) return false;
+        if (c != ' ') hasText = true;
+    }
+    return hasText;
 }
 
 bool wifi_ap_password_valid(const char* password)
@@ -449,8 +463,12 @@ bool wifi_ap_password_valid(const char* password)
     return true;
 }
 
-void wifi_start_ap(const char* password)
+void wifi_start_ap(const char* password, const char* ssid)
 {
+    if (!wifi_ap_ssid_valid(ssid)) {
+        ESP_LOGE(WIFI_TAG, "Invalid access point name; AP not started");
+        return;
+    }
     // Only the DIP rescue mode starts an open AP; permanent mode requires a password.
     if (password && !wifi_ap_password_valid(password)) {
         ESP_LOGE(WIFI_TAG, "Invalid access point password; AP not started");
@@ -479,8 +497,9 @@ void wifi_start_ap(const char* password)
     }
 
     wifi_config_t ap_config = {};
-    strcpy((char*)ap_config.ap.ssid, "InnoCharge");
-    ap_config.ap.ssid_len = strlen("InnoCharge");
+    // A full 32-byte SSID has no trailing NUL; the driver uses ssid_len.
+    ap_config.ap.ssid_len = strlen(ssid);
+    memcpy(ap_config.ap.ssid, ssid, ap_config.ap.ssid_len);
     ap_config.ap.ssid_hidden = 0;
     ap_config.ap.channel = 1;
     ap_config.ap.beacon_interval = 100;
